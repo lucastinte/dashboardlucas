@@ -276,16 +276,24 @@ export default function Dashboard() {
         try {
             setLoading(true);
             const dbItems = await itemService.getItems();
+            let finalItems = dbItems;
+            let finalBatchesExist = false;
 
-            // Auto-migration logic: If DB is empty but we have local data, migrate it automatically
+            try {
+                const dbBatches = await itemService.getBatches();
+                finalBatchesExist = dbBatches.length > 0;
+            } catch (e) {
+                console.error("Batches table might not be ready", e);
+            }
+
+            // Auto-migration items
             if (dbItems.length === 0) {
                 const localItems = localStorage.getItem('items_v1');
                 if (localItems) {
                     try {
                         const parsedLocal = JSON.parse(localItems);
                         if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
-                            console.log('Migrating local data to Supabase...');
-
+                            console.log('Migrando items locales...');
                             const itemsToMigrate = parsedLocal.map((item: any) => ({
                                 productName: item.productName || 'Producto',
                                 purchasePrice: Number(item.purchasePrice) || 0,
@@ -297,24 +305,38 @@ export default function Dashboard() {
                                 condition: (item.condition as ItemCondition) || 'nuevo',
                                 batchRef: item.batchRef || undefined
                             }));
-
                             await itemService.createItems(itemsToMigrate);
                             localStorage.setItem('items_v1_migrated', localItems);
                             localStorage.removeItem('items_v1');
-
-                            const refreshedItems = await itemService.getItems();
-                            setItems(refreshedItems);
-                            setHasLocalData(false);
-                            setLoading(false);
-                            return;
+                            finalItems = await itemService.getItems();
                         }
                     } catch (e) {
-                        console.error('Auto-migration failed', e);
+                        console.error('Auto-migration items failed', e);
                     }
                 }
             }
 
-            setItems(dbItems);
+            // Auto-migration batches (Tandas)
+            if (!finalBatchesExist) {
+                const localHistory = localStorage.getItem('pricing_batch_history_v1');
+                if (localHistory) {
+                    try {
+                        const parsedHistory = JSON.parse(localHistory);
+                        if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+                            console.log('Migrando historial de tandas...');
+                            for (const batch of parsedHistory) {
+                                await itemService.createBatch(batch);
+                            }
+                            localStorage.setItem('pricing_batch_history_v1_migrated', localHistory);
+                            localStorage.removeItem('pricing_batch_history_v1');
+                        }
+                    } catch (e) {
+                        console.error('Auto-migration batches failed', e);
+                    }
+                }
+            }
+
+            setItems(finalItems);
         } catch (err: any) {
             console.error('Error loading items:', err);
             setError('Error al cargar datos. Verifica tu conexión o configuración.');
