@@ -4,15 +4,110 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color-scheme: light;
+  color: #111827;
+  background-color: #f8fafc;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 55%);
+  color: #111827;
+}
+
+html.dark body {
+  background: linear-gradient(180deg, #0b1220 0%, #111827 55%);
+  color: #e5e7eb;
+}
+
+html.dark .dashboard-shell {
+  background: radial-gradient(1200px 600px at 5% -10%, #1e293b 0%, transparent 45%),
+    radial-gradient(900px 500px at 100% 0%, #0f3a3a 0%, transparent 40%),
+    linear-gradient(180deg, #0b1220 0%, #111827 58%, #0f172a 100%) !important;
+}
+
+/* Global dark overrides for existing utility-based layout */
+html.dark .bg-white {
+  background-color: #111827 !important;
+}
+
+html.dark .bg-gray-50,
+html.dark .bg-gray-100,
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/50,
+html.dark .bg-rose-50,
+html.dark .bg-emerald-50,
+html.dark .bg-gray-50\/30,
+html.dark .bg-gray-50\/50 {
+  background-color: #0f172a !important;
+}
+
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark .border-blue-100,
+html.dark .border-blue-200,
+html.dark .border-rose-100 {
+  border-color: #2b3649 !important;
+}
+
+html.dark .text-gray-900 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-gray-700 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-gray-500 {
+  color: #9fb0c7 !important;
+}
+
+html.dark .text-gray-400 {
+  color: #70839d !important;
+}
+
+html.dark .bg-black {
+  background-color: #1f2937 !important;
+}
+
+html.dark .bg-black.text-white {
+  color: #f8fafc !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #0b1220 !important;
+  color: #e5e7eb !important;
+  border-color: #334155 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl {
+  box-shadow: 0 8px 26px rgba(2, 6, 23, 0.45) !important;
 }
 
 @theme {

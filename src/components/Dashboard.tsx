@@ -1,10 +1,34 @@
 import { useState, useEffect } from 'react';
-import type { Item, ItemStatus } from '../types';
+import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History, Save } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History, Save, Moon, Sun } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-type Tab = 'dashboard' | 'inventory';
+type Tab = 'dashboard' | 'inventory' | 'pricing';
+
+type PricingItem = {
+    id: string;
+    productName: string;
+    quantity: number;
+    listedUnitPrice: number;
+    unitSalePrice: number;
+    condition: ItemCondition;
+};
+
+type BatchRecord = {
+    id: string;
+    createdAt: string;
+    totalPaid: number;
+    totalRevenue: number;
+    profit: number;
+    itemsCount: number;
+};
+
+const conditionLabelMap: Record<ItemCondition, string> = {
+    nuevo: 'Nuevo',
+    semi_uso: 'Semi uso',
+    usado: 'Usado'
+};
 
 export default function Dashboard() {
     const [items, setItems] = useState<Item[]>([]);
@@ -12,8 +36,14 @@ export default function Dashboard() {
     const [error, setError] = useState<string | null>(null);
 
     const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        const saved = localStorage.getItem('dashboard_theme');
+        return saved === 'dark' ? 'dark' : 'light';
+    });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
+    const [batchTotalPaid, setBatchTotalPaid] = useState(0);
+    const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
 
     // Form State
     const [formData, setFormData] = useState<Partial<Item>>({
@@ -22,12 +52,39 @@ export default function Dashboard() {
         salePrice: 0,
         quantity: 1,
         status: 'in_stock',
+        condition: 'nuevo',
         date: new Date().toISOString().split('T')[0]
     });
 
     useEffect(() => {
         loadItems();
     }, []);
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('pricing_batch_v1');
+            if (!saved) return;
+            const parsed = JSON.parse(saved) as { totalPaid?: number; items?: PricingItem[] };
+            setBatchTotalPaid(Number(parsed.totalPaid || 0));
+            setBatchItems(Array.isArray(parsed.items) ? parsed.items : []);
+        } catch (error) {
+            console.error('Error loading pricing batch', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem('pricing_batch_v1', JSON.stringify({
+            totalPaid: batchTotalPaid,
+            items: batchItems
+        }));
+    }, [batchTotalPaid, batchItems]);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        root.classList.toggle('dark', theme === 'dark');
+        root.style.colorScheme = theme;
+        localStorage.setItem('dashboard_theme', theme);
+    }, [theme]);
 
     const loadItems = async () => {
         try {
@@ -50,7 +107,8 @@ export default function Dashboard() {
                                 const saved = await itemService.createItem({
                                     ...rest,
                                     date: rest.date || new Date().toISOString(), // Ensure date exists
-                                    status: rest.status as ItemStatus
+                                    status: rest.status as ItemStatus,
+                                    condition: (rest.condition as ItemCondition) || 'nuevo'
                                 });
                                 migratedItems.push(saved);
                             }
@@ -85,9 +143,44 @@ export default function Dashboard() {
 
         try {
             if (editingItem) {
-                // Update existing item
                 const status = formData.status as ItemStatus;
+                const condition = (formData.condition as ItemCondition) || editingItem.condition || 'nuevo';
                 const formDateISO = formData.date ? getISODate(formData.date) : editingItem.date;
+                const quantity = Math.max(1, Math.floor(Number(formData.quantity) || editingItem.quantity));
+
+                // Selling from stock creates a sold record and discounts stock.
+                if (editingItem.status === 'in_stock' && status === 'sold') {
+                    if (quantity > editingItem.quantity) {
+                        alert(`No puedes vender ${quantity}. Solo tienes ${editingItem.quantity} en stock.`);
+                        return;
+                    }
+
+                    const unitSalePrice = Number(formData.salePrice) || Number(editingItem.salePrice) || editingItem.purchasePrice;
+
+                    await itemService.createItem({
+                        productName: editingItem.productName,
+                        purchasePrice: editingItem.purchasePrice,
+                        salePrice: unitSalePrice,
+                        quantity,
+                        date: editingItem.date,
+                        status: 'sold',
+                        condition: editingItem.condition,
+                        saleDate: formDateISO
+                    });
+
+                    const remaining = editingItem.quantity - quantity;
+                    if (remaining > 0) {
+                        await itemService.updateItem(editingItem.id, { quantity: remaining });
+                    } else {
+                        await itemService.deleteItem(editingItem.id);
+                    }
+
+                    await loadItems();
+                    setEditingItem(null);
+                    setIsModalOpen(false);
+                    resetForm();
+                    return;
+                }
 
                 // Calculate saleDate
                 let saleDate = editingItem.saleDate;
@@ -97,11 +190,38 @@ export default function Dashboard() {
                     saleDate = undefined;
                 }
 
-                const updates = {
-                    ...formData,
+                // Returning sold item to inventory can merge into existing stock item.
+                if (editingItem.status === 'sold' && status === 'in_stock') {
+                    const existingStock = items.find(i =>
+                        i.id !== editingItem.id &&
+                        i.status === 'in_stock' &&
+                        i.productName === (formData.productName || editingItem.productName) &&
+                        i.purchasePrice === (Number(formData.purchasePrice) || editingItem.purchasePrice) &&
+                        i.condition === condition
+                    );
+
+                    if (existingStock) {
+                        await itemService.updateItem(existingStock.id, {
+                            quantity: existingStock.quantity + quantity
+                        });
+                        await itemService.deleteItem(editingItem.id);
+                        await loadItems();
+                        setEditingItem(null);
+                        setIsModalOpen(false);
+                        resetForm();
+                        return;
+                    }
+                }
+
+                const updates: Partial<Item> = {
+                    productName: formData.productName ?? editingItem.productName,
+                    purchasePrice: Number(formData.purchasePrice) || editingItem.purchasePrice,
+                    salePrice: formData.salePrice !== undefined ? Number(formData.salePrice) || 0 : editingItem.salePrice,
+                    quantity,
                     date: formDateISO,
-                    saleDate: saleDate,
-                    status
+                    saleDate,
+                    status,
+                    condition
                 };
 
                 // Optimistic UI update
@@ -124,6 +244,7 @@ export default function Dashboard() {
                     quantity: Number(formData.quantity) || 1,
                     date: formData.date ? getISODate(formData.date) : new Date().toISOString(),
                     status: formData.status as ItemStatus,
+                    condition: (formData.condition as ItemCondition) || 'nuevo',
                     saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined
                 };
 
@@ -180,6 +301,7 @@ export default function Dashboard() {
             salePrice: 0,
             quantity: 1,
             status: 'in_stock',
+            condition: 'nuevo',
             date: new Date().toISOString().split('T')[0]
         });
         setEditingItem(null);
@@ -233,43 +355,64 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50/50 p-6 md:p-12 font-sans text-gray-900">
-            <div className="max-w-7xl mx-auto space-y-8">
+        <div className="dashboard-shell min-h-screen bg-gradient-to-b from-slate-50 via-gray-50 to-white px-3 py-4 sm:px-6 sm:py-6 md:px-10 md:py-10 font-sans text-gray-900">
+            <div className="max-w-7xl mx-auto space-y-5 sm:space-y-8">
 
                 {/* Header & Tabs */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 sm:gap-6">
                     <div>
-                        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Control de Ventas</h1>
-                        <p className="text-gray-500 mt-2 text-lg">Gestiona tu stock, ventas y ganancias en un solo lugar.</p>
+                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">Control de Ventas</h1>
+                        <p className="text-gray-500 mt-1.5 sm:mt-2 text-sm sm:text-lg">Gestiona tu stock, ventas y ganancias en un solo lugar.</p>
                     </div>
 
-                    <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-200">
+                    <div className="w-full md:w-auto flex flex-col sm:flex-row gap-2">
+                        <div className="grid grid-cols-3 bg-white p-1 rounded-xl shadow-sm border border-gray-200">
+                            <button
+                                onClick={() => setActiveTab('dashboard')}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                                <div className="flex items-center justify-center gap-2">
+                                    <TrendingUp className="w-4 h-4" />
+                                    Resumen
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('inventory')}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                                <div className="flex items-center justify-center gap-2">
+                                    <Box className="w-4 h-4" />
+                                    Inventario ({stockItems.length})
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('pricing')}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'pricing' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                                <div className="flex items-center justify-center gap-2">
+                                    <DollarSign className="w-4 h-4" />
+                                    Pedidos
+                                </div>
+                            </button>
+                        </div>
+
                         <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                            type="button"
+                            onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            title={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
                         >
-                            <div className="flex items-center gap-2">
-                                <TrendingUp className="w-4 h-4" />
-                                Resumen
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('inventory')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <Box className="w-4 h-4" />
-                                Inventario ({stockItems.length})
-                            </div>
+                            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                            <span className="text-sm font-medium">{theme === 'light' ? 'Oscuro' : 'Claro'}</span>
                         </button>
                     </div>
                 </div>
 
                 {/* Main Content Area */}
                 {activeTab === 'dashboard' ? (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Metrics Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                             <MetricCard
                                 title="Ganancia Neta"
                                 value={`$${totalProfit.toLocaleString()}`}
@@ -299,25 +442,25 @@ export default function Dashboard() {
                         </div>
 
                         {/* Charts */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-xl font-bold text-gray-800">Tendencia de Ganancias</h2>
+                        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <div className="flex justify-between items-center mb-4 sm:mb-6">
+                                <h2 className="text-lg sm:text-xl font-bold text-gray-800">Tendencia de Ganancias</h2>
                             </div>
-                            <div className="h-[300px] w-full">
+                            <div className="h-[240px] sm:h-[300px] w-full">
                                 <ProfitChart items={soldItems} />
                             </div>
                         </div>
 
                         {/* Recent Sales Table */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
+                            <div className="p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-gray-50/30">
                                 <div className="flex items-center gap-2">
                                     <History className="w-5 h-5 text-gray-500" />
-                                    <h2 className="text-xl font-bold text-gray-800">Historial de Ventas</h2>
+                                    <h2 className="text-lg sm:text-xl font-bold text-gray-800">Historial de Ventas</h2>
                                 </div>
                                 <button
                                     onClick={() => openNewModal('sold')}
-                                    className="bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+                                    className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <Plus className="w-4 h-4" />
                                     Nueva Venta Directa
@@ -326,17 +469,17 @@ export default function Dashboard() {
                             <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} />
                         </div>
                     </div>
-                ) : (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                ) : activeTab === 'inventory' ? (
+                    <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Inventory Header */}
-                        <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-800">Inventario Actual</h2>
+                                <h2 className="text-lg sm:text-xl font-bold text-gray-800">Inventario Actual</h2>
                                 <p className="text-gray-500 text-sm">Productos disponibles para la venta.</p>
                             </div>
                             <button
                                 onClick={() => openNewModal('in_stock')}
-                                className="bg-black hover:bg-gray-800 text-white px-6 py-3 rounded-xl flex items-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium"
+                                className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-5 py-3 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium"
                             >
                                 <Plus className="w-5 h-5 mr-2" />
                                 Agregar Producto
@@ -350,31 +493,52 @@ export default function Dashboard() {
                                 setFormData({
                                     ...item,
                                     status: 'sold',
-                                    salePrice: item.salePrice || item.purchasePrice * 1.5, // Suggest a markup
+                                    quantity: 1,
+                                    salePrice: item.salePrice || item.purchasePrice,
+                                    condition: item.condition || 'nuevo',
                                     date: new Date().toISOString().split('T')[0]
                                 });
                                 setIsModalOpen(true);
                             }} />
                         </div>
                     </div>
+                ) : (
+                    <BulkPricingBoard
+                        totalPaid={batchTotalPaid}
+                        setTotalPaid={setBatchTotalPaid}
+                        batchItems={batchItems}
+                        setBatchItems={setBatchItems}
+                        inventoryItems={items}
+                        onInventoryRefresh={loadItems}
+                    />
                 )}
             </div>
 
             {/* Modal Overlay */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm transition-opacity">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 ring-1 ring-black/5 animate-in zoom-in-95 duration-200">
-                        <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/30 backdrop-blur-sm transition-opacity">
+                    <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] sm:max-h-[88vh] overflow-y-auto transform transition-all scale-100 ring-1 ring-black/5 animate-in zoom-in-95 duration-200">
+                        <div className="p-4 sm:p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center sticky top-0 z-10">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-800">
-                                    {editingItem ? (formData.status === 'sold' && editingItem.status === 'in_stock' ? 'Registrar Venta de Stock' : 'Editar Registro') : 'Nuevo Registro'}
+                                <h2 className="text-lg sm:text-xl font-bold text-gray-800">
+                                    {editingItem
+                                        ? (
+                                            editingItem.status === 'sold' && formData.status === 'in_stock'
+                                                ? 'Volver al Inventario'
+                                                : editingItem.status === 'in_stock' && formData.status === 'sold'
+                                                    ? 'Registrar Venta de Stock'
+                                                    : editingItem.status === 'sold'
+                                                        ? 'Editar Venta'
+                                                        : 'Editar Stock'
+                                        )
+                                        : 'Nuevo Registro'}
                                 </h2>
                                 <p className="text-sm text-gray-500 mt-1">
                                     {formData.status === 'in_stock' ? 'Añadir al inventario' : 'Registrar una venta realizada'}
                                 </p>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                                <span className="text-2xl">&times;</span>
+                            <button onClick={() => setIsModalOpen(false)} className="h-9 w-9 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
+                                <span className="text-2xl leading-none">&times;</span>
                             </button>
                         </div>
 
@@ -384,6 +548,7 @@ export default function Dashboard() {
                             onSubmit={handleSaveItem}
                             onCancel={() => setIsModalOpen(false)}
                             isEditing={!!editingItem}
+                            editingItemStatus={editingItem?.status}
                         />
                     </div>
                 </div>
@@ -396,12 +561,71 @@ export default function Dashboard() {
 
 function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: Item) => void, onDelete: (id: string) => void }) {
     if (items.length === 0) {
-        return <div className="p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
+        return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
     }
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-600">
+        <>
+            <div className="sm:hidden p-3 space-y-3">
+                {items.map((item) => {
+                    const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
+                    const isPositive = profit >= 0;
+
+                    return (
+                        <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
+                                <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
+                                    x{item.quantity}
+                                </span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                                <div>
+                                    <p className="text-gray-400 text-xs">Compra</p>
+                                    <p className="font-medium text-gray-700">${item.purchasePrice.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-400 text-xs">Venta</p>
+                                    <p className="font-medium text-gray-900">${item.salePrice?.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-400 text-xs">Ganancia</p>
+                                    <p className={`font-bold flex items-center gap-1 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                        ${Math.abs(profit).toLocaleString()}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-400 text-xs">Fecha</p>
+                                    <p className="font-medium text-gray-700">{item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}</p>
+                                </div>
+                                <div className="col-span-2">
+                                    <p className="text-gray-400 text-xs">Estado</p>
+                                    <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 flex gap-2">
+                                <button
+                                    onClick={() => onEdit(item)}
+                                    className="flex-1 h-10 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <Edit2 className="w-4 h-4" />
+                                    Editar
+                                </button>
+                                <button
+                                    onClick={() => onDelete(item.id)}
+                                    className="flex-1 h-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-600">
                 <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
                     <tr>
                         <th className="px-6 py-4">Producto</th>
@@ -409,6 +633,7 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                         <th className="px-6 py-4 text-right">Compra (Unit)</th>
                         <th className="px-6 py-4 text-right">Venta (Unit)</th>
                         <th className="px-6 py-4 text-right">Ganancia</th>
+                        <th className="px-6 py-4 text-center">Estado</th>
                         <th className="px-6 py-4 text-center">Fecha Venta</th>
                         <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
@@ -431,11 +656,14 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                                         ${Math.abs(profit).toLocaleString()}
                                     </div>
                                 </td>
+                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                    {conditionLabelMap[item.condition || 'nuevo']}
+                                </td>
                                 <td className="px-6 py-4 text-center text-gray-400 text-xs">
                                     {item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}
                                 </td>
                                 <td className="px-6 py-4 text-center">
-                                    <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex justify-center gap-2">
                                         <button
                                             onClick={() => onEdit(item)}
                                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
@@ -456,25 +684,90 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                         );
                     })}
                 </tbody>
-            </table>
-        </div>
+                </table>
+            </div>
+        </>
     );
 }
 
 function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], onEdit: (i: Item) => void, onDelete: (id: string) => void, onSell: (i: Item) => void }) {
     if (items.length === 0) {
-        return <div className="p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
+        return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-600">
+        <>
+            <div className="sm:hidden p-3 space-y-3">
+                {items.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                            <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
+                            <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
+                                Stock: {item.quantity}
+                            </span>
+                        </div>
+                            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                                <div>
+                                    <p className="text-gray-400 text-xs">Costo Unit.</p>
+                                    <p className="font-medium text-gray-900">${item.purchasePrice.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-400 text-xs">Reventa Unit.</p>
+                                    <p className="font-medium text-gray-900">
+                                        {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-400 text-xs">Valor Total</p>
+                                    <p className="font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</p>
+                                </div>
+                                <div className="col-span-2">
+                                    <p className="text-gray-400 text-xs">Fecha Ingreso</p>
+                                    <p className="font-medium text-gray-700">{new Date(item.date).toLocaleDateString()}</p>
+                                </div>
+                                <div className="col-span-2">
+                                    <p className="text-gray-400 text-xs">Estado</p>
+                                    <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
+                                </div>
+                            </div>
+                        <div className="mt-4 space-y-2">
+                            <button
+                                onClick={() => onSell(item)}
+                                className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-2"
+                            >
+                                <DollarSign className="w-4 h-4" />
+                                Vender
+                            </button>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => onEdit(item)}
+                                    className="h-10 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <Edit2 className="w-4 h-4" />
+                                    Editar
+                                </button>
+                                <button
+                                    onClick={() => onDelete(item.id)}
+                                    className="h-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-600">
                 <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
                     <tr>
                         <th className="px-6 py-4">Producto</th>
                         <th className="px-6 py-4 text-center">Stock</th>
                         <th className="px-6 py-4 text-right">Costo Unit.</th>
+                        <th className="px-6 py-4 text-right">Reventa Unit.</th>
                         <th className="px-6 py-4 text-right">Valor Total</th>
+                        <th className="px-6 py-4 text-center">Estado</th>
                         <th className="px-6 py-4 text-center">Fecha Ingreso</th>
                         <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
@@ -487,7 +780,13 @@ function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], on
                                 <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
                             </td>
                             <td className="px-6 py-4 text-right font-mono">${item.purchasePrice.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-right font-mono text-gray-700">
+                                {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
+                            </td>
                             <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
+                            <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                {conditionLabelMap[item.condition || 'nuevo']}
+                            </td>
                             <td className="px-6 py-4 text-center text-gray-400 text-xs">
                                 {new Date(item.date).toLocaleDateString()}
                             </td>
@@ -520,31 +819,223 @@ function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], on
                         </tr>
                     ))}
                 </tbody>
-            </table>
-        </div>
+                </table>
+            </div>
+        </>
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
+function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
     onCancel: () => void,
-    isEditing: boolean
+    isEditing: boolean,
+    editingItemStatus?: ItemStatus
 }) {
     const [url, setUrl] = useState('');
+    const [isDetectingFromUrl, setIsDetectingFromUrl] = useState(false);
+    const [isDetectingFromImage, setIsDetectingFromImage] = useState(false);
+    const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
+    const [detectedSummary, setDetectedSummary] = useState<string | null>(null);
+    const [purchasePriceInput, setPurchasePriceInput] = useState('');
+    const [salePriceInput, setSalePriceInput] = useState('');
 
-    const handleUrlBlur = () => {
+    type TesseractResult = {
+        data?: {
+            text?: string;
+        };
+    };
+
+    type TesseractLike = {
+        recognize: (image: File, langs?: string) => Promise<TesseractResult>;
+    };
+
+    const getTesseract = async (): Promise<TesseractLike> => {
+        if ((window as typeof window & { Tesseract?: TesseractLike }).Tesseract) {
+            return (window as typeof window & { Tesseract?: TesseractLike }).Tesseract as TesseractLike;
+        }
+
+        await new Promise<void>((resolve, reject) => {
+            const scriptId = 'tesseract-cdn-script';
+            const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+
+            if (existing) {
+                existing.addEventListener('load', () => resolve(), { once: true });
+                existing.addEventListener('error', () => reject(new Error('No se pudo cargar OCR.')), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.id = scriptId;
+            script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('No se pudo cargar OCR.'));
+            document.body.appendChild(script);
+        });
+
+        const loaded = (window as typeof window & { Tesseract?: TesseractLike }).Tesseract;
+        if (!loaded) throw new Error('OCR no disponible.');
+        return loaded;
+    };
+
+    const formatMoney = (value?: number) => {
+        const numeric = Number(value || 0);
+        if (!numeric) return '';
+        return new Intl.NumberFormat('es-AR').format(Math.round(numeric));
+    };
+
+    const parseMoneyInput = (raw: string): number => {
+        const digits = raw.replace(/[^\d]/g, '');
+        if (!digits) return 0;
+        return Number(digits);
+    };
+
+    const parsePriceValue = (raw: string): number => {
+        const value = parseMoneyInput(raw);
+        return Number.isFinite(value) ? value : 0;
+    };
+
+    useEffect(() => {
+        setPurchasePriceInput(formatMoney(formData.purchasePrice));
+    }, [formData.purchasePrice]);
+
+    useEffect(() => {
+        setSalePriceInput(formatMoney(formData.salePrice));
+    }, [formData.salePrice]);
+
+    const parseLikelyPrice = (text: string): number | null => {
+        // Prioridad: precios marcados con ARS (como en la captura del usuario)
+        const arsRegex = /\b(?:ars|ar\$)\s*\$?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?|\d{2,9})\b/gi;
+        const arsMatches = [...text.matchAll(arsRegex)];
+        if (arsMatches.length > 0) {
+            const arsValue = parsePriceValue(arsMatches[0][1]);
+            if (Number.isFinite(arsValue) && arsValue >= 1 && arsValue <= 50000000) {
+                return arsValue;
+            }
+        }
+
+        const priceRegex = /(?:us\$|\$|mxn|clp|cop|pen|s\/)?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d{2,9})/gi;
+        const candidates: number[] = [];
+        let match: RegExpExecArray | null;
+
+        while ((match = priceRegex.exec(text)) !== null) {
+            const value = parsePriceValue(match[1]);
+            if (Number.isFinite(value) && value >= 1 && value <= 50000000) {
+                candidates.push(value);
+            }
+        }
+
+        if (candidates.length === 0) return null;
+        return Math.max(...candidates);
+    };
+
+    const parseLikelyQuantity = (text: string): number | null => {
+        const quantityPatterns = [
+            /\bx\s*(\d{1,4})\b/gi,            // x3, x 3
+            /\b(\d{1,4})\s*(?:piezas?|uds?|unidades?)\b/gi // 4 piezas, 2 uds
+        ];
+
+        for (const pattern of quantityPatterns) {
+            const matches = [...text.matchAll(pattern)];
+            if (matches.length > 0) {
+                const value = Number(matches[matches.length - 1][1]);
+                if (Number.isFinite(value) && value >= 1 && value <= 10000) {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    };
+
+    const cleanProductName = (value: string): string => {
+        let cleaned = value
+            .replace(/\[[^\]]*]/g, ' ')
+            .replace(/\([^)]*\)/g, ' ')
+            .replace(/\b(?:ars|ar\$)\b.*$/i, ' ')
+            .replace(/\bx\s*\d+\b/gi, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\.{2,}$/, '')
+            .trim();
+
+        cleaned = cleaned.replace(/^juego\s+de\s+\d+\s+/i, '');
+        cleaned = cleaned.replace(/\b(em|en|de)\s*$/i, '').trim();
+
+        const keywordMatch = cleaned.match(/\b(bolsa|bolsas|zapatilla|zapatillas|remera|remeras|pantal[oó]n|pantalones|campera|camperas|auricular|auriculares|funda|fundas|cable|cables)\b/i);
+        if (keywordMatch?.index !== undefined && keywordMatch.index > 0) {
+            cleaned = cleaned.slice(keywordMatch.index);
+        }
+
+        return cleaned
+            .replace(/\w\S*/g, (w) => w.replace(/^\w/, (c) => c.toUpperCase()))
+            .trim();
+    };
+
+    const parseLikelyName = (text: string): string | null => {
+        const lines = text
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        // Regla principal: si hay línea con ARS, el nombre sale del texto previo al precio.
+        const arsLineIndex = lines.findIndex((line) => /\b(?:ars|ar\$)\b/i.test(line));
+        if (arsLineIndex !== -1) {
+            const lineWithArs = lines[arsLineIndex];
+            const titleBeforePrice = lineWithArs
+                .replace(/\b(?:ars|ar\$)\s*\$?\s*\d[\d.,]*/i, '')
+                .trim();
+            const cleaned = cleanProductName(titleBeforePrice);
+            if (cleaned.length >= 2) return cleaned;
+
+            // Cuando OCR separa el título y el precio en líneas distintas.
+            const previousLine = lines[arsLineIndex - 1];
+            if (previousLine) {
+                const prevCleaned = cleanProductName(previousLine);
+                if (prevCleaned.length >= 2) return prevCleaned;
+            }
+        }
+
+        const ignoredWords = ['mercadolibre', 'temu', 'envio', 'cuotas', 'pagar', 'total', 'cantidad', 'pedido'];
+
+        const keywordLine = lines.find((line) => /\b(bolsa|bolsas|zapatilla|zapatillas|remera|remeras|pantal[oó]n|pantalones|campera|camperas|auricular|auriculares|funda|fundas|cable|cables)\b/i.test(line));
+        if (keywordLine) {
+            const cleanedKeyword = cleanProductName(keywordLine);
+            if (cleanedKeyword.length >= 3) return cleanedKeyword;
+        }
+
+        const candidate = lines.find((line) => {
+            const lower = line.toLowerCase();
+            const looksLikePrice = /\b(?:ars|ar\$|us\$|\$)\s*\d[\d.,]*/i.test(line);
+            const hasLetters = /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(line);
+            const mostlyNumbers = line.replace(/[^\d]/g, '').length > line.length * 0.5;
+            const ignored = ignoredWords.some((w) => lower.includes(w));
+            return hasLetters && !looksLikePrice && !mostlyNumbers && !ignored && line.length >= 4 && line.length <= 110;
+        });
+
+        if (!candidate) return null;
+        const cleaned = cleanProductName(candidate);
+        return cleaned || null;
+    };
+
+    const handleUrlBlur = async () => {
         if (!url) return;
-        // Same extraction logic as before
+        setIsDetectingFromUrl(true);
+        setAutoFillMessage(null);
+        setDetectedSummary(null);
+
         let extractedName = '';
+        let extractedPrice: number | null = null;
+        let extractedQuantity: number | null = null;
+
         try {
             const urlObj = new URL(url);
             if (urlObj.hostname.includes('mercadolibre')) {
                 const parts = urlObj.pathname.split('-');
                 const idIndex = parts.findIndex(p => p.startsWith('MLA') || p.startsWith('MCO') || p.startsWith('MLM'));
                 if (idIndex !== -1 && idIndex + 1 < parts.length) {
-                    let titleParts = parts.slice(idIndex + 1);
+                    const titleParts = parts.slice(idIndex + 1);
                     if (titleParts.length > 0) {
                         const lastPart = titleParts[titleParts.length - 1];
                         if (lastPart.includes('_')) {
@@ -555,6 +1046,16 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                 } else {
                     const possibleName = urlObj.pathname.split('/').pop()?.split('_')[0].replaceAll('-', ' ');
                     if (possibleName) extractedName = possibleName;
+                }
+
+                const mlId = url.match(/ML[A-Z]-?\d+/i)?.[0]?.replace('-', '');
+                if (mlId) {
+                    const response = await fetch(`https://api.mercadolibre.com/items/${mlId}`);
+                    if (response.ok) {
+                        const data = await response.json() as { title?: string; price?: number };
+                        if (data.title) extractedName = data.title;
+                        if (typeof data.price === 'number') extractedPrice = data.price;
+                    }
                 }
             } else if (urlObj.hostname.includes('temu')) {
                 const path = urlObj.pathname;
@@ -570,19 +1071,111 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                 }
             }
 
-            if (extractedName) {
-                extractedName = extractedName.replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
-                setFormData(prev => ({ ...prev, productName: decodeURIComponent(extractedName) }));
+            const urlPrice = parseLikelyPrice(url);
+            if (urlPrice && !extractedPrice) extractedPrice = urlPrice;
+            const urlQuantity = parseLikelyQuantity(url);
+            if (urlQuantity) extractedQuantity = urlQuantity;
+
+            if (extractedName || extractedPrice || extractedQuantity) {
+                const normalizedName = extractedName
+                    ? decodeURIComponent(extractedName).replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())))
+                    : undefined;
+                const unitCost = extractedPrice && extractedQuantity && extractedQuantity > 1
+                    ? extractedPrice / extractedQuantity
+                    : extractedPrice;
+
+                setFormData(prev => ({
+                    ...prev,
+                    productName: normalizedName || prev.productName,
+                    purchasePrice: unitCost ?? prev.purchasePrice,
+                    quantity: extractedQuantity ?? prev.quantity
+                }));
+
+                setAutoFillMessage('Autocompletado desde link: datos detectados.');
+                setDetectedSummary(
+                    `Detectado: ${normalizedName || formData.productName || 'Sin nombre'}`
+                    + `${extractedPrice ? ` | Total ARS ${Math.round(extractedPrice).toLocaleString('es-AR')}` : ''}`
+                    + `${unitCost ? ` | Costo unitario ARS ${Math.round(unitCost).toLocaleString('es-AR')}` : ''}`
+                    + `${extractedQuantity ? ` | Cantidad ${extractedQuantity}` : ''}`
+                );
+            } else {
+                setAutoFillMessage('No pude detectar datos claros en ese link.');
             }
         } catch (e) {
             console.error("Error parsing URL", e);
+            setAutoFillMessage('No se pudo leer ese link.');
+        } finally {
+            setIsDetectingFromUrl(false);
         }
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsDetectingFromImage(true);
+        setAutoFillMessage(null);
+        setDetectedSummary(null);
+
+        try {
+            const tesseract = await getTesseract();
+            const result = await tesseract.recognize(file, 'spa+eng');
+            const text = result.data?.text || '';
+
+            const detectedName = parseLikelyName(text);
+            const detectedPrice = parseLikelyPrice(text);
+            const detectedQuantity = parseLikelyQuantity(text);
+            const unitCost = detectedPrice;
+
+            if (detectedName || detectedPrice || detectedQuantity) {
+                setFormData(prev => ({
+                    ...prev,
+                    productName: detectedName || prev.productName,
+                    purchasePrice: unitCost ?? prev.purchasePrice,
+                    quantity: detectedQuantity ?? prev.quantity
+                }));
+                setAutoFillMessage('Autocompletado desde imagen: datos de compra detectados.');
+                setDetectedSummary(
+                    `Detectado: ${detectedName || formData.productName || 'Sin nombre'}`
+                    + `${detectedPrice ? ` | Precio unitario ARS ${Math.round(detectedPrice).toLocaleString('es-AR')}` : ''}`
+                    + `${detectedQuantity ? ` | Cantidad ${detectedQuantity}` : ''}`
+                );
+            } else {
+                setAutoFillMessage('No pude detectar nombre/costo/cantidad en la captura.');
+            }
+        } catch (err) {
+            console.error('OCR failed', err);
+            setAutoFillMessage('Error al procesar la captura. Intenta con otra imagen más nítida.');
+        } finally {
+            setIsDetectingFromImage(false);
+            e.target.value = '';
+        }
+    };
+
+    const getSubmitLabel = () => {
+        if (!isEditing) {
+            return formData.status === 'sold' ? 'Registrar Venta' : 'Guardar en Stock';
+        }
+
+        if (editingItemStatus === 'sold' && formData.status === 'in_stock') {
+            return 'Volver al Stock';
+        }
+
+        if (editingItemStatus === 'in_stock' && formData.status === 'sold') {
+            return 'Vender y Descontar';
+        }
+
+        if (formData.status === 'sold') {
+            return 'Actualizar Venta';
+        }
+
+        return 'Actualizar Stock';
+    };
+
     return (
-        <form onSubmit={onSubmit} className="p-6 space-y-5">
+        <form onSubmit={onSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             {/* Context Toggle */}
-            <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
+            <div className="flex bg-gray-100 p-1 rounded-lg mb-2 sm:mb-4">
                 <button
                     type="button"
                     onClick={() => setFormData({ ...formData, status: 'in_stock' })}
@@ -600,16 +1193,44 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
             </div>
 
             {!isEditing && (
-                <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-2">
-                    <label className="block text-[10px] font-bold text-blue-700 mb-1 uppercase tracking-wider">Auto-completar desde URL</label>
-                    <input
-                        type="url"
-                        placeholder="Pega links de MercadoLibre o Temu..."
-                        className="w-full px-3 py-1.5 text-sm rounded-lg border border-blue-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all bg-white"
-                        value={url}
-                        onChange={e => setUrl(e.target.value)}
-                        onBlur={handleUrlBlur}
-                    />
+                <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-1 sm:mb-2 space-y-3">
+                    <div>
+                        <label className="block text-[10px] font-bold text-blue-700 mb-1 uppercase tracking-wider">Auto-completar desde link</label>
+                        <input
+                            type="url"
+                            placeholder="Pega link de compra (ej: MercadoLibre)"
+                            className="w-full px-3 py-2 text-sm rounded-lg border border-blue-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all bg-white"
+                            value={url}
+                            onChange={e => setUrl(e.target.value)}
+                            onBlur={handleUrlBlur}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-blue-700 mb-1 uppercase tracking-wider">O subir captura de compra</label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleImageUpload}
+                            className="w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-medium hover:file:bg-blue-700"
+                        />
+                    </div>
+
+                    {(isDetectingFromUrl || isDetectingFromImage) && (
+                        <p className="text-xs text-blue-700 font-medium">Analizando información...</p>
+                    )}
+
+                    {autoFillMessage && (
+                        <p className="text-xs text-blue-900">{autoFillMessage}</p>
+                    )}
+                    {detectedSummary && (
+                        <p className="text-xs font-semibold text-blue-900">{detectedSummary}</p>
+                    )}
+
+                    <p className="text-[11px] text-blue-700/80">
+                        El precio de venta lo defines tú manualmente.
+                    </p>
                 </div>
             )}
 
@@ -624,17 +1245,21 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                 />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Costo ($)</label>
                     <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         required
-                        min="0"
-                        step="0.01"
                         className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
-                        value={formData.purchasePrice || ''}
-                        onChange={e => setFormData({ ...formData, purchasePrice: parseFloat(e.target.value) || 0 })}
+                        placeholder="Ej: 14.092"
+                        value={purchasePriceInput}
+                        onChange={(e) => {
+                            const value = parseMoneyInput(e.target.value);
+                            setPurchasePriceInput(formatMoney(value));
+                            setFormData({ ...formData, purchasePrice: value });
+                        }}
                     />
                 </div>
                 <div>
@@ -642,17 +1267,24 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                         {formData.status === 'sold' ? 'Precio Venta ($)' : 'Precio Objetivo ($)'}
                     </label>
                     <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="text"
+                        inputMode="numeric"
                         className={`w-full px-4 py-2 rounded-xl border border-gray-200 outline-none transition-all bg-gray-50 focus:bg-white ${formData.status === 'sold' ? 'focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-emerald-700' : 'focus:border-black focus:ring-1 focus:ring-black'}`}
-                        value={formData.salePrice || ''}
-                        onChange={e => setFormData({ ...formData, salePrice: parseFloat(e.target.value) || 0 })}
+                        placeholder="Ej: 21.900"
+                        value={salePriceInput}
+                        onChange={(e) => {
+                            const value = parseMoneyInput(e.target.value);
+                            setSalePriceInput(formatMoney(value));
+                            setFormData({ ...formData, salePrice: value });
+                        }}
                     />
+                    {isEditing && editingItemStatus === 'in_stock' && formData.status === 'sold' && (
+                        <p className="text-xs text-gray-500 mt-1">Precio por unidad. Puedes editarlo antes de confirmar la venta.</p>
+                    )}
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
                     <input
@@ -665,6 +1297,21 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                     />
                 </div>
                 <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                    <select
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                        value={(formData.condition as ItemCondition) || 'nuevo'}
+                        onChange={e => setFormData({ ...formData, condition: e.target.value as ItemCondition })}
+                    >
+                        <option value="nuevo">Nuevo</option>
+                        <option value="semi_uso">Semi uso</option>
+                        <option value="usado">Usado</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
                     <input
                         type="date"
@@ -674,9 +1321,14 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                         onChange={e => setFormData({ ...formData, date: e.target.value })}
                     />
                 </div>
+                <div>
+                    <div className="h-full rounded-xl border border-dashed border-gray-200 bg-gray-50/60 flex items-center justify-center px-4 py-3 text-xs text-gray-500">
+                        El estado por defecto es <strong className="ml-1 text-gray-700">Nuevo</strong>.
+                    </div>
+                </div>
             </div>
 
-            <div className="pt-4 flex gap-3">
+            <div className="pt-3 sm:pt-4 flex flex-col-reverse sm:flex-row gap-3">
                 <button
                     type="button"
                     onClick={onCancel}
@@ -689,18 +1341,354 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing }: {
                     className={`flex-1 px-4 py-3 rounded-xl text-white font-medium shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 ${formData.status === 'sold' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-black hover:bg-gray-800 shadow-gray-200'}`}
                 >
                     <Save className="w-4 h-4" />
-                    {isEditing ? 'Guardar Cambios' : (formData.status === 'sold' ? 'Registrar Venta' : 'Guardar en Stock')}
+                    {getSubmitLabel()}
                 </button>
             </div>
         </form>
     );
 }
 
+function BulkPricingBoard({
+    totalPaid,
+    setTotalPaid,
+    batchItems,
+    setBatchItems,
+    inventoryItems,
+    onInventoryRefresh
+}: {
+    totalPaid: number;
+    setTotalPaid: React.Dispatch<React.SetStateAction<number>>;
+    batchItems: PricingItem[];
+    setBatchItems: React.Dispatch<React.SetStateAction<PricingItem[]>>;
+    inventoryItems: Item[];
+    onInventoryRefresh: () => Promise<void>;
+}) {
+    const [newName, setNewName] = useState('');
+    const [newQty, setNewQty] = useState('1');
+    const [newListedPrice, setNewListedPrice] = useState('');
+    const [newSalePrice, setNewSalePrice] = useState('');
+    const [totalPaidInput, setTotalPaidInput] = useState('');
+    const [history, setHistory] = useState<BatchRecord[]>([]);
+
+    const formatMoney = (value?: number) => {
+        const numeric = Number(value || 0);
+        if (!numeric) return '';
+        return new Intl.NumberFormat('es-AR').format(Math.round(numeric));
+    };
+
+    const parseMoneyInput = (raw: string): number => {
+        const digits = raw.replace(/[^\d]/g, '');
+        if (!digits) return 0;
+        return Number(digits);
+    };
+
+    useEffect(() => {
+        setTotalPaidInput(formatMoney(totalPaid));
+    }, [totalPaid]);
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('pricing_batch_history_v1');
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as BatchRecord[];
+            setHistory(Array.isArray(parsed) ? parsed : []);
+        } catch (error) {
+            console.error('Error loading batch history', error);
+        }
+    }, []);
+
+    const listedSubtotal = batchItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
+    const allocationFactor = listedSubtotal > 0 ? totalPaid / listedSubtotal : 1;
+    const totalTargetRevenue = batchItems.reduce((acc, item) => {
+        return acc + (item.unitSalePrice * item.quantity);
+    }, 0);
+
+    const expectedProfit = totalTargetRevenue - totalPaid;
+
+    const addItem = () => {
+        const quantity = Math.max(1, Math.floor(Number(newQty) || 1));
+        const listedPrice = parseMoneyInput(newListedPrice);
+        const salePrice = parseMoneyInput(newSalePrice);
+
+        if (!newName.trim() || listedPrice <= 0 || salePrice <= 0) {
+            alert('Completa nombre, precio de lista y venta unitario.');
+            return;
+        }
+
+        setBatchItems((prev) => [
+            ...prev,
+            {
+                id: crypto.randomUUID(),
+                productName: newName.trim(),
+                quantity,
+                listedUnitPrice: listedPrice,
+                unitSalePrice: salePrice,
+                condition: 'nuevo'
+            }
+        ]);
+
+        setNewName('');
+        setNewQty('1');
+        setNewListedPrice('');
+        setNewSalePrice('');
+    };
+
+    const sendBatchToStock = async () => {
+        if (batchItems.length === 0) {
+            alert('Primero agrega productos a la tanda.');
+            return;
+        }
+
+        try {
+            for (const item of batchItems) {
+                const adjustedUnitCost = Math.round(item.listedUnitPrice * allocationFactor);
+                const nowIso = new Date().toISOString();
+
+                const existingStock = inventoryItems.find((stockItem) =>
+                    stockItem.status === 'in_stock' &&
+                    stockItem.productName === item.productName &&
+                    stockItem.condition === item.condition &&
+                    Math.round(stockItem.purchasePrice) === adjustedUnitCost
+                );
+
+                if (existingStock) {
+                    await itemService.updateItem(existingStock.id, {
+                        quantity: existingStock.quantity + item.quantity,
+                        salePrice: item.unitSalePrice,
+                        condition: item.condition
+                    });
+                } else {
+                    await itemService.createItem({
+                        productName: item.productName,
+                        purchasePrice: adjustedUnitCost,
+                        salePrice: item.unitSalePrice,
+                        quantity: item.quantity,
+                        date: nowIso,
+                        status: 'in_stock',
+                        condition: item.condition
+                    });
+                }
+            }
+
+            const record: BatchRecord = {
+                id: crypto.randomUUID(),
+                createdAt: new Date().toISOString(),
+                totalPaid,
+                totalRevenue: totalTargetRevenue,
+                profit: expectedProfit,
+                itemsCount: batchItems.length
+            };
+            const nextHistory = [record, ...history].slice(0, 50);
+            setHistory(nextHistory);
+            localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
+
+            setBatchItems([]);
+            await onInventoryRefresh();
+            alert('Tanda agregada al stock y ganancia registrada.');
+        } catch (error) {
+            console.error('Error sending batch to stock', error);
+            alert('Hubo un error al pasar la tanda al stock.');
+        }
+    };
+
+    return (
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-800">Pedido por Tanda (descuento global)</h2>
+                <p className="text-sm text-gray-500 mt-1">Tú pones la venta unitaria. El margen se calcula automáticamente según el costo ajustado.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Total pagado del pedido</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={totalPaidInput}
+                            onChange={(e) => {
+                                const value = parseMoneyInput(e.target.value);
+                                setTotalPaidInput(formatMoney(value));
+                                setTotalPaid(value);
+                            }}
+                            placeholder="Ej: 200.000"
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        />
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2">
+                        <p className="text-xs text-gray-500">Subtotal precios de lista</p>
+                        <p className="font-semibold text-gray-900">${listedSubtotal.toLocaleString('es-AR')}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2">
+                        <p className="text-xs text-gray-500">Factor de ajuste</p>
+                        <p className="font-semibold text-gray-900">{allocationFactor.toFixed(4)}x</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+                <h3 className="text-base font-bold text-gray-800 mb-3">Agregar producto al pedido</h3>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <input
+                        type="text"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="Nombre del producto"
+                        className="md:col-span-2 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    />
+                    <input
+                        type="number"
+                        min="1"
+                        value={newQty}
+                        onChange={(e) => setNewQty(e.target.value)}
+                        placeholder="Cantidad"
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    />
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={newListedPrice}
+                        onChange={(e) => {
+                            const value = parseMoneyInput(e.target.value);
+                            setNewListedPrice(formatMoney(value));
+                        }}
+                        placeholder="Precio lista unit."
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    />
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={newSalePrice}
+                        onChange={(e) => {
+                            const value = parseMoneyInput(e.target.value);
+                            setNewSalePrice(formatMoney(value));
+                        }}
+                        placeholder="Venta unit."
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                        onClick={addItem}
+                        className="bg-black text-white px-4 py-2 rounded-xl text-sm font-medium"
+                    >
+                        Agregar a la tanda
+                    </button>
+                    <button
+                        onClick={sendBatchToStock}
+                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
+                    >
+                        Pasar tanda a stock
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+                <table className="w-full text-sm text-gray-700">
+                    <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
+                        <tr>
+                            <th className="px-4 py-3 text-left">Producto</th>
+                            <th className="px-4 py-3 text-center">Cant.</th>
+                            <th className="px-4 py-3 text-right">Lista Unit.</th>
+                            <th className="px-4 py-3 text-right">Costo Ajustado Unit.</th>
+                            <th className="px-4 py-3 text-right">Venta Unit.</th>
+                            <th className="px-4 py-3 text-center">Margen %</th>
+                            <th className="px-4 py-3 text-right">Ganancia Total</th>
+                            <th className="px-4 py-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {batchItems.map((item) => {
+                            const adjustedUnitCost = item.listedUnitPrice * allocationFactor;
+                            const marginPercent = adjustedUnitCost > 0
+                                ? ((item.unitSalePrice - adjustedUnitCost) / adjustedUnitCost) * 100
+                                : 0;
+                            const totalProfit = (item.unitSalePrice - adjustedUnitCost) * item.quantity;
+
+                            return (
+                                <tr key={item.id}>
+                                    <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
+                                    <td className="px-4 py-3 text-center">{item.quantity}</td>
+                                    <td className="px-4 py-3 text-right">${Math.round(item.listedUnitPrice).toLocaleString('es-AR')}</td>
+                                    <td className="px-4 py-3 text-right">${Math.round(adjustedUnitCost).toLocaleString('es-AR')}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatMoney(item.unitSalePrice)}
+                                            onChange={(e) => {
+                                                const unitSalePrice = parseMoneyInput(e.target.value);
+                                                setBatchItems((prev) => prev.map((p) => p.id === item.id
+                                                    ? { ...p, unitSalePrice }
+                                                    : p));
+                                            }}
+                                            className="w-28 px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-right"
+                                        />
+                                    </td>
+                                    <td className="px-4 py-3 text-center font-semibold text-gray-700">
+                                        {Number.isFinite(marginPercent) ? `${marginPercent.toFixed(1)}%` : '0%'}
+                                    </td>
+                                    <td className={`px-4 py-3 text-right font-semibold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        ${Math.round(totalProfit).toLocaleString('es-AR')}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <button
+                                            onClick={() => setBatchItems((prev) => prev.filter((p) => p.id !== item.id))}
+                                            className="text-rose-600 hover:text-rose-700"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <p className="text-xs text-gray-500">Total invertido</p>
+                    <p className="text-lg font-bold text-gray-900">${Math.round(totalPaid).toLocaleString('es-AR')}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <p className="text-xs text-gray-500">Total esperado de venta</p>
+                    <p className="text-lg font-bold text-gray-900">${Math.round(totalTargetRevenue).toLocaleString('es-AR')}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <p className="text-xs text-gray-500">Ganancia esperada</p>
+                    <p className={`text-lg font-bold ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        ${Math.round(expectedProfit).toLocaleString('es-AR')}
+                    </p>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6">
+                <h3 className="text-base font-bold text-gray-800 mb-3">Historial de Tandas</h3>
+                {history.length === 0 ? (
+                    <p className="text-sm text-gray-500">Sin registros todavía.</p>
+                ) : (
+                    <div className="space-y-2">
+                        {history.slice(0, 8).map((record) => (
+                            <div key={record.id} className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div className="text-gray-700">
+                                    <p className="font-semibold">{new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</p>
+                                    <p className="text-xs text-gray-500">Invertido: ${Math.round(record.totalPaid).toLocaleString('es-AR')} | Venta esperada: ${Math.round(record.totalRevenue).toLocaleString('es-AR')}</p>
+                                </div>
+                                <p className={`font-bold ${record.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    ${Math.round(record.profit).toLocaleString('es-AR')}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title: string, value: string, icon: React.ReactNode, trend?: string, trendColor?: string, bgColor: string }) {
     return (
-        <div className={`${bgColor} p-6 rounded-2xl shadow-sm border border-gray-100 transition-all hover:shadow-md`}>
-            <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-gray-50 rounded-xl">
+        <div className={`${bgColor} p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100 transition-all hover:shadow-md`}>
+            <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
+                <div className="p-2.5 sm:p-3 bg-gray-50 rounded-xl">
                     {icon}
                 </div>
                 {trend && (
@@ -710,8 +1698,8 @@ function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title:
                 )}
             </div>
             <div>
-                <p className="text-gray-500 text-sm font-medium mb-1">{title}</p>
-                <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{value}</h3>
+                <p className="text-gray-500 text-xs sm:text-sm font-medium mb-1">{title}</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight leading-tight">{value}</h3>
             </div>
         </div>
     );

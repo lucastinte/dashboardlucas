@@ -3,6 +3,7 @@
 
 -- Create the enum for status
 create type item_status as enum ('in_stock', 'sold');
+create type item_condition as enum ('nuevo', 'semi_uso', 'usado');
 
 create table items (
   id uuid default gen_random_uuid() primary key,
@@ -13,8 +14,13 @@ create table items (
   sale_price numeric,
   quantity integer not null default 1,
   sale_date timestamptz,
-  status item_status not null default 'in_stock'
+  status item_status not null default 'in_stock',
+  item_condition item_condition not null default 'nuevo'
 );
+
+-- If your table already exists, run these too:
+alter table items
+add column if not exists item_condition item_condition not null default 'nuevo';
 
 -- Enable Row Level Security (RLS)
 alter table items enable row level security;

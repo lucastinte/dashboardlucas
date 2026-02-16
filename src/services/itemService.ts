@@ -1,6 +1,18 @@
 
 import { supabase } from '../lib/supabase';
-import type { Item, ItemStatus } from '../types';
+import type { Item, ItemCondition, ItemStatus } from '../types';
+
+const isMissingConditionColumnError = (error: { message?: string; details?: string; hint?: string } | null) => {
+    if (!error) return false;
+    const combined = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase();
+    return combined.includes('item_condition') || combined.includes('column') && combined.includes('condition');
+};
+
+const withoutCondition = <T extends Record<string, unknown>>(payload: T) => {
+    const { item_condition, ...rest } = payload;
+    void item_condition;
+    return rest;
+};
 
 // Helper to map DB columns (snake_case) to application model (camelCase)
 const mapFromDb = (dbItem: any): Item => ({
@@ -11,7 +23,8 @@ const mapFromDb = (dbItem: any): Item => ({
     quantity: Number(dbItem.quantity),
     date: dbItem.date || dbItem.created_at, // Use explicit date or fallback
     saleDate: dbItem.sale_date || undefined,
-    status: dbItem.status as ItemStatus
+    status: dbItem.status as ItemStatus,
+    condition: (dbItem.item_condition || 'nuevo') as ItemCondition
 });
 
 // Helper to map application model to DB columns
@@ -24,6 +37,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.date !== undefined) dbItem.date = item.date;
     if (item.saleDate !== undefined) dbItem.sale_date = item.saleDate;
     if (item.status !== undefined) dbItem.status = item.status;
+    if (item.condition !== undefined) dbItem.item_condition = item.condition;
     return dbItem;
 };
 
@@ -40,12 +54,21 @@ export const itemService = {
 
     async createItem(item: Omit<Item, 'id'>): Promise<Item> {
         const dbItem = mapToDb(item);
-        // Let Supabase generate ID and created_at if not provided
-        const { data, error } = await supabase
+
+        let { data, error } = await supabase
             .from('items')
             .insert(dbItem)
             .select()
             .single();
+
+        // Backward compatibility: DB may not have item_condition yet.
+        if (isMissingConditionColumnError(error) && 'item_condition' in dbItem) {
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutCondition(dbItem))
+                .select()
+                .single());
+        }
 
         if (error) throw error;
         return mapFromDb(data);
@@ -53,12 +76,23 @@ export const itemService = {
 
     async updateItem(id: string, updates: Partial<Item>): Promise<Item> {
         const dbUpdates = mapToDb(updates);
-        const { data, error } = await supabase
+
+        let { data, error } = await supabase
             .from('items')
             .update(dbUpdates)
             .eq('id', id)
             .select()
             .single();
+
+        // Backward compatibility: DB may not have item_condition yet.
+        if (isMissingConditionColumnError(error) && 'item_condition' in dbUpdates) {
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutCondition(dbUpdates))
+                .eq('id', id)
+                .select()
+                .single());
+        }
 
         if (error) throw error;
         return mapFromDb(data);

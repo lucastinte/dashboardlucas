@@ -1,4 +1,5 @@
 export type ItemStatus = 'in_stock' | 'sold';
+export type ItemCondition = 'nuevo' | 'semi_uso' | 'usado';
 
 export interface Item {
     id: string;
@@ -9,6 +10,7 @@ export interface Item {
     date: string; // Purchase date or Creation date
     saleDate?: string; // Only if sold
     status: ItemStatus;
+    condition: ItemCondition;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
