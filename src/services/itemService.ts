@@ -176,7 +176,19 @@ export const itemService = {
             .single();
 
         if (error) throw error;
-        return data;
+
+        return {
+            id: data.id,
+            batchCode: data.batch_code,
+            batchType: data.batch_type,
+            createdAt: data.created_at,
+            totalPaid: Number(data.total_paid),
+            totalSellRevenue: Number(data.total_sell_revenue),
+            cashProfit: Number(data.cash_profit),
+            retainedValue: Number(data.retained_value),
+            itemsCount: Number(data.items_count),
+            items: data.items_json
+        };
     },
 
     async deleteBatch(id: string): Promise<void> {

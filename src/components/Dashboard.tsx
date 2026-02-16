@@ -1670,35 +1670,35 @@ function BulkPricingBoard({
     }, [totalPaid]);
 
     useEffect(() => {
-        try {
-            const raw = localStorage.getItem('pricing_batch_history_v1');
-            if (!raw) return;
-            const parsed = JSON.parse(raw) as Array<Partial<BatchRecord> & { totalRevenue?: number; profit?: number; items?: Partial<PricingItem>[] }>;
-            const normalized = (Array.isArray(parsed) ? parsed : []).map((record) => ({
-                id: record.id || crypto.randomUUID(),
-                batchCode: record.batchCode || `T-${new Date(record.createdAt || Date.now()).getTime().toString().slice(-6)}`,
-                batchType: (record.batchType as BatchRecord['batchType']) || ((Number(record.retainedValue) || 0) > 0 ? 'mixta' : 'venta'),
-                createdAt: record.createdAt || new Date().toISOString(),
-                totalPaid: Number(record.totalPaid) || 0,
-                totalSellRevenue: Number(record.totalSellRevenue ?? record.totalRevenue) || 0,
-                cashProfit: Number(record.cashProfit ?? record.profit) || 0,
-                retainedValue: Number(record.retainedValue) || 0,
-                itemsCount: Number(record.itemsCount) || (Array.isArray(record.items) ? record.items.length : 0),
-                items: (record.items || []).map((item) => ({
-                    id: item.id || crypto.randomUUID(),
-                    productName: item.productName || 'Producto',
-                    quantity: Number(item.quantity) || 1,
-                    listedUnitPrice: Number(item.listedUnitPrice) || 0,
-                    unitSalePrice: Number(item.unitSalePrice) || 0,
-                    condition: (item.condition as ItemCondition) || 'nuevo',
-                    disposition: (item.disposition as 'sell' | 'keep') || 'sell'
-                }))
-            }));
-            setHistory(normalized);
-            localStorage.setItem('pricing_batch_history_v1', JSON.stringify(normalized));
-        } catch (error) {
-            console.error('Error loading batch history', error);
-        }
+        const loadHistory = async () => {
+            try {
+                // Prioritize Supabase batches
+                const dbBatches = await itemService.getBatches();
+
+                if (dbBatches && dbBatches.length > 0) {
+                    setHistory(dbBatches);
+                    // Update local storage as a cache
+                    localStorage.setItem('pricing_batch_history_v1', JSON.stringify(dbBatches));
+                } else {
+                    // Fallback to local storage if DB is empty
+                    const raw = localStorage.getItem('pricing_batch_history_v1');
+                    if (raw) {
+                        const parsed = JSON.parse(raw) as BatchRecord[];
+                        if (Array.isArray(parsed)) setHistory(parsed);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading history from Supabase, trying local', error);
+                const raw = localStorage.getItem('pricing_batch_history_v1');
+                if (raw) {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) setHistory(parsed);
+                    } catch (e) { }
+                }
+            }
+        };
+        loadHistory();
     }, []);
 
     const safeMoney = (value: number) => {
@@ -1743,6 +1743,9 @@ function BulkPricingBoard({
                 await itemService.deleteItem(item.id);
             }
 
+            // Delete from Supabase
+            await itemService.deleteBatch(recordId);
+
             const nextHistory = history.filter((record) => record.id !== recordId);
             setHistory(nextHistory);
             localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
@@ -1756,10 +1759,10 @@ function BulkPricingBoard({
             });
 
             await onInventoryRefresh();
-            alert(`Tanda ${target.batchCode} eliminada junto con ${relatedItems.length} productos vinculados.`);
+            alert(`Tanda ${target.batchCode} eliminada.`);
         } catch (error) {
-            console.error('Error deleting batch and related items', error);
-            alert('Hubo un error al eliminar la tanda completa.');
+            console.error('Error deleting batch', error);
+            alert('Hubo un error al eliminar la tanda.');
         }
     };
 
@@ -1861,8 +1864,7 @@ function BulkPricingBoard({
                 }
             }
 
-            const record: BatchRecord = {
-                id: crypto.randomUUID(),
+            const record: Omit<BatchRecord, 'id'> = {
                 batchCode,
                 batchType,
                 createdAt: new Date().toISOString(),
@@ -1873,7 +1875,11 @@ function BulkPricingBoard({
                 itemsCount: normalizedItems.length,
                 items: normalizedItems.map((item) => ({ ...item }))
             };
-            const nextHistory = [record, ...history].slice(0, 50);
+
+            // Save to Supabase
+            const savedBatch = await itemService.createBatch(record);
+
+            const nextHistory = [savedBatch, ...history].slice(0, 50);
             setHistory(nextHistory);
             localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
 
