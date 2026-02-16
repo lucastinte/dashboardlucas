@@ -11,6 +11,7 @@ export interface Item {
     saleDate?: string; // Only if sold
     status: ItemStatus;
     condition: ItemCondition;
+    batchRef?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

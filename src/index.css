@@ -102,6 +102,16 @@ html.dark textarea::placeholder {
   color: #64748b !important;
 }
 
+html.dark .stock-default-note {
+  background: linear-gradient(180deg, #1a2437 0%, #121c30 100%) !important;
+  border-color: #3b4a65 !important;
+  color: #a8bad5 !important;
+}
+
+html.dark .stock-default-note strong {
+  color: #f1f5f9 !important;
+}
+
 html.dark .shadow-sm,
 html.dark .shadow-md,
 html.dark .shadow-lg,

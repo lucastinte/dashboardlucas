@@ -2,15 +2,15 @@
 import { supabase } from '../lib/supabase';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 
-const isMissingConditionColumnError = (error: { message?: string; details?: string; hint?: string } | null) => {
+const hasMissingColumn = (error: { message?: string; details?: string; hint?: string } | null, column: string) => {
     if (!error) return false;
     const combined = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase();
-    return combined.includes('item_condition') || combined.includes('column') && combined.includes('condition');
+    return combined.includes(column.toLowerCase());
 };
 
-const withoutCondition = <T extends Record<string, unknown>>(payload: T) => {
-    const { item_condition, ...rest } = payload;
-    void item_condition;
+const withoutColumns = <T extends Record<string, unknown>>(payload: T, columns: string[]) => {
+    const rest = { ...payload };
+    for (const col of columns) delete rest[col];
     return rest;
 };
 
@@ -24,7 +24,8 @@ const mapFromDb = (dbItem: any): Item => ({
     date: dbItem.date || dbItem.created_at, // Use explicit date or fallback
     saleDate: dbItem.sale_date || undefined,
     status: dbItem.status as ItemStatus,
-    condition: (dbItem.item_condition || 'nuevo') as ItemCondition
+    condition: (dbItem.item_condition || 'nuevo') as ItemCondition,
+    batchRef: dbItem.batch_ref || undefined
 });
 
 // Helper to map application model to DB columns
@@ -38,6 +39,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.saleDate !== undefined) dbItem.sale_date = item.saleDate;
     if (item.status !== undefined) dbItem.status = item.status;
     if (item.condition !== undefined) dbItem.item_condition = item.condition;
+    if (item.batchRef !== undefined) dbItem.batch_ref = item.batchRef;
     return dbItem;
 };
 
@@ -61,11 +63,18 @@ export const itemService = {
             .select()
             .single();
 
-        // Backward compatibility: DB may not have item_condition yet.
-        if (isMissingConditionColumnError(error) && 'item_condition' in dbItem) {
+        // Backward compatibility: DB may not have newer optional columns yet.
+        if (hasMissingColumn(error, 'item_condition') && 'item_condition' in dbItem) {
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutCondition(dbItem))
+                .insert(withoutColumns(dbItem, ['item_condition']))
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbItem) {
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['batch_ref']))
                 .select()
                 .single());
         }
@@ -84,11 +93,19 @@ export const itemService = {
             .select()
             .single();
 
-        // Backward compatibility: DB may not have item_condition yet.
-        if (isMissingConditionColumnError(error) && 'item_condition' in dbUpdates) {
+        // Backward compatibility: DB may not have newer optional columns yet.
+        if (hasMissingColumn(error, 'item_condition') && 'item_condition' in dbUpdates) {
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutCondition(dbUpdates))
+                .update(withoutColumns(dbUpdates, ['item_condition']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbUpdates) {
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['batch_ref']))
                 .eq('id', id)
                 .select()
                 .single());

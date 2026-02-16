@@ -13,21 +13,109 @@ type PricingItem = {
     listedUnitPrice: number;
     unitSalePrice: number;
     condition: ItemCondition;
+    disposition: 'sell' | 'keep';
 };
 
 type BatchRecord = {
     id: string;
+    batchCode: string;
+    batchType: 'venta' | 'mixta' | 'retenido';
     createdAt: string;
     totalPaid: number;
-    totalRevenue: number;
-    profit: number;
+    totalSellRevenue: number;
+    cashProfit: number;
+    retainedValue: number;
     itemsCount: number;
+    items: PricingItem[];
 };
 
 const conditionLabelMap: Record<ItemCondition, string> = {
     nuevo: 'Nuevo',
     semi_uso: 'Semi uso',
     usado: 'Usado'
+};
+
+const getBatchLabel = (batchRef?: string) => {
+    if (!batchRef) return 'Sin tanda';
+    const digits = batchRef.match(/\d+/)?.[0];
+    if (!digits) return batchRef;
+    return `N° ${Number(digits)}`;
+};
+
+const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const reconcileItemBatchMap = (inventoryItems: Item[], currentMap: Record<string, string>) => {
+    if (inventoryItems.length === 0) return null;
+
+    let parsedHistory: Array<Partial<BatchRecord>> = [];
+    try {
+        const raw = localStorage.getItem('pricing_batch_history_v1');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        parsedHistory = Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.error('Error reading batch history for reconciliation', error);
+        return null;
+    }
+
+    const history = parsedHistory
+        .filter((record) => typeof record?.batchCode === 'string' && record.batchCode)
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+    if (history.length === 0) return null;
+
+    const nextMap = { ...currentMap };
+    const usedIds = new Set<string>();
+    let changed = false;
+
+    const unassigned = inventoryItems.filter((item) => {
+        const alreadyTagged = item.batchRef || nextMap[item.id];
+        return item.status === 'in_stock' && !alreadyTagged;
+    });
+
+    for (const record of history) {
+        const batchCode = record.batchCode as string;
+        const recordDate = new Date(record.createdAt || Date.now()).getTime();
+        const recordItems = (Array.isArray(record.items) ? record.items : [])
+            .map((entry) => ({
+                productName: entry?.productName || '',
+                quantity: Number(entry?.quantity) || 1,
+                unitSalePrice: Number(entry?.unitSalePrice) || 0,
+                condition: (entry?.condition as ItemCondition) || 'nuevo',
+                disposition: (entry?.disposition as 'sell' | 'keep') || 'sell'
+            }))
+            .filter((entry) => entry.disposition !== 'keep' && entry.productName);
+
+        for (const recordItem of recordItems) {
+            const candidates = unassigned
+                .filter((item) => !usedIds.has(item.id))
+                .filter((item) => normalizeText(item.productName) === normalizeText(recordItem.productName))
+                .filter((item) => (item.condition || 'nuevo') === recordItem.condition);
+
+            if (candidates.length === 0) continue;
+
+            const bestMatch = [...candidates].sort((a, b) => {
+                const aSaleMatch = Math.round(a.salePrice || 0) === Math.round(recordItem.unitSalePrice || 0) ? 1 : 0;
+                const bSaleMatch = Math.round(b.salePrice || 0) === Math.round(recordItem.unitSalePrice || 0) ? 1 : 0;
+                if (aSaleMatch !== bSaleMatch) return bSaleMatch - aSaleMatch;
+
+                const aQtyDistance = Math.abs((a.quantity || 0) - recordItem.quantity);
+                const bQtyDistance = Math.abs((b.quantity || 0) - recordItem.quantity);
+                if (aQtyDistance !== bQtyDistance) return aQtyDistance - bQtyDistance;
+
+                const aDateDistance = Math.abs(new Date(a.date).getTime() - recordDate);
+                const bDateDistance = Math.abs(new Date(b.date).getTime() - recordDate);
+                return aDateDistance - bDateDistance;
+            })[0];
+
+            if (!bestMatch) continue;
+            nextMap[bestMatch.id] = batchCode;
+            usedIds.add(bestMatch.id);
+            changed = true;
+        }
+    }
+
+    return changed ? nextMap : null;
 };
 
 export default function Dashboard() {
@@ -44,6 +132,8 @@ export default function Dashboard() {
     const [editingItem, setEditingItem] = useState<Item | null>(null);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
+    const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
+    const getItemBatchRef = (item: Item) => item.batchRef || itemBatchMap[item.id];
 
     // Form State
     const [formData, setFormData] = useState<Partial<Item>>({
@@ -73,11 +163,33 @@ export default function Dashboard() {
     }, []);
 
     useEffect(() => {
+        try {
+            const raw = localStorage.getItem('item_batch_map_v1');
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as Record<string, string>;
+            setItemBatchMap(parsed && typeof parsed === 'object' ? parsed : {});
+        } catch (error) {
+            console.error('Error loading item batch map', error);
+        }
+    }, []);
+
+    useEffect(() => {
         localStorage.setItem('pricing_batch_v1', JSON.stringify({
             totalPaid: batchTotalPaid,
             items: batchItems
         }));
     }, [batchTotalPaid, batchItems]);
+
+    useEffect(() => {
+        localStorage.setItem('item_batch_map_v1', JSON.stringify(itemBatchMap));
+    }, [itemBatchMap]);
+
+    useEffect(() => {
+        setItemBatchMap((prev) => {
+            const reconciled = reconcileItemBatchMap(items, prev);
+            return reconciled || prev;
+        });
+    }, [items]);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -165,6 +277,7 @@ export default function Dashboard() {
                         date: editingItem.date,
                         status: 'sold',
                         condition: editingItem.condition,
+                        batchRef: editingItem.batchRef,
                         saleDate: formDateISO
                     });
 
@@ -197,7 +310,8 @@ export default function Dashboard() {
                         i.status === 'in_stock' &&
                         i.productName === (formData.productName || editingItem.productName) &&
                         i.purchasePrice === (Number(formData.purchasePrice) || editingItem.purchasePrice) &&
-                        i.condition === condition
+                        i.condition === condition &&
+                        getItemBatchRef(i) === editingItem.batchRef
                     );
 
                     if (existingStock) {
@@ -221,7 +335,8 @@ export default function Dashboard() {
                     date: formDateISO,
                     saleDate,
                     status,
-                    condition
+                    condition,
+                    batchRef: editingItem.batchRef
                 };
 
                 // Optimistic UI update
@@ -286,9 +401,11 @@ export default function Dashboard() {
 
 
     const startEdit = (item: Item) => {
-        setEditingItem(item);
+        const resolvedBatchRef = getItemBatchRef(item);
+        setEditingItem({ ...item, batchRef: resolvedBatchRef });
         setFormData({
             ...item,
+            batchRef: resolvedBatchRef,
             date: item.saleDate ? item.saleDate.split('T')[0] : item.date.split('T')[0]
         });
         setIsModalOpen(true);
@@ -316,6 +433,8 @@ export default function Dashboard() {
     // Metrics Calculations
     const soldItems = items.filter(i => i.status === 'sold');
     const stockItems = items.filter(i => i.status === 'in_stock');
+    const soldBatchRefs = Array.from(new Set(soldItems.map(getItemBatchRef).filter(Boolean)));
+    const soldDirectCount = soldItems.filter(i => !getItemBatchRef(i)).length;
 
     const totalSales = soldItems.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
     const totalCostSold = soldItems.reduce((acc, item) => acc + (item.purchasePrice * item.quantity), 0);
@@ -456,7 +575,10 @@ export default function Dashboard() {
                             <div className="p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-gray-50/30">
                                 <div className="flex items-center gap-2">
                                     <History className="w-5 h-5 text-gray-500" />
-                                    <h2 className="text-lg sm:text-xl font-bold text-gray-800">Historial de Ventas</h2>
+                                    <div>
+                                        <h2 className="text-lg sm:text-xl font-bold text-gray-800">Historial de Ventas</h2>
+                                        <p className="text-xs text-gray-500">Tandas: {soldBatchRefs.length} | Ventas directas: {soldDirectCount}</p>
+                                    </div>
                                 </div>
                                 <button
                                     onClick={() => openNewModal('sold')}
@@ -466,7 +588,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -488,14 +610,16 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} onEdit={startEdit} onDelete={handleDeleteItem} onSell={(item) => {
-                                setEditingItem(item);
+                            <InventoryTable items={stockItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSell={(item) => {
+                                const resolvedBatchRef = getItemBatchRef(item);
+                                setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
                                     ...item,
                                     status: 'sold',
                                     quantity: 1,
                                     salePrice: item.salePrice || item.purchasePrice,
                                     condition: item.condition || 'nuevo',
+                                    batchRef: resolvedBatchRef,
                                     date: new Date().toISOString().split('T')[0]
                                 });
                                 setIsModalOpen(true);
@@ -510,6 +634,8 @@ export default function Dashboard() {
                         setBatchItems={setBatchItems}
                         inventoryItems={items}
                         onInventoryRefresh={loadItems}
+                        itemBatchMap={itemBatchMap}
+                        setItemBatchMap={setItemBatchMap}
                     />
                 )}
             </div>
@@ -559,7 +685,12 @@ export default function Dashboard() {
 
 // Subcomponents
 
-function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: Item) => void, onDelete: (id: string) => void }) {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
+    items: Item[],
+    onEdit: (i: Item) => void,
+    onDelete: (id: string) => void,
+    resolveBatchRef: (item: Item) => string | undefined
+}) {
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
     }
@@ -603,6 +734,10 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                                     <p className="text-gray-400 text-xs">Estado</p>
                                     <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
                                 </div>
+                                <div className="col-span-2">
+                                    <p className="text-gray-400 text-xs">Tanda</p>
+                                    <p className="font-medium text-gray-700">{resolveBatchRef(item) || 'Venta directa'}</p>
+                                </div>
                             </div>
                             <div className="mt-4 flex gap-2">
                                 <button
@@ -634,6 +769,7 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                         <th className="px-6 py-4 text-right">Venta (Unit)</th>
                         <th className="px-6 py-4 text-right">Ganancia</th>
                         <th className="px-6 py-4 text-center">Estado</th>
+                        <th className="px-6 py-4 text-center">Tanda</th>
                         <th className="px-6 py-4 text-center">Fecha Venta</th>
                         <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
@@ -658,6 +794,9 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
                                 </td>
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                     {conditionLabelMap[item.condition || 'nuevo']}
+                                </td>
+                                <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
+                                    {resolveBatchRef(item) || 'Directa'}
                                 </td>
                                 <td className="px-6 py-4 text-center text-gray-400 text-xs">
                                     {item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}
@@ -690,7 +829,13 @@ function SalesTable({ items, onEdit, onDelete }: { items: Item[], onEdit: (i: It
     );
 }
 
-function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], onEdit: (i: Item) => void, onDelete: (id: string) => void, onSell: (i: Item) => void }) {
+function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
+    items: Item[],
+    onEdit: (i: Item) => void,
+    onDelete: (id: string) => void,
+    onSell: (i: Item) => void,
+    resolveBatchRef: (item: Item) => string | undefined
+}) {
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
@@ -728,6 +873,10 @@ function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], on
                                 <div className="col-span-2">
                                     <p className="text-gray-400 text-xs">Estado</p>
                                     <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
+                                </div>
+                                <div className="col-span-2">
+                                    <p className="text-gray-400 text-xs">Tanda</p>
+                                    <p className="font-medium text-gray-700">{getBatchLabel(resolveBatchRef(item))}</p>
                                 </div>
                             </div>
                         <div className="mt-4 space-y-2">
@@ -768,6 +917,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], on
                         <th className="px-6 py-4 text-right">Reventa Unit.</th>
                         <th className="px-6 py-4 text-right">Valor Total</th>
                         <th className="px-6 py-4 text-center">Estado</th>
+                        <th className="px-6 py-4 text-center">Tanda</th>
                         <th className="px-6 py-4 text-center">Fecha Ingreso</th>
                         <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
@@ -786,6 +936,9 @@ function InventoryTable({ items, onEdit, onDelete, onSell }: { items: Item[], on
                             <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                 {conditionLabelMap[item.condition || 'nuevo']}
+                            </td>
+                            <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                {getBatchLabel(resolveBatchRef(item))}
                             </td>
                             <td className="px-6 py-4 text-center text-gray-400 text-xs">
                                 {new Date(item.date).toLocaleDateString()}
@@ -1322,7 +1475,7 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     />
                 </div>
                 <div>
-                    <div className="h-full rounded-xl border border-dashed border-gray-200 bg-gray-50/60 flex items-center justify-center px-4 py-3 text-xs text-gray-500">
+                    <div className="stock-default-note h-full rounded-xl border border-dashed border-gray-200 bg-gray-50/60 flex items-center justify-center px-4 py-3 text-xs text-gray-500">
                         El estado por defecto es <strong className="ml-1 text-gray-700">Nuevo</strong>.
                     </div>
                 </div>
@@ -1354,7 +1507,9 @@ function BulkPricingBoard({
     batchItems,
     setBatchItems,
     inventoryItems,
-    onInventoryRefresh
+    onInventoryRefresh,
+    itemBatchMap,
+    setItemBatchMap
 }: {
     totalPaid: number;
     setTotalPaid: React.Dispatch<React.SetStateAction<number>>;
@@ -1362,13 +1517,17 @@ function BulkPricingBoard({
     setBatchItems: React.Dispatch<React.SetStateAction<PricingItem[]>>;
     inventoryItems: Item[];
     onInventoryRefresh: () => Promise<void>;
+    itemBatchMap: Record<string, string>;
+    setItemBatchMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
     const [newName, setNewName] = useState('');
     const [newQty, setNewQty] = useState('1');
     const [newListedPrice, setNewListedPrice] = useState('');
     const [newSalePrice, setNewSalePrice] = useState('');
+    const [newDisposition, setNewDisposition] = useState<'sell' | 'keep'>('sell');
     const [totalPaidInput, setTotalPaidInput] = useState('');
     const [history, setHistory] = useState<BatchRecord[]>([]);
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
     const formatMoney = (value?: number) => {
         const numeric = Number(value || 0);
@@ -1390,28 +1549,123 @@ function BulkPricingBoard({
         try {
             const raw = localStorage.getItem('pricing_batch_history_v1');
             if (!raw) return;
-            const parsed = JSON.parse(raw) as BatchRecord[];
-            setHistory(Array.isArray(parsed) ? parsed : []);
+            const parsed = JSON.parse(raw) as Array<Partial<BatchRecord> & { totalRevenue?: number; profit?: number; items?: Partial<PricingItem>[] }>;
+            const normalized = (Array.isArray(parsed) ? parsed : []).map((record) => ({
+                id: record.id || crypto.randomUUID(),
+                batchCode: record.batchCode || `T-${new Date(record.createdAt || Date.now()).getTime().toString().slice(-6)}`,
+                batchType: (record.batchType as BatchRecord['batchType']) || ((Number(record.retainedValue) || 0) > 0 ? 'mixta' : 'venta'),
+                createdAt: record.createdAt || new Date().toISOString(),
+                totalPaid: Number(record.totalPaid) || 0,
+                totalSellRevenue: Number(record.totalSellRevenue ?? record.totalRevenue) || 0,
+                cashProfit: Number(record.cashProfit ?? record.profit) || 0,
+                retainedValue: Number(record.retainedValue) || 0,
+                itemsCount: Number(record.itemsCount) || (Array.isArray(record.items) ? record.items.length : 0),
+                items: (record.items || []).map((item) => ({
+                    id: item.id || crypto.randomUUID(),
+                    productName: item.productName || 'Producto',
+                    quantity: Number(item.quantity) || 1,
+                    listedUnitPrice: Number(item.listedUnitPrice) || 0,
+                    unitSalePrice: Number(item.unitSalePrice) || 0,
+                    condition: (item.condition as ItemCondition) || 'nuevo',
+                    disposition: (item.disposition as 'sell' | 'keep') || 'sell'
+                }))
+            }));
+            setHistory(normalized);
+            localStorage.setItem('pricing_batch_history_v1', JSON.stringify(normalized));
         } catch (error) {
             console.error('Error loading batch history', error);
         }
     }, []);
 
-    const listedSubtotal = batchItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
-    const allocationFactor = listedSubtotal > 0 ? totalPaid / listedSubtotal : 1;
-    const totalTargetRevenue = batchItems.reduce((acc, item) => {
-        return acc + (item.unitSalePrice * item.quantity);
-    }, 0);
+    const safeMoney = (value: number) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? Math.round(numeric) : 0;
+    };
 
-    const expectedProfit = totalTargetRevenue - totalPaid;
+    const cloneItemsForTable = (items: PricingItem[]) => {
+        return items.map((item) => ({
+            ...item,
+            id: crypto.randomUUID()
+        }));
+    };
+
+    const selectedRecord = history.find((record) => record.id === selectedHistoryId) || null;
+    const selectedRecordItems: PricingItem[] = selectedRecord
+        ? ((selectedRecord.items && selectedRecord.items.length > 0)
+            ? selectedRecord.items
+            : inventoryItems
+                .filter((item) => (item.batchRef || itemBatchMap[item.id]) === selectedRecord.batchCode)
+                .map((item) => ({
+                    id: item.id,
+                    productName: item.productName,
+                    quantity: item.quantity,
+                    listedUnitPrice: item.purchasePrice,
+                    unitSalePrice: item.salePrice || item.purchasePrice,
+                    condition: item.condition,
+                    disposition: 'sell' as const
+                })))
+        : [];
+
+    const deleteBatchRecord = async (recordId: string) => {
+        const target = history.find((record) => record.id === recordId);
+        if (!target) return;
+
+        const ok = confirm(`¿Eliminar la tanda ${target.batchCode}? Se borrará también del inventario todo producto vinculado a esta tanda.`);
+        if (!ok) return;
+
+        try {
+            const relatedItems = inventoryItems.filter((item) => (item.batchRef || itemBatchMap[item.id]) === target.batchCode);
+            for (const item of relatedItems) {
+                await itemService.deleteItem(item.id);
+            }
+
+            const nextHistory = history.filter((record) => record.id !== recordId);
+            setHistory(nextHistory);
+            localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
+            if (selectedHistoryId === recordId) {
+                setSelectedHistoryId(null);
+            }
+            setItemBatchMap((prev) => {
+                const next = { ...prev };
+                for (const item of relatedItems) delete next[item.id];
+                return next;
+            });
+
+            await onInventoryRefresh();
+            alert(`Tanda ${target.batchCode} eliminada junto con ${relatedItems.length} productos vinculados.`);
+        } catch (error) {
+            console.error('Error deleting batch and related items', error);
+            alert('Hubo un error al eliminar la tanda completa.');
+        }
+    };
+
+    const normalizedItems = batchItems.map((item) => ({ ...item, disposition: item.disposition || 'sell' }));
+    const listedSubtotal = normalizedItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
+    const allocationFactor = listedSubtotal > 0 ? totalPaid / listedSubtotal : 1;
+    const totalSellRevenue = normalizedItems
+        .filter((item) => item.disposition === 'sell')
+        .reduce((acc, item) => acc + (item.unitSalePrice * item.quantity), 0);
+    const retainedValue = normalizedItems
+        .filter((item) => item.disposition === 'keep')
+        .reduce((acc, item) => acc + ((item.listedUnitPrice * allocationFactor) * item.quantity), 0);
+    const sellCostAdjusted = normalizedItems
+        .filter((item) => item.disposition === 'sell')
+        .reduce((acc, item) => acc + ((item.listedUnitPrice * allocationFactor) * item.quantity), 0);
+    const expectedProfit = totalSellRevenue - sellCostAdjusted;
+    const effectiveCostToRecover = Math.max(totalPaid - retainedValue, 0);
+    const totalEconomicValue = expectedProfit + retainedValue;
 
     const addItem = () => {
         const quantity = Math.max(1, Math.floor(Number(newQty) || 1));
         const listedPrice = parseMoneyInput(newListedPrice);
         const salePrice = parseMoneyInput(newSalePrice);
 
-        if (!newName.trim() || listedPrice <= 0 || salePrice <= 0) {
-            alert('Completa nombre, precio de lista y venta unitario.');
+        if (!newName.trim() || listedPrice <= 0) {
+            alert('Completa nombre y precio de lista unitario.');
+            return;
+        }
+        if (newDisposition === 'sell' && salePrice <= 0) {
+            alert('Si es para vender, completa la venta unitaria.');
             return;
         }
 
@@ -1422,8 +1676,9 @@ function BulkPricingBoard({
                 productName: newName.trim(),
                 quantity,
                 listedUnitPrice: listedPrice,
-                unitSalePrice: salePrice,
-                condition: 'nuevo'
+                unitSalePrice: newDisposition === 'sell' ? salePrice : 0,
+                condition: 'nuevo',
+                disposition: newDisposition
             }
         ]);
 
@@ -1431,16 +1686,23 @@ function BulkPricingBoard({
         setNewQty('1');
         setNewListedPrice('');
         setNewSalePrice('');
+        setNewDisposition('sell');
     };
 
     const sendBatchToStock = async () => {
-        if (batchItems.length === 0) {
+        if (normalizedItems.length === 0) {
             alert('Primero agrega productos a la tanda.');
             return;
         }
 
         try {
-            for (const item of batchItems) {
+            const itemsToSell = normalizedItems.filter((item) => item.disposition === 'sell');
+            const batchIndex = history.length + 1;
+            const batchCode = `T-${batchIndex.toString().padStart(3, '0')}`;
+            const batchType: BatchRecord['batchType'] =
+                itemsToSell.length === 0 ? 'retenido' : (itemsToSell.length === normalizedItems.length ? 'venta' : 'mixta');
+
+            for (const item of itemsToSell) {
                 const adjustedUnitCost = Math.round(item.listedUnitPrice * allocationFactor);
                 const nowIso = new Date().toISOString();
 
@@ -1448,35 +1710,44 @@ function BulkPricingBoard({
                     stockItem.status === 'in_stock' &&
                     stockItem.productName === item.productName &&
                     stockItem.condition === item.condition &&
-                    Math.round(stockItem.purchasePrice) === adjustedUnitCost
+                    Math.round(stockItem.purchasePrice) === adjustedUnitCost &&
+                    (stockItem.batchRef || itemBatchMap[stockItem.id]) === batchCode
                 );
 
                 if (existingStock) {
                     await itemService.updateItem(existingStock.id, {
                         quantity: existingStock.quantity + item.quantity,
                         salePrice: item.unitSalePrice,
-                        condition: item.condition
+                        condition: item.condition,
+                        batchRef: batchCode
                     });
+                    setItemBatchMap((prev) => ({ ...prev, [existingStock.id]: batchCode }));
                 } else {
-                    await itemService.createItem({
+                    const created = await itemService.createItem({
                         productName: item.productName,
                         purchasePrice: adjustedUnitCost,
                         salePrice: item.unitSalePrice,
                         quantity: item.quantity,
                         date: nowIso,
                         status: 'in_stock',
-                        condition: item.condition
+                        condition: item.condition,
+                        batchRef: batchCode
                     });
+                    setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
                 }
             }
 
             const record: BatchRecord = {
                 id: crypto.randomUUID(),
+                batchCode,
+                batchType,
                 createdAt: new Date().toISOString(),
                 totalPaid,
-                totalRevenue: totalTargetRevenue,
-                profit: expectedProfit,
-                itemsCount: batchItems.length
+                totalSellRevenue,
+                cashProfit: expectedProfit,
+                retainedValue,
+                itemsCount: normalizedItems.length,
+                items: normalizedItems.map((item) => ({ ...item }))
             };
             const nextHistory = [record, ...history].slice(0, 50);
             setHistory(nextHistory);
@@ -1484,10 +1755,10 @@ function BulkPricingBoard({
 
             setBatchItems([]);
             await onInventoryRefresh();
-            alert('Tanda agregada al stock y ganancia registrada.');
+            alert('Tanda procesada: stock actualizado y resultado registrado.');
         } catch (error) {
             console.error('Error sending batch to stock', error);
-            alert('Hubo un error al pasar la tanda al stock.');
+            alert('Hubo un error al procesar la tanda.');
         }
     };
 
@@ -1495,7 +1766,7 @@ function BulkPricingBoard({
         <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Pedido por Tanda (descuento global)</h2>
-                <p className="text-sm text-gray-500 mt-1">Tú pones la venta unitaria. El margen se calcula automáticamente según el costo ajustado.</p>
+                <p className="text-sm text-gray-500 mt-1">Cada producto puede ser para vender o para quedártelo. El margen se calcula automáticamente.</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                     <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1">Total pagado del pedido</label>
@@ -1525,7 +1796,7 @@ function BulkPricingBoard({
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
                 <h3 className="text-base font-bold text-gray-800 mb-3">Agregar producto al pedido</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                     <input
                         type="text"
                         value={newName}
@@ -1552,6 +1823,14 @@ function BulkPricingBoard({
                         placeholder="Precio lista unit."
                         className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
+                    <select
+                        value={newDisposition}
+                        onChange={(e) => setNewDisposition(e.target.value as 'sell' | 'keep')}
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    >
+                        <option value="sell">Para vender</option>
+                        <option value="keep">Me lo quedo</option>
+                    </select>
                     <input
                         type="text"
                         inputMode="numeric"
@@ -1560,8 +1839,9 @@ function BulkPricingBoard({
                             const value = parseMoneyInput(e.target.value);
                             setNewSalePrice(formatMoney(value));
                         }}
-                        placeholder="Venta unit."
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        placeholder={newDisposition === 'keep' ? 'No aplica' : 'Venta unit.'}
+                        disabled={newDisposition === 'keep'}
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none disabled:opacity-50"
                     />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1588,6 +1868,7 @@ function BulkPricingBoard({
                             <th className="px-4 py-3 text-center">Cant.</th>
                             <th className="px-4 py-3 text-right">Lista Unit.</th>
                             <th className="px-4 py-3 text-right">Costo Ajustado Unit.</th>
+                            <th className="px-4 py-3 text-center">Destino</th>
                             <th className="px-4 py-3 text-right">Venta Unit.</th>
                             <th className="px-4 py-3 text-center">Margen %</th>
                             <th className="px-4 py-3 text-right">Ganancia Total</th>
@@ -1595,12 +1876,14 @@ function BulkPricingBoard({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {batchItems.map((item) => {
+                        {normalizedItems.map((item) => {
                             const adjustedUnitCost = item.listedUnitPrice * allocationFactor;
                             const marginPercent = adjustedUnitCost > 0
                                 ? ((item.unitSalePrice - adjustedUnitCost) / adjustedUnitCost) * 100
                                 : 0;
-                            const totalProfit = (item.unitSalePrice - adjustedUnitCost) * item.quantity;
+                            const totalProfit = item.disposition === 'sell'
+                                ? (item.unitSalePrice - adjustedUnitCost) * item.quantity
+                                : 0;
 
                             return (
                                 <tr key={item.id}>
@@ -1608,6 +1891,19 @@ function BulkPricingBoard({
                                     <td className="px-4 py-3 text-center">{item.quantity}</td>
                                     <td className="px-4 py-3 text-right">${Math.round(item.listedUnitPrice).toLocaleString('es-AR')}</td>
                                     <td className="px-4 py-3 text-right">${Math.round(adjustedUnitCost).toLocaleString('es-AR')}</td>
+                                    <td className="px-4 py-3 text-center">
+                                        <select
+                                            value={item.disposition}
+                                            onChange={(e) => {
+                                                const disposition = e.target.value as 'sell' | 'keep';
+                                                setBatchItems((prev) => prev.map((p) => p.id === item.id ? { ...p, disposition } : p));
+                                            }}
+                                            className="px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs"
+                                        >
+                                            <option value="sell">Vender</option>
+                                            <option value="keep">Me lo quedo</option>
+                                        </select>
+                                    </td>
                                     <td className="px-4 py-3 text-right">
                                         <input
                                             type="text"
@@ -1619,14 +1915,17 @@ function BulkPricingBoard({
                                                     ? { ...p, unitSalePrice }
                                                     : p));
                                             }}
-                                            className="w-28 px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-right"
+                                            disabled={item.disposition === 'keep'}
+                                            className="w-28 px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-right disabled:opacity-50"
                                         />
                                     </td>
                                     <td className="px-4 py-3 text-center font-semibold text-gray-700">
-                                        {Number.isFinite(marginPercent) ? `${marginPercent.toFixed(1)}%` : '0%'}
+                                        {item.disposition === 'keep' ? '-' : (Number.isFinite(marginPercent) ? `${marginPercent.toFixed(1)}%` : '0%')}
                                     </td>
                                     <td className={`px-4 py-3 text-right font-semibold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        ${Math.round(totalProfit).toLocaleString('es-AR')}
+                                        {item.disposition === 'keep'
+                                            ? `Retenido: $${Math.round(adjustedUnitCost * item.quantity).toLocaleString('es-AR')}`
+                                            : `$${Math.round(totalProfit).toLocaleString('es-AR')}`}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <button
@@ -1649,13 +1948,25 @@ function BulkPricingBoard({
                     <p className="text-lg font-bold text-gray-900">${Math.round(totalPaid).toLocaleString('es-AR')}</p>
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                    <p className="text-xs text-gray-500">Total esperado de venta</p>
-                    <p className="text-lg font-bold text-gray-900">${Math.round(totalTargetRevenue).toLocaleString('es-AR')}</p>
+                    <p className="text-xs text-gray-500">Costo a recuperar con ventas</p>
+                    <p className="text-lg font-bold text-gray-900">${Math.round(effectiveCostToRecover).toLocaleString('es-AR')}</p>
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                    <p className="text-xs text-gray-500">Ganancia esperada</p>
+                    <p className="text-xs text-gray-500">Ganancia monetaria esperada</p>
                     <p className={`text-lg font-bold ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         ${Math.round(expectedProfit).toLocaleString('es-AR')}
+                    </p>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <p className="text-xs text-gray-500">Valor de productos que te quedas</p>
+                    <p className="text-lg font-bold text-blue-700">${Math.round(retainedValue).toLocaleString('es-AR')}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <p className="text-xs text-gray-500">Resultado económico total (cash + retenido)</p>
+                    <p className={`text-lg font-bold ${totalEconomicValue >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        ${Math.round(totalEconomicValue).toLocaleString('es-AR')}
                     </p>
                 </div>
             </div>
@@ -1667,19 +1978,103 @@ function BulkPricingBoard({
                 ) : (
                     <div className="space-y-2">
                         {history.slice(0, 8).map((record) => (
-                            <div key={record.id} className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                <div className="text-gray-700">
-                                    <p className="font-semibold">{new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</p>
-                                    <p className="text-xs text-gray-500">Invertido: ${Math.round(record.totalPaid).toLocaleString('es-AR')} | Venta esperada: ${Math.round(record.totalRevenue).toLocaleString('es-AR')}</p>
+                            <div
+                                key={record.id}
+                                className={`w-full rounded-xl border px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 transition-colors ${selectedHistoryId === record.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'}`}
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedHistoryId((prev) => prev === record.id ? null : record.id)}
+                                    className="flex-1 text-left"
+                                >
+                                    <div className="text-gray-700">
+                                        <p className="font-semibold">{record.batchCode} ({record.batchType}) - {new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</p>
+                                        <p className="text-xs text-gray-500">Invertido: ${safeMoney(record.totalPaid).toLocaleString('es-AR')} | Venta esperada: ${safeMoney(record.totalSellRevenue).toLocaleString('es-AR')} | Retenido: ${safeMoney(record.retainedValue).toLocaleString('es-AR')}</p>
+                                    </div>
+                                </button>
+                                <div className="flex items-center gap-3">
+                                    <p className={`font-bold ${record.cashProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        ${safeMoney(record.cashProfit).toLocaleString('es-AR')}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => void deleteBatchRecord(record.id)}
+                                        className="text-xs px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                    >
+                                        Eliminar
+                                    </button>
                                 </div>
-                                <p className={`font-bold ${record.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    ${Math.round(record.profit).toLocaleString('es-AR')}
-                                </p>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
+
+            {selectedRecord && (
+                <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                        <div>
+                            <h4 className="text-base font-bold text-gray-800">Detalle del pedido</h4>
+                            <p className="text-xs text-gray-500">{selectedRecord.batchCode} ({selectedRecord.batchType}) - {new Date(selectedRecord.createdAt).toLocaleString('es-AR')}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTotalPaid(selectedRecord.totalPaid);
+                                    setBatchItems(cloneItemsForTable(selectedRecordItems));
+                                }}
+                                disabled={selectedRecordItems.length === 0}
+                                className="px-3 py-2 rounded-lg bg-black text-white text-xs font-medium"
+                            >
+                                Cargar para editar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setBatchItems((prev) => [...prev, ...cloneItemsForTable(selectedRecordItems)])}
+                                disabled={selectedRecordItems.length === 0}
+                                className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-medium"
+                            >
+                                Agregar a tabla actual
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-gray-700">
+                            <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
+                                <tr>
+                                    <th className="px-3 py-2 text-left">Producto</th>
+                                    <th className="px-3 py-2 text-center">Cant.</th>
+                                    <th className="px-3 py-2 text-right">Lista Unit.</th>
+                                    <th className="px-3 py-2 text-right">Venta Unit.</th>
+                                    <th className="px-3 py-2 text-center">Destino</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {selectedRecordItems.map((item) => (
+                                    <tr key={item.id}>
+                                        <td className="px-3 py-2 font-medium text-gray-900">{item.productName}</td>
+                                        <td className="px-3 py-2 text-center">{item.quantity}</td>
+                                        <td className="px-3 py-2 text-right">${safeMoney(item.listedUnitPrice).toLocaleString('es-AR')}</td>
+                                        <td className="px-3 py-2 text-right">
+                                            {item.disposition === 'sell' ? `$${safeMoney(item.unitSalePrice).toLocaleString('es-AR')}` : '-'}
+                                        </td>
+                                        <td className="px-3 py-2 text-center text-xs font-semibold text-gray-700">
+                                            {item.disposition === 'sell' ? 'Vender' : 'Me lo quedo'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {selectedRecordItems.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-3">
+                            No hay detalle guardado para esta tanda (registro antiguo sin productos vinculados).
+                        </p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

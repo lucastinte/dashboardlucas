@@ -15,12 +15,16 @@ create table items (
   quantity integer not null default 1,
   sale_date timestamptz,
   status item_status not null default 'in_stock',
-  item_condition item_condition not null default 'nuevo'
+  item_condition item_condition not null default 'nuevo',
+  batch_ref text
 );
 
 -- If your table already exists, run these too:
 alter table items
 add column if not exists item_condition item_condition not null default 'nuevo';
+
+alter table items
+add column if not exists batch_ref text;
 
 -- Enable Row Level Security (RLS)
 alter table items enable row level security;
