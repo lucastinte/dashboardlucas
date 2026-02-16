@@ -54,6 +54,18 @@ export const itemService = {
         return (data || []).map(mapFromDb);
     },
 
+    async createItems(items: Omit<Item, 'id'>[]): Promise<Item[]> {
+        const dbItems = items.map(mapToDb);
+
+        const { data, error } = await supabase
+            .from('items')
+            .insert(dbItems)
+            .select();
+
+        if (error) throw error;
+        return (data || []).map(mapFromDb);
+    },
+
     async createItem(item: Omit<Item, 'id'>): Promise<Item> {
         const dbItem = mapToDb(item);
 

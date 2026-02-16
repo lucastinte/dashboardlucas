@@ -133,6 +133,7 @@ export default function Dashboard() {
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
+    const [hasLocalData, setHasLocalData] = useState(false);
     const getItemBatchRef = (item: Item) => item.batchRef || itemBatchMap[item.id];
 
     // Form State
@@ -148,7 +149,22 @@ export default function Dashboard() {
 
     useEffect(() => {
         loadItems();
+        checkLocalData();
     }, []);
+
+    const checkLocalData = () => {
+        const local = localStorage.getItem('items_v1');
+        if (local) {
+            try {
+                const parsed = JSON.parse(local);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setHasLocalData(true);
+                }
+            } catch (e) {
+                console.error('Error checking local data', e);
+            }
+        }
+    };
 
     useEffect(() => {
         try {
@@ -198,12 +214,58 @@ export default function Dashboard() {
         localStorage.setItem('dashboard_theme', theme);
     }, [theme]);
 
+    const handleMigrateLocalData = async () => {
+        const local = localStorage.getItem('items_v1');
+        if (!local) return;
+
+        try {
+            setLoading(true);
+            const parsedLocal = JSON.parse(local);
+            if (!Array.isArray(parsedLocal) || parsedLocal.length === 0) {
+                setHasLocalData(false);
+                setLoading(false);
+                return;
+            }
+
+            console.log(`Migrando ${parsedLocal.length} items a Supabase...`);
+
+            // Map items to the format expected by service (removing ID to avoid conflict)
+            const itemsToMigrate = parsedLocal.map((item: any) => ({
+                productName: item.productName || 'Producto',
+                purchasePrice: Number(item.purchasePrice) || 0,
+                salePrice: item.salePrice ? Number(item.salePrice) : undefined,
+                quantity: Number(item.quantity) || 1,
+                date: item.date || new Date().toISOString(),
+                saleDate: item.saleDate || undefined,
+                status: (item.status as ItemStatus) || 'in_stock',
+                condition: (item.condition as ItemCondition) || 'nuevo',
+                batchRef: item.batchRef || undefined
+            }));
+
+            await itemService.createItems(itemsToMigrate);
+
+            // Clear local storage or mark as migrated
+            // We'll rename it instead of deleting to be safe
+            localStorage.setItem('items_v1_migrated', local);
+            localStorage.removeItem('items_v1');
+
+            setHasLocalData(false);
+            alert('¡Migración exitosa! Todos tus datos locales están ahora en Supabase.');
+            await loadItems();
+        } catch (err) {
+            console.error('Error durante la migración:', err);
+            alert('Error al migrar los datos. Revisa la consola para más detalles.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const loadItems = async () => {
         try {
             setLoading(true);
             const dbItems = await itemService.getItems();
 
-            // Auto-migration logic: If DB is empty but we have local data, migrate it
+            // Auto-migration logic: If DB is empty but we have local data, migrate it automatically
             if (dbItems.length === 0) {
                 const localItems = localStorage.getItem('items_v1');
                 if (localItems) {
@@ -211,27 +273,31 @@ export default function Dashboard() {
                         const parsedLocal = JSON.parse(localItems);
                         if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
                             console.log('Migrating local data to Supabase...');
-                            const migratedItems = [];
-                            for (const item of parsedLocal) {
-                                // Remove ID to let DB generate a real UUID (or keep if valid UUID)
-                                // We'll let DB generate new IDs to be safe
-                                const { id, ...rest } = item;
-                                const saved = await itemService.createItem({
-                                    ...rest,
-                                    date: rest.date || new Date().toISOString(), // Ensure date exists
-                                    status: rest.status as ItemStatus,
-                                    condition: (rest.condition as ItemCondition) || 'nuevo'
-                                });
-                                migratedItems.push(saved);
-                            }
-                            setItems(migratedItems);
-                            // Optional: clear local storage or mark migrated
-                            // localStorage.removeItem('items_v1'); 
+
+                            const itemsToMigrate = parsedLocal.map((item: any) => ({
+                                productName: item.productName || 'Producto',
+                                purchasePrice: Number(item.purchasePrice) || 0,
+                                salePrice: item.salePrice ? Number(item.salePrice) : undefined,
+                                quantity: Number(item.quantity) || 1,
+                                date: item.date || new Date().toISOString(),
+                                saleDate: item.saleDate || undefined,
+                                status: (item.status as ItemStatus) || 'in_stock',
+                                condition: (item.condition as ItemCondition) || 'nuevo',
+                                batchRef: item.batchRef || undefined
+                            }));
+
+                            await itemService.createItems(itemsToMigrate);
+                            localStorage.setItem('items_v1_migrated', localItems);
+                            localStorage.removeItem('items_v1');
+
+                            const refreshedItems = await itemService.getItems();
+                            setItems(refreshedItems);
+                            setHasLocalData(false);
                             setLoading(false);
                             return;
                         }
                     } catch (e) {
-                        console.error('Migration failed', e);
+                        console.error('Auto-migration failed', e);
                     }
                 }
             }
@@ -530,6 +596,28 @@ export default function Dashboard() {
                 {/* Main Content Area */}
                 {activeTab === 'dashboard' ? (
                     <div className="space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+                        {/* Migration Banner */}
+                        {hasLocalData && (
+                            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-amber-100 p-2 rounded-full">
+                                        <History className="w-5 h-5 text-amber-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-amber-900 font-bold text-sm sm:text-base">Datos locales detectados</p>
+                                        <p className="text-amber-700 text-xs sm:text-sm">Tienes registros guardados en este navegador que no están en la nube.</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleMigrateLocalData}
+                                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    <Save className="w-4 h-4" />
+                                    Subir a Supabase
+                                </button>
+                            </div>
+                        )}
                         {/* Metrics Grid */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                             <MetricCard
@@ -761,68 +849,68 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
             </div>
             <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-left text-sm text-gray-600">
-                <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
-                    <tr>
-                        <th className="px-6 py-4">Producto</th>
-                        <th className="px-6 py-4 text-center">Unidades</th>
-                        <th className="px-6 py-4 text-right">Compra (Unit)</th>
-                        <th className="px-6 py-4 text-right">Venta (Unit)</th>
-                        <th className="px-6 py-4 text-right">Ganancia</th>
-                        <th className="px-6 py-4 text-center">Estado</th>
-                        <th className="px-6 py-4 text-center">Tanda</th>
-                        <th className="px-6 py-4 text-center">Fecha Venta</th>
-                        <th className="px-6 py-4 text-center">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {items.map((item) => {
-                        const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
-                        const isPositive = profit >= 0;
-                        return (
-                            <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
-                                <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
-                                <td className="px-6 py-4 text-center">
-                                    <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
-                                </td>
-                                <td className="px-6 py-4 text-right font-mono text-gray-500">${item.purchasePrice.toLocaleString()}</td>
-                                <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${item.salePrice?.toLocaleString()}</td>
-                                <td className={`px-6 py-4 text-right font-bold w-32 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    <div className="flex items-center justify-end gap-1">
-                                        {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                        ${Math.abs(profit).toLocaleString()}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                    {conditionLabelMap[item.condition || 'nuevo']}
-                                </td>
-                                <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
-                                    {resolveBatchRef(item) || 'Directa'}
-                                </td>
-                                <td className="px-6 py-4 text-center text-gray-400 text-xs">
-                                    {item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                    <div className="flex justify-center gap-2">
-                                        <button
-                                            onClick={() => onEdit(item)}
-                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                            title="Editar"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => onDelete(item.id)}
-                                            className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                            title="Eliminar"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                        <tr>
+                            <th className="px-6 py-4">Producto</th>
+                            <th className="px-6 py-4 text-center">Unidades</th>
+                            <th className="px-6 py-4 text-right">Compra (Unit)</th>
+                            <th className="px-6 py-4 text-right">Venta (Unit)</th>
+                            <th className="px-6 py-4 text-right">Ganancia</th>
+                            <th className="px-6 py-4 text-center">Estado</th>
+                            <th className="px-6 py-4 text-center">Tanda</th>
+                            <th className="px-6 py-4 text-center">Fecha Venta</th>
+                            <th className="px-6 py-4 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {items.map((item) => {
+                            const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
+                            const isPositive = profit >= 0;
+                            return (
+                                <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
+                                    <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
+                                    <td className="px-6 py-4 text-center">
+                                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-mono text-gray-500">${item.purchasePrice.toLocaleString()}</td>
+                                    <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${item.salePrice?.toLocaleString()}</td>
+                                    <td className={`px-6 py-4 text-right font-bold w-32 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        <div className="flex items-center justify-end gap-1">
+                                            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                            ${Math.abs(profit).toLocaleString()}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                        {conditionLabelMap[item.condition || 'nuevo']}
+                                    </td>
+                                    <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
+                                        {resolveBatchRef(item) || 'Directa'}
+                                    </td>
+                                    <td className="px-6 py-4 text-center text-gray-400 text-xs">
+                                        {item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        <div className="flex justify-center gap-2">
+                                            <button
+                                                onClick={() => onEdit(item)}
+                                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                title="Editar"
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => onDelete(item.id)}
+                                                className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
                 </table>
             </div>
         </>
@@ -851,34 +939,34 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                 Stock: {item.quantity}
                             </span>
                         </div>
-                            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                                <div>
-                                    <p className="text-gray-400 text-xs">Costo Unit.</p>
-                                    <p className="font-medium text-gray-900">${item.purchasePrice.toLocaleString()}</p>
-                                </div>
-                                <div>
-                                    <p className="text-gray-400 text-xs">Reventa Unit.</p>
-                                    <p className="font-medium text-gray-900">
-                                        {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-gray-400 text-xs">Valor Total</p>
-                                    <p className="font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Fecha Ingreso</p>
-                                    <p className="font-medium text-gray-700">{new Date(item.date).toLocaleDateString()}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Estado</p>
-                                    <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Tanda</p>
-                                    <p className="font-medium text-gray-700">{getBatchLabel(resolveBatchRef(item))}</p>
-                                </div>
+                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                            <div>
+                                <p className="text-gray-400 text-xs">Costo Unit.</p>
+                                <p className="font-medium text-gray-900">${item.purchasePrice.toLocaleString()}</p>
                             </div>
+                            <div>
+                                <p className="text-gray-400 text-xs">Reventa Unit.</p>
+                                <p className="font-medium text-gray-900">
+                                    {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-gray-400 text-xs">Valor Total</p>
+                                <p className="font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</p>
+                            </div>
+                            <div className="col-span-2">
+                                <p className="text-gray-400 text-xs">Fecha Ingreso</p>
+                                <p className="font-medium text-gray-700">{new Date(item.date).toLocaleDateString()}</p>
+                            </div>
+                            <div className="col-span-2">
+                                <p className="text-gray-400 text-xs">Estado</p>
+                                <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
+                            </div>
+                            <div className="col-span-2">
+                                <p className="text-gray-400 text-xs">Tanda</p>
+                                <p className="font-medium text-gray-700">{getBatchLabel(resolveBatchRef(item))}</p>
+                            </div>
+                        </div>
                         <div className="mt-4 space-y-2">
                             <button
                                 onClick={() => onSell(item)}
@@ -909,69 +997,69 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
             </div>
             <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-left text-sm text-gray-600">
-                <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
-                    <tr>
-                        <th className="px-6 py-4">Producto</th>
-                        <th className="px-6 py-4 text-center">Stock</th>
-                        <th className="px-6 py-4 text-right">Costo Unit.</th>
-                        <th className="px-6 py-4 text-right">Reventa Unit.</th>
-                        <th className="px-6 py-4 text-right">Valor Total</th>
-                        <th className="px-6 py-4 text-center">Estado</th>
-                        <th className="px-6 py-4 text-center">Tanda</th>
-                        <th className="px-6 py-4 text-center">Fecha Ingreso</th>
-                        <th className="px-6 py-4 text-center">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {items.map((item) => (
-                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
-                            <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
-                            <td className="px-6 py-4 text-center">
-                                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
-                            </td>
-                            <td className="px-6 py-4 text-right font-mono">${item.purchasePrice.toLocaleString()}</td>
-                            <td className="px-6 py-4 text-right font-mono text-gray-700">
-                                {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
-                            </td>
-                            <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
-                            <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                {conditionLabelMap[item.condition || 'nuevo']}
-                            </td>
-                            <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                {getBatchLabel(resolveBatchRef(item))}
-                            </td>
-                            <td className="px-6 py-4 text-center text-gray-400 text-xs">
-                                {new Date(item.date).toLocaleDateString()}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center items-center gap-2">
-                                    <button
-                                        onClick={() => onSell(item)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                                    >
-                                        <DollarSign className="w-3 h-3" />
-                                        Vender
-                                    </button>
-                                    <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                                    <button
-                                        onClick={() => onEdit(item)}
-                                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                        title="Editar"
-                                    >
-                                        <Edit2 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => onDelete(item.id)}
-                                        className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                        title="Eliminar"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </td>
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                        <tr>
+                            <th className="px-6 py-4">Producto</th>
+                            <th className="px-6 py-4 text-center">Stock</th>
+                            <th className="px-6 py-4 text-right">Costo Unit.</th>
+                            <th className="px-6 py-4 text-right">Reventa Unit.</th>
+                            <th className="px-6 py-4 text-right">Valor Total</th>
+                            <th className="px-6 py-4 text-center">Estado</th>
+                            <th className="px-6 py-4 text-center">Tanda</th>
+                            <th className="px-6 py-4 text-center">Fecha Ingreso</th>
+                            <th className="px-6 py-4 text-center">Acciones</th>
                         </tr>
-                    ))}
-                </tbody>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {items.map((item) => (
+                            <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
+                                <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
+                                <td className="px-6 py-4 text-center">
+                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
+                                </td>
+                                <td className="px-6 py-4 text-right font-mono">${item.purchasePrice.toLocaleString()}</td>
+                                <td className="px-6 py-4 text-right font-mono text-gray-700">
+                                    {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
+                                </td>
+                                <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
+                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                    {conditionLabelMap[item.condition || 'nuevo']}
+                                </td>
+                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                    {getBatchLabel(resolveBatchRef(item))}
+                                </td>
+                                <td className="px-6 py-4 text-center text-gray-400 text-xs">
+                                    {new Date(item.date).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                    <div className="flex justify-center items-center gap-2">
+                                        <button
+                                            onClick={() => onSell(item)}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                        >
+                                            <DollarSign className="w-3 h-3" />
+                                            Vender
+                                        </button>
+                                        <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                                        <button
+                                            onClick={() => onEdit(item)}
+                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                            title="Editar"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => onDelete(item.id)}
+                                            className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                            title="Eliminar"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
                 </table>
             </div>
         </>
