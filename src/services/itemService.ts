@@ -134,5 +134,57 @@ export const itemService = {
             .eq('id', id);
 
         if (error) throw error;
+    },
+
+    // Batch History Services
+    async getBatches(): Promise<any[]> {
+        const { data, error } = await supabase
+            .from('batches')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data || []).map(dbBatch => ({
+            id: dbBatch.id,
+            batchCode: dbBatch.batch_code,
+            batchType: dbBatch.batch_type,
+            createdAt: dbBatch.created_at,
+            totalPaid: Number(dbBatch.total_paid),
+            totalSellRevenue: Number(dbBatch.total_sell_revenue),
+            cashProfit: Number(dbBatch.cash_profit),
+            retainedValue: Number(dbBatch.retained_value),
+            itemsCount: Number(dbBatch.items_count),
+            items: dbBatch.items_json
+        }));
+    },
+
+    async createBatch(batch: any): Promise<any> {
+        const { data, error } = await supabase
+            .from('batches')
+            .insert({
+                batch_code: batch.batchCode,
+                batch_type: batch.batchType,
+                created_at: batch.createdAt,
+                total_paid: batch.totalPaid,
+                total_sell_revenue: batch.totalSellRevenue,
+                cash_profit: batch.cashProfit,
+                retained_value: batch.retainedValue,
+                items_count: batch.itemsCount,
+                items_json: batch.items
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    },
+
+    async deleteBatch(id: string): Promise<void> {
+        const { error } = await supabase
+            .from('batches')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
     }
 };

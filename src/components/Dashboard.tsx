@@ -134,6 +134,7 @@ export default function Dashboard() {
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
     const [hasLocalData, setHasLocalData] = useState(false);
+    const [hasLocalHistory, setHasLocalHistory] = useState(false);
     const getItemBatchRef = (item: Item) => item.batchRef || itemBatchMap[item.id];
 
     // Form State
@@ -154,15 +155,20 @@ export default function Dashboard() {
 
     const checkLocalData = () => {
         const local = localStorage.getItem('items_v1');
+        const history = localStorage.getItem('pricing_batch_history_v1');
+
         if (local) {
             try {
                 const parsed = JSON.parse(local);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    setHasLocalData(true);
-                }
-            } catch (e) {
-                console.error('Error checking local data', e);
-            }
+                if (Array.isArray(parsed) && parsed.length > 0) setHasLocalData(true);
+            } catch (e) { }
+        }
+
+        if (history) {
+            try {
+                const parsed = JSON.parse(history);
+                if (Array.isArray(parsed) && parsed.length > 0) setHasLocalHistory(true);
+            } catch (e) { }
         }
     };
 
@@ -215,46 +221,52 @@ export default function Dashboard() {
     }, [theme]);
 
     const handleMigrateLocalData = async () => {
-        const local = localStorage.getItem('items_v1');
-        if (!local) return;
+        const localItemsResource = localStorage.getItem('items_v1');
+        const localHistoryResource = localStorage.getItem('pricing_batch_history_v1');
 
         try {
             setLoading(true);
-            const parsedLocal = JSON.parse(local);
-            if (!Array.isArray(parsedLocal) || parsedLocal.length === 0) {
-                setHasLocalData(false);
-                setLoading(false);
-                return;
+
+            // 1. Migrar Items
+            if (localItemsResource) {
+                const parsedLocal = JSON.parse(localItemsResource);
+                if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+                    const itemsToMigrate = parsedLocal.map((item: any) => ({
+                        productName: item.productName || 'Producto',
+                        purchasePrice: Number(item.purchasePrice) || 0,
+                        salePrice: item.salePrice ? Number(item.salePrice) : undefined,
+                        quantity: Number(item.quantity) || 1,
+                        date: item.date || new Date().toISOString(),
+                        saleDate: item.saleDate || undefined,
+                        status: (item.status as ItemStatus) || 'in_stock',
+                        condition: (item.condition as ItemCondition) || 'nuevo',
+                        batchRef: item.batchRef || undefined
+                    }));
+                    await itemService.createItems(itemsToMigrate);
+                    localStorage.setItem('items_v1_migrated', localItemsResource);
+                    localStorage.removeItem('items_v1');
+                }
             }
 
-            console.log(`Migrando ${parsedLocal.length} items a Supabase...`);
-
-            // Map items to the format expected by service (removing ID to avoid conflict)
-            const itemsToMigrate = parsedLocal.map((item: any) => ({
-                productName: item.productName || 'Producto',
-                purchasePrice: Number(item.purchasePrice) || 0,
-                salePrice: item.salePrice ? Number(item.salePrice) : undefined,
-                quantity: Number(item.quantity) || 1,
-                date: item.date || new Date().toISOString(),
-                saleDate: item.saleDate || undefined,
-                status: (item.status as ItemStatus) || 'in_stock',
-                condition: (item.condition as ItemCondition) || 'nuevo',
-                batchRef: item.batchRef || undefined
-            }));
-
-            await itemService.createItems(itemsToMigrate);
-
-            // Clear local storage or mark as migrated
-            // We'll rename it instead of deleting to be safe
-            localStorage.setItem('items_v1_migrated', local);
-            localStorage.removeItem('items_v1');
+            // 2. Migrar Historial de Tandas (T-001, T-002, etc.)
+            if (localHistoryResource) {
+                const parsedHistory = JSON.parse(localHistoryResource);
+                if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+                    for (const batch of parsedHistory) {
+                        await itemService.createBatch(batch);
+                    }
+                    localStorage.setItem('pricing_batch_history_v1_migrated', localHistoryResource);
+                    localStorage.removeItem('pricing_batch_history_v1');
+                }
+            }
 
             setHasLocalData(false);
-            alert('¡Migración exitosa! Todos tus datos locales están ahora en Supabase.');
-            await loadItems();
+            setHasLocalHistory(false);
+            alert('¡Sincronización completa con Supabase!');
+            window.location.reload();
         } catch (err) {
-            console.error('Error durante la migración:', err);
-            alert('Error al migrar los datos. Revisa la consola para más detalles.');
+            console.error('Migration error:', err);
+            alert('Error al migrar los datos. Revisa la conexión con Supabase.');
         } finally {
             setLoading(false);
         }
@@ -598,23 +610,25 @@ export default function Dashboard() {
                     <div className="space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
                         {/* Migration Banner */}
-                        {hasLocalData && (
-                            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                        {(hasLocalData || hasLocalHistory) && (
+                            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm border-l-4 border-l-amber-500">
                                 <div className="flex items-center gap-3">
                                     <div className="bg-amber-100 p-2 rounded-full">
                                         <History className="w-5 h-5 text-amber-600" />
                                     </div>
                                     <div>
                                         <p className="text-amber-900 font-bold text-sm sm:text-base">Datos locales detectados</p>
-                                        <p className="text-amber-700 text-xs sm:text-sm">Tienes registros guardados en este navegador que no están en la nube.</p>
+                                        <p className="text-amber-700 text-xs sm:text-sm">
+                                            Se detectó historial de tandas y productos en este navegador.
+                                        </p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={handleMigrateLocalData}
-                                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <Save className="w-4 h-4" />
-                                    Subir a Supabase
+                                    Subir historial a Supabase
                                 </button>
                             </div>
                         )}
