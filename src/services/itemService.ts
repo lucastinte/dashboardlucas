@@ -61,10 +61,18 @@ export const itemService = {
     async createItems(items: Omit<Item, 'id'>[]): Promise<Item[]> {
         const dbItems = items.map(mapToDb);
 
-        const { data, error } = await supabase
+        let { data, error } = await supabase
             .from('items')
             .insert(dbItems)
             .select();
+
+        if (hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) {
+            console.warn('Supabase: missing columns location/estimated_sale_price. Falling back.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price'])))
+                .select());
+        }
 
         if (error) throw error;
         return (data || []).map(mapFromDb);
@@ -134,6 +142,7 @@ export const itemService = {
                 .single());
         }
         if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates)) {
+            console.warn('Supabase: missing columns location/estimated_sale_price. Falling back on update.');
             ({ data, error } = await supabase
                 .from('items')
                 .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price']))

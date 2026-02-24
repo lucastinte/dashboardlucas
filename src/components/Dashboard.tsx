@@ -378,7 +378,10 @@ export default function Dashboard() {
                 setItems(items.map(i => i.id === editingItem.id ? updatedItem : i));
 
                 // DB Update
-                await itemService.updateItem(editingItem.id, updates);
+                const savedItem = await itemService.updateItem(editingItem.id, updates);
+
+                // Sync state with DB response to detect if columns were dropped by fallback
+                setItems(prev => prev.map(i => i.id === editingItem.id ? savedItem : i));
 
                 // Refresh to ensure consistency (optional)
                 // loadItems(); 
@@ -404,10 +407,10 @@ export default function Dashboard() {
                 const tempItem = { id: tempId, ...newItemData } as Item;
                 setItems([tempItem, ...items]);
 
-                // DB Insert
+                // Create real item in DB
                 const savedItem = await itemService.createItem(newItemData);
 
-                // Replace temp item with real one
+                // Replace temp item with real one from server
                 setItems(prev => prev.map(i => i.id === tempId ? savedItem : i));
             }
             setIsModalOpen(false);
