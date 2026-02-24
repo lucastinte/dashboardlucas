@@ -210,6 +210,16 @@ export const itemService = {
         };
     },
 
+    async updateItemsByBatch(batchCode: string, updates: Partial<Item>): Promise<void> {
+        const dbUpdates = mapToDb(updates);
+        const { error } = await supabase
+            .from('items')
+            .update(dbUpdates)
+            .eq('batch_ref', batchCode);
+
+        if (error) throw error;
+    },
+
     async deleteBatch(id: string): Promise<void> {
         const { error } = await supabase
             .from('batches')

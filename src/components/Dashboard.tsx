@@ -1592,6 +1592,9 @@ function BulkPricingBoard({
     const [totalPaidInput, setTotalPaidInput] = useState('');
     const [history, setHistory] = useState<BatchRecord[]>([]);
     const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+    const [batchDefaultLocation, setBatchDefaultLocation] = useState('');
+    const [bulkLocationInput, setBulkLocationInput] = useState('');
+    const [isUpdatingBulk, setIsUpdatingBulk] = useState(false);
 
     const formatMoney = (value?: number) => {
         const numeric = Number(value || 0);
@@ -1786,7 +1789,8 @@ function BulkPricingBoard({
                         quantity: existingStock.quantity + item.quantity,
                         salePrice: item.unitSalePrice,
                         condition: item.condition,
-                        batchRef: batchCode
+                        batchRef: batchCode,
+                        location: batchDefaultLocation || existingStock.location
                     });
                     setItemBatchMap((prev) => ({ ...prev, [existingStock.id]: batchCode }));
                 } else {
@@ -1799,7 +1803,8 @@ function BulkPricingBoard({
                         status: 'in_stock',
                         condition: item.condition,
                         batchRef: batchCode,
-                        estimatedSalePrice: item.unitSalePrice
+                        estimatedSalePrice: item.unitSalePrice,
+                        location: batchDefaultLocation
                     });
                     setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
                 }
@@ -1825,6 +1830,7 @@ function BulkPricingBoard({
             localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
 
             setBatchItems([]);
+            setBatchDefaultLocation('');
             await onInventoryRefresh();
             alert('Tanda procesada: stock actualizado y resultado registrado.');
         } catch (error) {
@@ -1861,6 +1867,16 @@ function BulkPricingBoard({
                     <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2">
                         <p className="text-xs text-gray-500">Factor de ajuste</p>
                         <p className="font-semibold text-gray-900">{allocationFactor.toFixed(4)}x</p>
+                    </div>
+                    <div className="md:col-span-3">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Ubicación para toda esta tanda (opcional)</label>
+                        <input
+                            type="text"
+                            value={batchDefaultLocation}
+                            onChange={(e) => setBatchDefaultLocation(e.target.value)}
+                            placeholder="Ej: Jujuy, Depósito 1"
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        />
                     </div>
                 </div>
             </div>
@@ -2104,7 +2120,36 @@ function BulkPricingBoard({
                             <h4 className="text-base font-bold text-gray-800">Detalle del pedido</h4>
                             <p className="text-xs text-gray-500">{selectedRecord.batchCode} ({selectedRecord.batchType}) - {new Date(selectedRecord.createdAt).toLocaleString('es-AR')}</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Nueva ubicación"
+                                    value={bulkLocationInput}
+                                    onChange={(e) => setBulkLocationInput(e.target.value)}
+                                    className="px-3 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-blue-400"
+                                />
+                                <button
+                                    type="button"
+                                    disabled={!bulkLocationInput || isUpdatingBulk}
+                                    onClick={async () => {
+                                        setIsUpdatingBulk(true);
+                                        try {
+                                            await itemService.updateItemsByBatch(selectedRecord.batchCode, { location: bulkLocationInput });
+                                            await onInventoryRefresh();
+                                            alert(`Ubicación actualizada a "${bulkLocationInput}" para todos los items de la tanda.`);
+                                            setBulkLocationInput('');
+                                        } catch (e) {
+                                            alert('Error al actualizar ubicación.');
+                                        } finally {
+                                            setIsUpdatingBulk(false);
+                                        }
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium disabled:opacity-50"
+                                >
+                                    {isUpdatingBulk ? '...' : 'Asignar a todos'}
+                                </button>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => {
