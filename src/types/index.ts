@@ -12,6 +12,8 @@ export interface Item {
     status: ItemStatus;
     condition: ItemCondition;
     batchRef?: string;
+    location?: string;
+    estimatedSalePrice?: number;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

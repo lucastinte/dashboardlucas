@@ -143,7 +143,9 @@ export default function Dashboard() {
         quantity: 1,
         status: 'in_stock',
         condition: 'nuevo',
-        date: new Date().toISOString().split('T')[0]
+        date: new Date().toISOString().split('T')[0],
+        location: '',
+        estimatedSalePrice: 0
     });
 
     useEffect(() => {
@@ -306,6 +308,8 @@ export default function Dashboard() {
                         status: 'sold',
                         condition: editingItem.condition,
                         batchRef: editingItem.batchRef,
+                        location: formData.location || editingItem.location,
+                        estimatedSalePrice: editingItem.estimatedSalePrice,
                         saleDate: formDateISO
                     });
 
@@ -364,7 +368,9 @@ export default function Dashboard() {
                     saleDate,
                     status,
                     condition,
-                    batchRef: editingItem.batchRef
+                    batchRef: editingItem.batchRef,
+                    location: formData.location ?? editingItem.location,
+                    estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice
                 };
 
                 // Optimistic UI update
@@ -388,6 +394,8 @@ export default function Dashboard() {
                     date: formData.date ? getISODate(formData.date) : new Date().toISOString(),
                     status: formData.status as ItemStatus,
                     condition: (formData.condition as ItemCondition) || 'nuevo',
+                    location: formData.location || '',
+                    estimatedSalePrice: formData.estimatedSalePrice || 0,
                     saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined
                 };
 
@@ -434,6 +442,8 @@ export default function Dashboard() {
         setFormData({
             ...item,
             batchRef: resolvedBatchRef,
+            location: item.location || '',
+            estimatedSalePrice: item.estimatedSalePrice || 0,
             date: item.saleDate ? item.saleDate.split('T')[0] : item.date.split('T')[0]
         });
         setIsModalOpen(true);
@@ -447,7 +457,9 @@ export default function Dashboard() {
             quantity: 1,
             status: 'in_stock',
             condition: 'nuevo',
-            date: new Date().toISOString().split('T')[0]
+            date: new Date().toISOString().split('T')[0],
+            location: '',
+            estimatedSalePrice: 0
         });
         setEditingItem(null);
     };
@@ -649,6 +661,8 @@ export default function Dashboard() {
                                     salePrice: item.salePrice || item.purchasePrice,
                                     condition: item.condition || 'nuevo',
                                     batchRef: resolvedBatchRef,
+                                    location: item.location || '',
+                                    estimatedSalePrice: item.estimatedSalePrice || 0,
                                     date: new Date().toISOString().split('T')[0]
                                 });
                                 setIsModalOpen(true);
@@ -763,6 +777,10 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                     <p className="text-gray-400 text-xs">Estado</p>
                                     <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
                                 </div>
+                                <div className="col-span-1">
+                                    <p className="text-gray-400 text-xs">Ubicación</p>
+                                    <p className="font-medium text-gray-700">{item.location || '-'}</p>
+                                </div>
                                 <div className="col-span-2">
                                     <p className="text-gray-400 text-xs">Tanda</p>
                                     <p className="font-medium text-gray-700">{resolveBatchRef(item) || 'Venta directa'}</p>
@@ -798,6 +816,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                             <th className="px-6 py-4 text-right">Venta (Unit)</th>
                             <th className="px-6 py-4 text-right">Ganancia</th>
                             <th className="px-6 py-4 text-center">Estado</th>
+                            <th className="px-6 py-4 text-center">Ubicación</th>
                             <th className="px-6 py-4 text-center">Tanda</th>
                             <th className="px-6 py-4 text-center">Fecha Venta</th>
                             <th className="px-6 py-4 text-center">Acciones</th>
@@ -823,6 +842,9 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                     </td>
                                     <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                         {conditionLabelMap[item.condition || 'nuevo']}
+                                    </td>
+                                    <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
+                                        {item.location || '-'}
                                     </td>
                                     <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
                                         {resolveBatchRef(item) || 'Directa'}
@@ -899,9 +921,13 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                 <p className="text-gray-400 text-xs">Fecha Ingreso</p>
                                 <p className="font-medium text-gray-700">{new Date(item.date).toLocaleDateString()}</p>
                             </div>
-                            <div className="col-span-2">
+                            <div className="col-span-1">
                                 <p className="text-gray-400 text-xs">Estado</p>
                                 <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
+                            </div>
+                            <div className="col-span-1">
+                                <p className="text-gray-400 text-xs">Ubicación</p>
+                                <p className="font-medium text-gray-700">{item.location || '-'}</p>
                             </div>
                             <div className="col-span-2">
                                 <p className="text-gray-400 text-xs">Tanda</p>
@@ -946,6 +972,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                             <th className="px-6 py-4 text-right">Reventa Unit.</th>
                             <th className="px-6 py-4 text-right">Valor Total</th>
                             <th className="px-6 py-4 text-center">Estado</th>
+                            <th className="px-6 py-4 text-center">Ubicación</th>
                             <th className="px-6 py-4 text-center">Tanda</th>
                             <th className="px-6 py-4 text-center">Fecha Ingreso</th>
                             <th className="px-6 py-4 text-center">Acciones</th>
@@ -965,6 +992,9 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                 <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                     {conditionLabelMap[item.condition || 'nuevo']}
+                                </td>
+                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                    {item.location || '-'}
                                 </td>
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                     {getBatchLabel(resolveBatchRef(item))}
@@ -1504,9 +1534,14 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     />
                 </div>
                 <div>
-                    <div className="stock-default-note h-full rounded-xl border border-dashed border-gray-200 bg-gray-50/60 flex items-center justify-center px-4 py-3 text-xs text-gray-500">
-                        El estado por defecto es <strong className="ml-1 text-gray-700">Nuevo</strong>.
-                    </div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ubicación</label>
+                    <input
+                        type="text"
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                        placeholder="Ej: Jujuy, Depósito 1"
+                        value={formData.location || ''}
+                        onChange={e => setFormData({ ...formData, location: e.target.value })}
+                    />
                 </div>
             </div>
 
@@ -1763,7 +1798,8 @@ function BulkPricingBoard({
                         date: nowIso,
                         status: 'in_stock',
                         condition: item.condition,
-                        batchRef: batchCode
+                        batchRef: batchCode,
+                        estimatedSalePrice: item.unitSalePrice
                     });
                     setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
                 }
@@ -2028,9 +2064,25 @@ function BulkPricingBoard({
                                     </div>
                                 </button>
                                 <div className="flex items-center gap-3">
-                                    <p className={`font-bold ${record.cashProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        ${safeMoney(record.cashProfit).toLocaleString('es-AR')}
-                                    </p>
+                                    <div className="flex flex-col items-end gap-1">
+                                        <p className={`font-bold ${record.cashProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            Est: ${safeMoney(record.cashProfit).toLocaleString('es-AR')}
+                                        </p>
+                                        {(() => {
+                                            const relatedItems = inventoryItems.filter((i: Item) => (i.batchRef || itemBatchMap[i.id]) === record.batchCode);
+                                            const actualProfit = relatedItems.reduce((acc: number, item: Item) => {
+                                                if (item.status === 'sold') {
+                                                    return acc + ((item.salePrice || 0) - item.purchasePrice) * item.quantity;
+                                                }
+                                                return acc;
+                                            }, 0);
+                                            return (
+                                                <p className={`text-xs font-bold ${actualProfit >= record.cashProfit ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                                    Real: ${Math.round(actualProfit).toLocaleString('es-AR')}
+                                                </p>
+                                            );
+                                        })()}
+                                    </div>
                                     <button
                                         type="button"
                                         onClick={() => void deleteBatchRecord(record.id)}

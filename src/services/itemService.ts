@@ -25,7 +25,9 @@ const mapFromDb = (dbItem: any): Item => ({
     saleDate: dbItem.sale_date || undefined,
     status: dbItem.status as ItemStatus,
     condition: (dbItem.item_condition || 'nuevo') as ItemCondition,
-    batchRef: dbItem.batch_ref || undefined
+    batchRef: dbItem.batch_ref || undefined,
+    location: dbItem.location || undefined,
+    estimatedSalePrice: dbItem.estimated_sale_price ? Number(dbItem.estimated_sale_price) : undefined
 });
 
 // Helper to map application model to DB columns
@@ -40,6 +42,8 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.status !== undefined) dbItem.status = item.status;
     if (item.condition !== undefined) dbItem.item_condition = item.condition;
     if (item.batchRef !== undefined) dbItem.batch_ref = item.batchRef;
+    if (item.location !== undefined) dbItem.location = item.location;
+    if (item.estimatedSalePrice !== undefined) dbItem.estimated_sale_price = item.estimatedSalePrice;
     return dbItem;
 };
 
@@ -86,7 +90,14 @@ export const itemService = {
         if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbItem) {
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutColumns(dbItem, ['batch_ref']))
+                .insert(withoutColumns(dbItem, ['batch_ref', 'location', 'estimated_sale_price']))
+                .select()
+                .single());
+        }
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbItem || 'estimated_sale_price' in dbItem)) {
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price']))
                 .select()
                 .single());
         }
@@ -117,7 +128,15 @@ export const itemService = {
         if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbUpdates) {
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutColumns(dbUpdates, ['batch_ref']))
+                .update(withoutColumns(dbUpdates, ['batch_ref', 'location', 'estimated_sale_price']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates)) {
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price']))
                 .eq('id', id)
                 .select()
                 .single());

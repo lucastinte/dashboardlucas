@@ -26,6 +26,12 @@ add column if not exists item_condition item_condition not null default 'nuevo';
 alter table items
 add column if not exists batch_ref text;
 
+alter table items
+add column if not exists location text;
+
+alter table items
+add column if not exists estimated_sale_price numeric;
+
 -- Enable Row Level Security (RLS)
 alter table items enable row level security;
 
