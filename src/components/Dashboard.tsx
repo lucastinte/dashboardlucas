@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History, Save, Moon, Sun } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History, Save, Moon, Sun, Layers } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -890,14 +890,54 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
     onSell: (i: Item) => void,
     resolveBatchRef: (item: Item) => string | undefined
 }) {
+    const [isGrouped, setIsGrouped] = useState(false);
+
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
 
+    const displayItems = isGrouped ? (() => {
+        const groups: Record<string, Item & { allBatches: string[] }> = {};
+        items.forEach(item => {
+            const key = `${item.productName.toLowerCase()}-${item.purchasePrice}-${item.condition}`;
+            if (!groups[key]) {
+                groups[key] = { ...item, allBatches: [] };
+                const bRef = resolveBatchRef(item);
+                if (bRef) groups[key].allBatches.push(bRef);
+            } else {
+                groups[key].quantity += item.quantity;
+                const bRef = resolveBatchRef(item);
+                if (bRef && !groups[key].allBatches.includes(bRef)) {
+                    groups[key].allBatches.push(bRef);
+                }
+            }
+        });
+        return Object.values(groups);
+    })() : items;
+
+    const getBatchDisplay = (item: any) => {
+        if (isGrouped && item.allBatches) {
+            return item.allBatches.length > 0 ? item.allBatches.join(', ') : 'Directa';
+        }
+        return getBatchLabel(resolveBatchRef(item));
+    };
+
     return (
         <>
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-gray-500 italic">
+                    {isGrouped ? 'Mostrando totales por producto (mismo nombre y costo)' : 'Mostrando cada tanda por separado para control exacto'}
+                </p>
+                <button
+                    onClick={() => setIsGrouped(!isGrouped)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${isGrouped ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                >
+                    <Layers className="w-3.5 h-3.5" />
+                    {isGrouped ? 'Ver detalle por Tandas' : 'Consolidar por Nombre'}
+                </button>
+            </div>
             <div className="sm:hidden p-3 space-y-3">
-                {items.map((item) => (
+                {displayItems.map((item) => (
                     <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                             <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
@@ -934,7 +974,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                             </div>
                             <div className="col-span-2">
                                 <p className="text-gray-400 text-xs">Tanda</p>
-                                <p className="font-medium text-gray-700">{getBatchLabel(resolveBatchRef(item))}</p>
+                                <p className="font-medium text-gray-700">{getBatchDisplay(item)}</p>
                             </div>
                         </div>
                         <div className="mt-4 space-y-2">
@@ -982,7 +1022,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {items.map((item) => (
+                        {displayItems.map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
                                 <td className="px-6 py-4 text-center">
@@ -1000,7 +1040,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                     {item.location || '-'}
                                 </td>
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                    {getBatchLabel(resolveBatchRef(item))}
+                                    {getBatchDisplay(item)}
                                 </td>
                                 <td className="px-6 py-4 text-center text-gray-400 text-xs">
                                     {new Date(item.date).toLocaleDateString()}
