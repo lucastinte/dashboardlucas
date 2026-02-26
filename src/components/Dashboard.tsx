@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History, Save, Moon, Sun, Layers } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -44,38 +44,29 @@ const getBatchLabel = (batchRef?: string) => {
 
 const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 
-const reconcileItemBatchMap = (inventoryItems: Item[], currentMap: Record<string, string>) => {
-    if (inventoryItems.length === 0) return null;
-
-    let parsedHistory: Array<Partial<BatchRecord>> = [];
-    try {
-        const raw = localStorage.getItem('pricing_batch_history_v1');
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        parsedHistory = Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-        console.error('Error reading batch history for reconciliation', error);
-        return null;
-    }
-
-    const history = parsedHistory
-        .filter((record) => typeof record?.batchCode === 'string' && record.batchCode)
-        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-
+const reconcileItemBatchMap = (inventoryItems: Item[], history: Array<Partial<BatchRecord>>, currentMap: Record<string, string>) => {
     if (history.length === 0) return null;
 
     const nextMap = { ...currentMap };
     const usedIds = new Set<string>();
     let changed = false;
 
+    // Items already tagged in DB shouldn't be touched by the map
     const unassigned = inventoryItems.filter((item) => {
         const alreadyTagged = item.batchRef || nextMap[item.id];
         return !alreadyTagged;
     });
 
-    for (const record of history) {
+    // Sort history chronologically (Oldest first) to match FIFO
+    // This ensures that older items are matched to older batches first.
+    const sortedHistory = [...history]
+        .filter((record) => typeof record?.batchCode === 'string' && record.batchCode)
+        .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
+    for (const record of sortedHistory) {
         const batchCode = record.batchCode as string;
         const recordDate = new Date(record.createdAt || Date.now()).getTime();
+
         const recordItems = (Array.isArray(record.items) ? record.items : [])
             .map((entry) => ({
                 productName: entry?.productName || '',
@@ -87,6 +78,7 @@ const reconcileItemBatchMap = (inventoryItems: Item[], currentMap: Record<string
             .filter((entry) => entry.disposition !== 'keep' && entry.productName);
 
         for (const recordItem of recordItems) {
+            // Find potential matches in unassigned items
             const candidates = unassigned
                 .filter((item) => !usedIds.has(item.id))
                 .filter((item) => normalizeText(item.productName) === normalizeText(recordItem.productName))
@@ -95,14 +87,17 @@ const reconcileItemBatchMap = (inventoryItems: Item[], currentMap: Record<string
             if (candidates.length === 0) continue;
 
             const bestMatch = [...candidates].sort((a, b) => {
+                // Priority to price match
                 const aSaleMatch = Math.round(a.salePrice || 0) === Math.round(recordItem.unitSalePrice || 0) ? 1 : 0;
                 const bSaleMatch = Math.round(b.salePrice || 0) === Math.round(recordItem.unitSalePrice || 0) ? 1 : 0;
                 if (aSaleMatch !== bSaleMatch) return bSaleMatch - aSaleMatch;
 
+                // Then quantity match
                 const aQtyDistance = Math.abs((a.quantity || 0) - recordItem.quantity);
                 const bQtyDistance = Math.abs((b.quantity || 0) - recordItem.quantity);
                 if (aQtyDistance !== bQtyDistance) return aQtyDistance - bQtyDistance;
 
+                // Then closest date
                 const aDateDistance = Math.abs(new Date(a.date).getTime() - recordDate);
                 const bDateDistance = Math.abs(new Date(b.date).getTime() - recordDate);
                 return aDateDistance - bDateDistance;
@@ -133,6 +128,7 @@ export default function Dashboard() {
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
+    const [batchHistory, setBatchHistory] = useState<BatchRecord[]>([]);
     const getItemBatchRef = (item: Item) => item.batchRef || itemBatchMap[item.id];
 
     // Form State
@@ -188,11 +184,39 @@ export default function Dashboard() {
     }, [itemBatchMap]);
 
     useEffect(() => {
+        const loadHistory = async () => {
+            try {
+                const dbBatches = await itemService.getBatches();
+                if (dbBatches && dbBatches.length > 0) {
+                    setBatchHistory(dbBatches);
+                    localStorage.setItem('pricing_batch_history_v1', JSON.stringify(dbBatches));
+                } else {
+                    const raw = localStorage.getItem('pricing_batch_history_v1');
+                    if (raw) {
+                        const parsed = JSON.parse(raw) as BatchRecord[];
+                        if (Array.isArray(parsed)) setBatchHistory(parsed);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading history', error);
+                const raw = localStorage.getItem('pricing_batch_history_v1');
+                if (raw) {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) setBatchHistory(parsed);
+                    } catch (e) { }
+                }
+            }
+        };
+        loadHistory();
+    }, []);
+
+    useEffect(() => {
         setItemBatchMap((prev) => {
-            const reconciled = reconcileItemBatchMap(items, prev);
+            const reconciled = reconcileItemBatchMap(items, batchHistory, prev);
             return reconciled || prev;
         });
-    }, [items]);
+    }, [items, batchHistory]);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -618,7 +642,7 @@ export default function Dashboard() {
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-gray-50/30">
                                 <div className="flex items-center gap-2">
-                                    <History className="w-5 h-5 text-gray-500" />
+                                    <HistoryIcon className="w-5 h-5 text-gray-500" />
                                     <div>
                                         <h2 className="text-lg sm:text-xl font-bold text-gray-800">Historial de Ventas</h2>
                                         <p className="text-xs text-gray-500">Tandas: {soldBatchRefs.length} | Ventas directas: {soldDirectCount}</p>
@@ -682,6 +706,8 @@ export default function Dashboard() {
                         onInventoryRefresh={loadItems}
                         itemBatchMap={itemBatchMap}
                         setItemBatchMap={setItemBatchMap}
+                        batchHistory={batchHistory}
+                        setBatchHistory={setBatchHistory}
                     />
                 )}
             </div>
@@ -1616,7 +1642,9 @@ function BulkPricingBoard({
     inventoryItems,
     onInventoryRefresh,
     itemBatchMap,
-    setItemBatchMap
+    setItemBatchMap,
+    batchHistory,
+    setBatchHistory
 }: {
     totalPaid: number;
     setTotalPaid: React.Dispatch<React.SetStateAction<number>>;
@@ -1626,6 +1654,8 @@ function BulkPricingBoard({
     onInventoryRefresh: () => Promise<void>;
     itemBatchMap: Record<string, string>;
     setItemBatchMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    batchHistory: BatchRecord[];
+    setBatchHistory: React.Dispatch<React.SetStateAction<BatchRecord[]>>;
 }) {
     const [newName, setNewName] = useState('');
     const [newQty, setNewQty] = useState('1');
@@ -1633,7 +1663,6 @@ function BulkPricingBoard({
     const [newSalePrice, setNewSalePrice] = useState('');
     const [newDisposition, setNewDisposition] = useState<'sell' | 'keep'>('sell');
     const [totalPaidInput, setTotalPaidInput] = useState('');
-    const [history, setHistory] = useState<BatchRecord[]>([]);
     const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [batchDefaultLocation, setBatchDefaultLocation] = useState('');
     const [bulkLocationInput, setBulkLocationInput] = useState('');
@@ -1662,7 +1691,7 @@ function BulkPricingBoard({
                 const dbBatches = await itemService.getBatches();
 
                 if (dbBatches && dbBatches.length > 0) {
-                    setHistory(dbBatches);
+                    setBatchHistory(dbBatches);
                     // Update local storage as a cache
                     localStorage.setItem('pricing_batch_history_v1', JSON.stringify(dbBatches));
                 } else {
@@ -1670,7 +1699,7 @@ function BulkPricingBoard({
                     const raw = localStorage.getItem('pricing_batch_history_v1');
                     if (raw) {
                         const parsed = JSON.parse(raw) as BatchRecord[];
-                        if (Array.isArray(parsed)) setHistory(parsed);
+                        if (Array.isArray(parsed)) setBatchHistory(parsed);
                     }
                 }
             } catch (error) {
@@ -1679,7 +1708,7 @@ function BulkPricingBoard({
                 if (raw) {
                     try {
                         const parsed = JSON.parse(raw);
-                        if (Array.isArray(parsed)) setHistory(parsed);
+                        if (Array.isArray(parsed)) setBatchHistory(parsed);
                     } catch (e) { }
                 }
             }
@@ -1699,7 +1728,7 @@ function BulkPricingBoard({
         }));
     };
 
-    const selectedRecord = history.find((record) => record.id === selectedHistoryId) || null;
+    const selectedRecord = batchHistory.find((record) => record.id === selectedHistoryId) || null;
     const selectedRecordItems: PricingItem[] = selectedRecord
         ? ((selectedRecord.items && selectedRecord.items.length > 0)
             ? selectedRecord.items
@@ -1717,7 +1746,7 @@ function BulkPricingBoard({
         : [];
 
     const deleteBatchRecord = async (recordId: string) => {
-        const target = history.find((record) => record.id === recordId);
+        const target = batchHistory.find((record) => record.id === recordId);
         if (!target) return;
 
         const ok = confirm(`¿Eliminar la tanda ${target.batchCode}? Se borrará también del inventario todo producto vinculado a esta tanda.`);
@@ -1732,8 +1761,8 @@ function BulkPricingBoard({
             // Delete from Supabase
             await itemService.deleteBatch(recordId);
 
-            const nextHistory = history.filter((record) => record.id !== recordId);
-            setHistory(nextHistory);
+            const nextHistory = batchHistory.filter((record) => record.id !== recordId);
+            setBatchHistory(nextHistory);
             localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
             if (selectedHistoryId === recordId) {
                 setSelectedHistoryId(null);
@@ -1810,7 +1839,10 @@ function BulkPricingBoard({
 
         try {
             const itemsToSell = normalizedItems.filter((item) => item.disposition === 'sell');
-            const batchIndex = history.length + 1;
+            const lastBatchCode = batchHistory.length > 0
+                ? batchHistory.map(h => parseInt(h.batchCode.split('-')[1]) || 0).reduce((a, b) => Math.max(a, b), 0)
+                : 0;
+            const batchIndex = lastBatchCode + 1;
             const batchCode = `T-${batchIndex.toString().padStart(3, '0')}`;
             const batchType: BatchRecord['batchType'] =
                 itemsToSell.length === 0 ? 'retenido' : (itemsToSell.length === normalizedItems.length ? 'venta' : 'mixta');
@@ -1867,9 +1899,8 @@ function BulkPricingBoard({
 
             // Save to Supabase
             const savedBatch = await itemService.createBatch(record);
-
-            const nextHistory = [savedBatch, ...history].slice(0, 50);
-            setHistory(nextHistory);
+            const nextHistory = [savedBatch, ...batchHistory].slice(0, 50);
+            setBatchHistory(nextHistory);
             localStorage.setItem('pricing_batch_history_v1', JSON.stringify(nextHistory));
 
             setBatchItems([]);
@@ -2103,11 +2134,11 @@ function BulkPricingBoard({
 
             <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6">
                 <h3 className="text-base font-bold text-gray-800 mb-3">Historial de Tandas</h3>
-                {history.length === 0 ? (
+                {batchHistory.length === 0 ? (
                     <p className="text-sm text-gray-500">Sin registros todavía.</p>
                 ) : (
                     <div className="space-y-2">
-                        {history.slice(0, 8).map((record) => (
+                        {batchHistory.slice(0, 8).map((record) => (
                             <div
                                 key={record.id}
                                 className={`w-full rounded-xl border px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 transition-colors ${selectedHistoryId === record.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'}`}
