@@ -70,7 +70,7 @@ const reconcileItemBatchMap = (inventoryItems: Item[], currentMap: Record<string
 
     const unassigned = inventoryItems.filter((item) => {
         const alreadyTagged = item.batchRef || nextMap[item.id];
-        return item.status === 'in_stock' && !alreadyTagged;
+        return !alreadyTagged;
     });
 
     for (const record of history) {
@@ -307,7 +307,7 @@ export default function Dashboard() {
                         date: editingItem.date,
                         status: 'sold',
                         condition: editingItem.condition,
-                        batchRef: editingItem.batchRef,
+                        batchRef: getItemBatchRef(editingItem),
                         location: formData.location || editingItem.location,
                         estimatedSalePrice: editingItem.estimatedSalePrice,
                         saleDate: formDateISO
@@ -343,7 +343,7 @@ export default function Dashboard() {
                         i.productName === (formData.productName || editingItem.productName) &&
                         i.purchasePrice === (Number(formData.purchasePrice) || editingItem.purchasePrice) &&
                         i.condition === condition &&
-                        getItemBatchRef(i) === editingItem.batchRef
+                        getItemBatchRef(i) === getItemBatchRef(editingItem)
                     );
 
                     if (existingStock) {
@@ -368,7 +368,7 @@ export default function Dashboard() {
                     saleDate,
                     status,
                     condition,
-                    batchRef: editingItem.batchRef,
+                    batchRef: getItemBatchRef(editingItem),
                     location: formData.location ?? editingItem.location,
                     estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice
                 };
