@@ -41,3 +41,24 @@ create policy "Allow public access"
 on items for all 
 using (true)
 with check (true);
+-- Create the batches table for history
+create table if not exists batches (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default now(),
+  batch_code text not null,
+  batch_type text not null,
+  total_paid numeric not null default 0,
+  total_sell_revenue numeric not null default 0,
+  cash_profit numeric not null default 0,
+  retained_value numeric not null default 0,
+  items_count integer not null default 0,
+  items_json jsonb not null default '[]'::jsonb
+);
+
+-- Enable RLS for batches
+alter table batches enable row level security;
+
+create policy "Allow public access for batches" 
+on batches for all 
+using (true)
+with check (true);

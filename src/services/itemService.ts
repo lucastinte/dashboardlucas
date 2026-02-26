@@ -103,6 +103,7 @@ export const itemService = {
                 .single());
         }
         if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbItem || 'estimated_sale_price' in dbItem)) {
+            console.error('Supabase Error: La tabla "items" no tiene las columnas "location" o "estimated_sale_price". Ejecuta el SQL de configuración.');
             ({ data, error } = await supabase
                 .from('items')
                 .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price']))
@@ -142,7 +143,7 @@ export const itemService = {
                 .single());
         }
         if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates)) {
-            console.warn('Supabase: missing columns location/estimated_sale_price. Falling back on update.');
+            console.error('Supabase Error: No se puede guardar la ubicación/precio estimado. Falta la columna en la tabla "items".');
             ({ data, error } = await supabase
                 .from('items')
                 .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price']))
