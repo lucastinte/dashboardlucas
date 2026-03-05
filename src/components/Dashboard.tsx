@@ -514,7 +514,8 @@ export default function Dashboard() {
                     condition: item.condition,
                     batchRef: getItemBatchRef(item),
                     location: '',
-                    estimatedSalePrice: item.estimatedSalePrice
+                    estimatedSalePrice: item.estimatedSalePrice,
+                    publishUrls: item.publishUrls
                 });
 
                 setItems(prev => prev.map(i => i.id === newItem.id ? created : i));
@@ -1013,6 +1014,15 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                 const bRef = resolveBatchRef(item);
                 if (bRef && !groups[key].allBatches.includes(bRef)) {
                     groups[key].allBatches.push(bRef);
+                }
+
+                // Merge publishUrls intelligently
+                if (item.publishUrls) {
+                    if (!groups[key].publishUrls) {
+                        groups[key].publishUrls = item.publishUrls;
+                    } else if (!groups[key].publishUrls?.includes(item.publishUrls)) {
+                        groups[key].publishUrls = `${groups[key].publishUrls}\n${item.publishUrls}`;
+                    }
                 }
             }
         });
