@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -425,7 +425,8 @@ export default function Dashboard() {
                     condition,
                     batchRef: getItemBatchRef(editingItem),
                     location: formData.location ?? editingItem.location,
-                    estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice
+                    estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice,
+                    publishUrls: formData.publishUrls ?? editingItem.publishUrls
                 };
 
                 // Optimistic UI update
@@ -454,6 +455,7 @@ export default function Dashboard() {
                     condition: (formData.condition as ItemCondition) || 'nuevo',
                     location: formData.location || '',
                     estimatedSalePrice: formData.estimatedSalePrice || 0,
+                    publishUrls: formData.publishUrls || '',
                     saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined
                 };
 
@@ -542,6 +544,7 @@ export default function Dashboard() {
             batchRef: resolvedBatchRef,
             location: item.location || '',
             estimatedSalePrice: item.estimatedSalePrice || 0,
+            publishUrls: item.publishUrls || '',
             date: item.saleDate ? item.saleDate.split('T')[0] : item.date.split('T')[0]
         });
         setIsModalOpen(true);
@@ -1042,7 +1045,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                     <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                             <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
-                            <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
+                            <span className="bg-blue-50 text-white px-2 py-1 rounded-md text-xs font-semibold shrink-0">
                                 Stock: {item.quantity}
                             </span>
                         </div>
@@ -1081,12 +1084,11 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                 <div className="col-span-2">
                                     <p className="text-gray-400 text-xs">Links Pub.</p>
                                     <div className="flex flex-wrap gap-2 mt-1">
-                                        {item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).map((u, i) => (
-                                            <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1">
-                                                <ExternalLink className="w-3 h-3" />
-                                                Link {i + 1}
-                                            </a>
-                                        ))}
+                                        {(item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).length > 0) && (
+                                            <span className="text-emerald-600 bg-emerald-50 p-1 rounded-md" title="Tiene links guardados">
+                                                <Check className="w-4 h-4" />
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -1150,7 +1152,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                             <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
                                 <td className="px-6 py-4 text-center">
-                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
                                 </td>
                                 <td className="px-6 py-4 text-right font-mono">${item.purchasePrice.toLocaleString()}</td>
                                 <td className="px-6 py-4 text-right font-mono text-gray-700">
@@ -1163,15 +1165,11 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                     {item.location || '-'}
                                 </td>
-                                <td className="px-6 py-4 text-center">
-                                    {item.publishUrls ? (
-                                        <div className="flex flex-wrap gap-1 justify-center">
-                                            {item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).map((u, i) => (
-                                                <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1.5 rounded-md" title="Abrir link">
-                                                    <ExternalLink className="w-3.5 h-3.5" />
-                                                </a>
-                                            ))}
-                                        </div>
+                                <td className="px-6 py-4 text-center flex justify-center items-center">
+                                    {item.publishUrls && item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).length > 0 ? (
+                                        <span className="text-emerald-500" title="Tiene links de publicación">
+                                            <Check className="w-5 h-5" />
+                                        </span>
                                     ) : '-'}
                                 </td>
                                 <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
