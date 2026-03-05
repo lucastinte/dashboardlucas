@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -290,6 +290,37 @@ export default function Dashboard() {
                 }
             }
 
+            // Auto-merge identical in-stock items
+            let mergedAny = false;
+            const stockMergeMap = new Map<string, Item[]>();
+            for (const item of finalItems) {
+                if (item.status !== 'in_stock') continue;
+                const bRef = item.batchRef || '';
+                const key = `${item.productName.toLowerCase().trim()}|${item.purchasePrice}|${item.salePrice || 0}|${item.condition}|${bRef}|${item.location || ''}`;
+                if (stockMergeMap.has(key)) {
+                    stockMergeMap.get(key)!.push(item);
+                } else {
+                    stockMergeMap.set(key, [item]);
+                }
+            }
+
+            for (const group of stockMergeMap.values()) {
+                if (group.length > 1) {
+                    try {
+                        const mainItem = group[0];
+                        const totalQty = group.reduce((acc, i) => acc + i.quantity, 0);
+                        await itemService.updateItem(mainItem.id, { quantity: totalQty });
+                        for (let i = 1; i < group.length; i++) {
+                            await itemService.deleteItem(group[i].id);
+                        }
+                        mergedAny = true;
+                    } catch (e) { console.error('Error auto-merging', e); }
+                }
+            }
+            if (mergedAny) {
+                finalItems = await itemService.getItems();
+            }
+
             setItems(finalItems);
         } catch (err: any) {
             console.error('Error loading items:', err);
@@ -456,6 +487,46 @@ export default function Dashboard() {
             } catch (err) {
                 console.error('Error deleting:', err);
                 alert('Error al eliminar.');
+                loadItems();
+            }
+        }
+    };
+
+    const handleSplitItem = async (item: Item) => {
+        if (item.quantity <= 1) return;
+        if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
+            try {
+                const newItem = { ...item, id: crypto.randomUUID(), quantity: 1, location: '' };
+                const updatedItem = { ...item, quantity: item.quantity - 1 };
+
+                setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i).concat(newItem as Item));
+
+                await itemService.updateItem(item.id, { quantity: item.quantity - 1 });
+                const created = await itemService.createItem({
+                    productName: item.productName,
+                    purchasePrice: item.purchasePrice,
+                    salePrice: item.salePrice,
+                    quantity: 1,
+                    date: item.date,
+                    status: item.status,
+                    condition: item.condition,
+                    batchRef: getItemBatchRef(item),
+                    location: '',
+                    estimatedSalePrice: item.estimatedSalePrice
+                });
+
+                setItems(prev => prev.map(i => i.id === newItem.id ? created : i));
+
+                setEditingItem(created);
+                setFormData({
+                    ...created,
+                    status: 'in_stock',
+                    date: created.date.split('T')[0]
+                });
+                setIsModalOpen(true);
+            } catch (err) {
+                console.error('Error splitting:', err);
+                alert('Error al separar la unidad.');
                 loadItems();
             }
         }
@@ -678,7 +749,7 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSell={(item) => {
+                            <InventoryTable items={stockItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -911,12 +982,13 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
     );
 }
 
-function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
+function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSplit }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     onSell: (i: Item) => void,
-    resolveBatchRef: (item: Item) => string | undefined
+    resolveBatchRef: (item: Item) => string | undefined,
+    onSplit: (i: Item) => void
 }) {
     const [isGrouped, setIsGrouped] = useState(false);
 
@@ -1028,6 +1100,15 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                     <Trash2 className="w-4 h-4" />
                                     Eliminar
                                 </button>
+                                {item.quantity > 1 && (
+                                    <button
+                                        onClick={() => onSplit(item)}
+                                        className="col-span-2 h-10 rounded-xl border border-amber-100 bg-amber-50 text-amber-700 text-sm font-medium flex items-center justify-center gap-2"
+                                    >
+                                        <Split className="w-4 h-4" />
+                                        Separar 1 unidad
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1090,6 +1171,15 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
                                         >
                                             <Edit2 className="w-4 h-4" />
                                         </button>
+                                        {item.quantity > 1 && (
+                                            <button
+                                                onClick={() => onSplit(item)}
+                                                className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                                                title="Separar 1 unidad"
+                                            >
+                                                <Split className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => onDelete(item.id)}
                                             className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
@@ -1850,14 +1940,29 @@ function BulkPricingBoard({
         }
 
         try {
-            const itemsToSell = normalizedItems.filter((item) => item.disposition === 'sell');
+            const rawItemsToSell = normalizedItems.filter((item) => item.disposition === 'sell');
+            const itemsToSell: PricingItem[] = [];
+            for (const item of rawItemsToSell) {
+                const existing = itemsToSell.find(i =>
+                    i.productName === item.productName &&
+                    i.condition === item.condition &&
+                    i.listedUnitPrice === item.listedUnitPrice &&
+                    i.unitSalePrice === item.unitSalePrice
+                );
+                if (existing) {
+                    existing.quantity += item.quantity;
+                } else {
+                    itemsToSell.push({ ...item });
+                }
+            }
+
             const lastBatchCode = batchHistory.length > 0
                 ? batchHistory.map(h => parseInt(h.batchCode.split('-')[1]) || 0).reduce((a, b) => Math.max(a, b), 0)
                 : 0;
             const batchIndex = lastBatchCode + 1;
             const batchCode = `T-${batchIndex.toString().padStart(3, '0')}`;
             const batchType: BatchRecord['batchType'] =
-                itemsToSell.length === 0 ? 'retenido' : (itemsToSell.length === normalizedItems.length ? 'venta' : 'mixta');
+                rawItemsToSell.length === 0 ? 'retenido' : (rawItemsToSell.length === normalizedItems.length ? 'venta' : 'mixta');
 
             for (const item of itemsToSell) {
                 const adjustedUnitCost = Math.round(item.listedUnitPrice * allocationFactor);
