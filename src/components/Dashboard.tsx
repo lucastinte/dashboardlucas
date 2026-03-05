@@ -509,7 +509,10 @@ export default function Dashboard() {
                 // 1. Update the original item in the DB
                 await itemService.updateItem(item.id, { quantity: updatedItem.quantity });
 
-                // 2. Create the new separated item in the DB
+                // 2. Extract parent batchRef to prevent orphaning
+                const bRef = getItemBatchRef(item);
+
+                // 3. Create the new separated item in the DB
                 const created = await itemService.createItem({
                     productName: item.productName,
                     purchasePrice: item.purchasePrice,
@@ -518,19 +521,25 @@ export default function Dashboard() {
                     date: item.date,
                     status: item.status,
                     condition: item.condition,
-                    batchRef: getItemBatchRef(item),
+                    batchRef: bRef,
                     location: '',
                     estimatedSalePrice: item.estimatedSalePrice,
                     publishUrls: item.publishUrls // Ensure links carry over
                 });
 
+                // 4. Update the memory map so it renders properly right away in grouped views
+                if (bRef) {
+                    setItemBatchMap(prev => {
+                        const next = { ...prev, [created.id]: bRef };
+                        localStorage.setItem('item_batch_map_v2', JSON.stringify(next));
+                        return next;
+                    });
+                }
+
                 // Replace the temporary optimistic new item with the real one from DB
                 setItems(prev => prev.map(i => i.id === tempId ? created : i));
 
                 // Open the modal to edit the newly separated item
-
-                setItems(prev => prev.map(i => i.id === newItem.id ? created : i));
-
                 setEditingItem(created);
                 setFormData({
                     ...created,
@@ -1015,7 +1024,8 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
     const displayItems = isGrouped ? (() => {
         const groups: Record<string, Item & { allBatches: string[] }> = {};
         items.forEach(item => {
-            const key = `${item.productName.toLowerCase()}-${item.purchasePrice}-${item.condition}`;
+            const loc = typeof item.location === 'string' ? item.location.trim().toLowerCase() : '';
+            const key = `${item.productName.toLowerCase()}-${item.purchasePrice}-${item.condition}-${loc}`;
             if (!groups[key]) {
                 groups[key] = { ...item, allBatches: [] };
                 const bRef = resolveBatchRef(item);
@@ -1137,7 +1147,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                     <Trash2 className="w-4 h-4" />
                                     Eliminar
                                 </button>
-                                {item.quantity > 1 && (
+                                {item.quantity > 1 && !isGrouped && (
                                     <button
                                         onClick={() => onSplit(item)}
                                         className="col-span-2 h-10 rounded-xl border border-amber-100 bg-amber-50 text-amber-700 text-sm font-medium flex items-center justify-center gap-2"
@@ -1216,7 +1226,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                         >
                                             <Edit2 className="w-4 h-4" />
                                         </button>
-                                        {item.quantity > 1 && (
+                                        {item.quantity > 1 && !isGrouped && (
                                             <button
                                                 onClick={() => onSplit(item)}
                                                 className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
