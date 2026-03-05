@@ -498,12 +498,18 @@ export default function Dashboard() {
         if (item.quantity <= 1) return;
         if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
             try {
-                const newItem = { ...item, id: crypto.randomUUID(), quantity: 1, location: '' };
+                // Optimistic UI updates
+                const tempId = crypto.randomUUID();
+                const newItem = { ...item, id: tempId, quantity: 1, location: '' };
                 const updatedItem = { ...item, quantity: item.quantity - 1 };
 
+                // First, update the visual array: replace the old item with the reduced one, and add the new one.
                 setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i).concat(newItem as Item));
 
-                await itemService.updateItem(item.id, { quantity: item.quantity - 1 });
+                // 1. Update the original item in the DB
+                await itemService.updateItem(item.id, { quantity: updatedItem.quantity });
+
+                // 2. Create the new separated item in the DB
                 const created = await itemService.createItem({
                     productName: item.productName,
                     purchasePrice: item.purchasePrice,
@@ -515,8 +521,13 @@ export default function Dashboard() {
                     batchRef: getItemBatchRef(item),
                     location: '',
                     estimatedSalePrice: item.estimatedSalePrice,
-                    publishUrls: item.publishUrls
+                    publishUrls: item.publishUrls // Ensure links carry over
                 });
+
+                // Replace the temporary optimistic new item with the real one from DB
+                setItems(prev => prev.map(i => i.id === tempId ? created : i));
+
+                // Open the modal to edit the newly separated item
 
                 setItems(prev => prev.map(i => i.id === newItem.id ? created : i));
 
