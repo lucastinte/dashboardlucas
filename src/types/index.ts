@@ -14,6 +14,7 @@ export interface Item {
     batchRef?: string;
     location?: string;
     estimatedSalePrice?: number;
+    publishUrls?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

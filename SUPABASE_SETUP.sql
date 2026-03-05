@@ -32,6 +32,9 @@ add column if not exists location text;
 alter table items
 add column if not exists estimated_sale_price numeric;
 
+alter table items
+add column if not exists publish_urls text;
+
 -- Enable Row Level Security (RLS)
 alter table items enable row level security;
 

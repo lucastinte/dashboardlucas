@@ -27,7 +27,8 @@ const mapFromDb = (dbItem: any): Item => ({
     condition: (dbItem.item_condition || 'nuevo') as ItemCondition,
     batchRef: dbItem.batch_ref || undefined,
     location: dbItem.location || undefined,
-    estimatedSalePrice: dbItem.estimated_sale_price ? Number(dbItem.estimated_sale_price) : undefined
+    estimatedSalePrice: dbItem.estimated_sale_price ? Number(dbItem.estimated_sale_price) : undefined,
+    publishUrls: dbItem.publish_urls || undefined
 });
 
 // Helper to map application model to DB columns
@@ -44,6 +45,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.batchRef !== undefined) dbItem.batch_ref = item.batchRef;
     if (item.location !== undefined) dbItem.location = item.location;
     if (item.estimatedSalePrice !== undefined) dbItem.estimated_sale_price = item.estimatedSalePrice;
+    if (item.publishUrls !== undefined) dbItem.publish_urls = item.publishUrls;
     return dbItem;
 };
 
@@ -66,11 +68,11 @@ export const itemService = {
             .insert(dbItems)
             .select();
 
-        if (hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) {
-            console.warn('Supabase: missing columns location/estimated_sale_price. Falling back.');
+        if (hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) {
+            console.warn('Supabase: missing columns location/estimated_sale_price/publish_urls. Falling back.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price'])))
+                .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price', 'publish_urls'])))
                 .select());
         }
 
@@ -98,15 +100,15 @@ export const itemService = {
         if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbItem) {
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutColumns(dbItem, ['batch_ref', 'location', 'estimated_sale_price']))
+                .insert(withoutColumns(dbItem, ['batch_ref', 'location', 'estimated_sale_price', 'publish_urls']))
                 .select()
                 .single());
         }
-        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbItem || 'estimated_sale_price' in dbItem)) {
-            console.error('Supabase Error: La tabla "items" no tiene las columnas "location" o "estimated_sale_price". Ejecuta el SQL de configuración.');
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) && ('location' in dbItem || 'estimated_sale_price' in dbItem || 'publish_urls' in dbItem)) {
+            console.error('Supabase Error: La tabla "items" no tiene las columnas "location", "publish_urls" o "estimated_sale_price". Ejecuta el SQL de configuración.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price']))
+                .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price', 'publish_urls']))
                 .select()
                 .single());
         }
@@ -137,16 +139,16 @@ export const itemService = {
         if (hasMissingColumn(error, 'batch_ref') && 'batch_ref' in dbUpdates) {
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutColumns(dbUpdates, ['batch_ref', 'location', 'estimated_sale_price']))
+                .update(withoutColumns(dbUpdates, ['batch_ref', 'location', 'estimated_sale_price', 'publish_urls']))
                 .eq('id', id)
                 .select()
                 .single());
         }
-        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates)) {
-            console.error('Supabase Error: No se puede guardar la ubicación/precio estimado. Falta la columna en la tabla "items".');
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates || 'publish_urls' in dbUpdates)) {
+            console.error('Supabase Error: No se puede guardar la ubicación/precio estimado o links. Falta la columna en la tabla "items".');
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price']))
+                .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price', 'publish_urls']))
                 .eq('id', id)
                 .select()
                 .single());
