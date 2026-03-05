@@ -163,7 +163,7 @@ export default function Dashboard() {
 
     useEffect(() => {
         try {
-            const raw = localStorage.getItem('item_batch_map_v1');
+            const raw = localStorage.getItem('item_batch_map_v2');
             if (!raw) return;
             const parsed = JSON.parse(raw) as Record<string, string>;
             setItemBatchMap(parsed && typeof parsed === 'object' ? parsed : {});
@@ -180,7 +180,7 @@ export default function Dashboard() {
     }, [batchTotalPaid, batchItems]);
 
     useEffect(() => {
-        localStorage.setItem('item_batch_map_v1', JSON.stringify(itemBatchMap));
+        localStorage.setItem('item_batch_map_v2', JSON.stringify(itemBatchMap));
     }, [itemBatchMap]);
 
     useEffect(() => {
