@@ -747,6 +747,8 @@ export default function Dashboard() {
                             onCancel={() => setIsModalOpen(false)}
                             isEditing={!!editingItem}
                             editingItemStatus={editingItem?.status}
+                            suggestedNames={Array.from(new Set(items.map(i => i.productName))).filter(Boolean).sort()}
+                            suggestedLocations={Array.from(new Set(items.map(i => i.location))).filter(Boolean).sort() as string[]}
                         />
                     </div>
                 </div>
@@ -1106,13 +1108,15 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef }: {
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus }: {
+function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [] }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
     onCancel: () => void,
     isEditing: boolean,
-    editingItemStatus?: ItemStatus
+    editingItemStatus?: ItemStatus,
+    suggestedNames?: string[],
+    suggestedLocations?: string[]
 }) {
     const [url, setUrl] = useState('');
     const [isDetectingFromUrl, setIsDetectingFromUrl] = useState(false);
@@ -1519,11 +1523,15 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Producto</label>
                 <input
                     type="text"
+                    list="product-names"
                     required
                     className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
                     value={formData.productName}
                     onChange={e => setFormData({ ...formData, productName: e.target.value })}
                 />
+                <datalist id="product-names">
+                    {suggestedNames.map(name => <option key={name} value={name} />)}
+                </datalist>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1606,11 +1614,15 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     <label className="block text-sm font-medium text-gray-700 mb-1">Ubicación</label>
                     <input
                         type="text"
+                        list="product-locations"
                         className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
                         placeholder="Ej: Jujuy, Depósito 1"
                         value={formData.location || ''}
                         onChange={e => setFormData({ ...formData, location: e.target.value })}
                     />
+                    <datalist id="product-locations">
+                        {suggestedLocations.map(loc => <option key={loc} value={loc} />)}
+                    </datalist>
                 </div>
             </div>
 
