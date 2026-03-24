@@ -239,5 +239,38 @@ export const itemService = {
             .eq('id', id);
 
         if (error) throw error;
+    },
+
+    async updateBatch(id: string, updates: any): Promise<any> {
+        const dbUpdates: any = {};
+        if (updates.batchCode !== undefined) dbUpdates.batch_code = updates.batchCode;
+        if (updates.batchType !== undefined) dbUpdates.batch_type = updates.batchType;
+        if (updates.totalPaid !== undefined) dbUpdates.total_paid = updates.totalPaid;
+        if (updates.totalSellRevenue !== undefined) dbUpdates.total_sell_revenue = updates.totalSellRevenue;
+        if (updates.cashProfit !== undefined) dbUpdates.cash_profit = updates.cashProfit;
+        if (updates.retainedValue !== undefined) dbUpdates.retained_value = updates.retainedValue;
+        if (updates.itemsCount !== undefined) dbUpdates.items_count = updates.itemsCount;
+        if (updates.items !== undefined) dbUpdates.items_json = updates.items;
+
+        const { data, error } = await supabase
+            .from('batches')
+            .update(dbUpdates)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return {
+            id: data.id,
+            batchCode: data.batch_code,
+            batchType: data.batch_type,
+            createdAt: data.created_at,
+            totalPaid: Number(data.total_paid),
+            totalSellRevenue: Number(data.total_sell_revenue),
+            cashProfit: Number(data.cash_profit),
+            retainedValue: Number(data.retained_value),
+            itemsCount: Number(data.items_count),
+            items: data.items_json
+        };
     }
 };

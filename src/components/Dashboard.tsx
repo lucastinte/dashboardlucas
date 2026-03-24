@@ -1835,6 +1835,94 @@ function BulkPricingBoard({
     const [batchDefaultLocation, setBatchDefaultLocation] = useState('');
     const [bulkLocationInput, setBulkLocationInput] = useState('');
     const [isUpdatingBulk, setIsUpdatingBulk] = useState(false);
+    const [isProcessingReturn, setIsProcessingReturn] = useState(false);
+
+    const handleReturnFromBatch = async (batch: BatchRecord, pricingItem: PricingItem) => {
+        const qtyToReturnStr = prompt(`¿Cuántas unidades de "${pricingItem.productName}" deseas devolver? (Máximo: ${pricingItem.quantity})`, pricingItem.quantity.toString());
+        if (!qtyToReturnStr) return;
+
+        const qtyToReturn = parseInt(qtyToReturnStr);
+        if (isNaN(qtyToReturn) || qtyToReturn <= 0 || qtyToReturn > pricingItem.quantity) {
+            alert('Cantidad no válida.');
+            return;
+        }
+
+        const refundPerUnitStr = prompt(`¿Recibiste reembolso por unidad para esta devolución? (Ingresa 0 si no hubo reembolso)`, "0");
+        if (refundPerUnitStr === null) return;
+        const refundPerUnit = parseMoneyInput(refundPerUnitStr);
+
+        const confirmTotal = confirm(`Se devolverán ${qtyToReturn} unidades. Reembolso total: $${(qtyToReturn * refundPerUnit).toLocaleString('es-AR')}.\n¿Confirmar operación?`);
+        if (!confirmTotal) return;
+
+        setIsProcessingReturn(true);
+        try {
+            // 1. Update the inventory items
+            const matchingItems = inventoryItems.filter(i =>
+                (i.batchRef || itemBatchMap[i.id]) === batch.batchCode &&
+                normalizeText(i.productName) === normalizeText(pricingItem.productName) &&
+                (i.condition || 'nuevo') === pricingItem.condition
+            );
+
+            let remainingToReturn = qtyToReturn;
+            for (const item of matchingItems) {
+                if (remainingToReturn <= 0) break;
+                const reduceBy = Math.min(item.quantity, remainingToReturn);
+                if (item.quantity > reduceBy) {
+                    await itemService.updateItem(item.id, { quantity: item.quantity - reduceBy });
+                } else {
+                    await itemService.deleteItem(item.id);
+                }
+                remainingToReturn -= reduceBy;
+            }
+
+            // 2. Update the batch record
+            const updatedItems = batch.items.map(item => {
+                if (item.productName === pricingItem.productName && item.condition === pricingItem.condition) {
+                    return { ...item, quantity: item.quantity - qtyToReturn };
+                }
+                return item;
+            }).filter(item => item.quantity > 0);
+
+            const totalPaidReduction = qtyToReturn * refundPerUnit;
+            const newTotalPaid = Math.max(0, batch.totalPaid - totalPaidReduction);
+
+            // Recalculate metrics for the batch
+            const newListedSubtotal = updatedItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
+            const newAllocationFactor = newListedSubtotal > 0 ? newTotalPaid / newListedSubtotal : 1;
+            const newTotalSellRevenue = updatedItems
+                .filter((item) => item.disposition === 'sell')
+                .reduce((acc, item) => acc + (item.unitSalePrice * item.quantity), 0);
+            const newRetainedValue = updatedItems
+                .filter((item) => item.disposition === 'keep')
+                .reduce((acc, item) => acc + ((item.listedUnitPrice * newAllocationFactor) * item.quantity), 0);
+            const newSellCostAdjusted = updatedItems
+                .filter((item) => item.disposition === 'sell')
+                .reduce((acc, item) => acc + ((item.listedUnitPrice * newAllocationFactor) * item.quantity), 0);
+            const newExpectedProfit = newTotalSellRevenue - newSellCostAdjusted;
+
+            await itemService.updateBatch(batch.id, {
+                items: updatedItems,
+                itemsCount: updatedItems.length,
+                totalPaid: newTotalPaid,
+                totalSellRevenue: newTotalSellRevenue,
+                cashProfit: newExpectedProfit,
+                retainedValue: newRetainedValue
+            });
+
+            // 3. Refresh state
+            await onInventoryRefresh();
+            const dbBatches = await itemService.getBatches();
+            setBatchHistory(dbBatches);
+            localStorage.setItem('pricing_batch_history_v1', JSON.stringify(dbBatches));
+
+            alert('Devolución procesada con éxito.');
+        } catch (error) {
+            console.error('Error processing return', error);
+            alert('Hubo un error al procesar la devolución.');
+        } finally {
+            setIsProcessingReturn(false);
+        }
+    };
 
     const formatMoney = (value?: number) => {
         const numeric = Number(value || 0);
@@ -2438,6 +2526,7 @@ function BulkPricingBoard({
                                     <th className="px-3 py-2 text-right">Lista Unit.</th>
                                     <th className="px-3 py-2 text-right">Venta Unit.</th>
                                     <th className="px-3 py-2 text-center">Destino</th>
+                                    <th className="px-3 py-2 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -2451,6 +2540,16 @@ function BulkPricingBoard({
                                         </td>
                                         <td className="px-3 py-2 text-center text-xs font-semibold text-gray-700">
                                             {item.disposition === 'sell' ? 'Vender' : 'Me lo quedo'}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                            <button
+                                                type="button"
+                                                disabled={isProcessingReturn}
+                                                onClick={() => handleReturnFromBatch(selectedRecord, item)}
+                                                className="text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 bg-rose-50 px-2 py-1 rounded-md transition-all disabled:opacity-50"
+                                            >
+                                                {isProcessingReturn ? '...' : 'Devolver'}
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
