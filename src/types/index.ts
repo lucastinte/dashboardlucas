@@ -15,6 +15,7 @@ export interface Item {
     location?: string;
     estimatedSalePrice?: number;
     publishUrls?: string;
+    imageUrl?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

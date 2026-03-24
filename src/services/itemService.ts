@@ -28,7 +28,8 @@ const mapFromDb = (dbItem: any): Item => ({
     batchRef: dbItem.batch_ref || undefined,
     location: dbItem.location || undefined,
     estimatedSalePrice: dbItem.estimated_sale_price ? Number(dbItem.estimated_sale_price) : undefined,
-    publishUrls: dbItem.publish_urls || undefined
+    publishUrls: dbItem.publish_urls || undefined,
+    imageUrl: dbItem.image_url || undefined
 });
 
 // Helper to map application model to DB columns
@@ -46,6 +47,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.location !== undefined) dbItem.location = item.location;
     if (item.estimatedSalePrice !== undefined) dbItem.estimated_sale_price = item.estimatedSalePrice;
     if (item.publishUrls !== undefined) dbItem.publish_urls = item.publishUrls;
+    if (item.imageUrl !== undefined) dbItem.image_url = item.imageUrl;
     return dbItem;
 };
 
@@ -68,11 +70,11 @@ export const itemService = {
             .insert(dbItems)
             .select();
 
-        if (hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) {
-            console.warn('Supabase: missing columns location/estimated_sale_price/publish_urls. Falling back.');
+        if (hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls') || hasMissingColumn(error, 'image_url')) {
+            console.warn('Supabase: missing optional columns. Falling back.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price', 'publish_urls'])))
+                .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price', 'publish_urls', 'image_url'])))
                 .select());
         }
 
@@ -104,11 +106,11 @@ export const itemService = {
                 .select()
                 .single());
         }
-        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) && ('location' in dbItem || 'estimated_sale_price' in dbItem || 'publish_urls' in dbItem)) {
-            console.error('Supabase Error: La tabla "items" no tiene las columnas "location", "publish_urls" o "estimated_sale_price". Ejecuta el SQL de configuración.');
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls') || hasMissingColumn(error, 'image_url')) && ('location' in dbItem || 'estimated_sale_price' in dbItem || 'publish_urls' in dbItem || 'image_url' in dbItem)) {
+            console.error('Supabase Error: Columnas opcionales faltantes. Ejecuta el SQL de configuración.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price', 'publish_urls']))
+                .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price', 'publish_urls', 'image_url']))
                 .select()
                 .single());
         }
@@ -144,11 +146,11 @@ export const itemService = {
                 .select()
                 .single());
         }
-        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates || 'publish_urls' in dbUpdates)) {
-            console.error('Supabase Error: No se puede guardar la ubicación/precio estimado o links. Falta la columna en la tabla "items".');
+        if ((hasMissingColumn(error, 'location') || hasMissingColumn(error, 'estimated_sale_price') || hasMissingColumn(error, 'publish_urls') || hasMissingColumn(error, 'image_url')) && ('location' in dbUpdates || 'estimated_sale_price' in dbUpdates || 'publish_urls' in dbUpdates || 'image_url' in dbUpdates)) {
+            console.error('Supabase Error: Columnas opcionales faltantes para actualizar.');
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price', 'publish_urls']))
+                .update(withoutColumns(dbUpdates, ['location', 'estimated_sale_price', 'publish_urls', 'image_url']))
                 .eq('id', id)
                 .select()
                 .single());
