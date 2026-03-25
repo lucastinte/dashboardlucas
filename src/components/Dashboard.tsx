@@ -377,6 +377,33 @@ export default function Dashboard() {
                         await itemService.deleteItem(editingItem.id);
                     }
 
+                    // AUTO-DISCOUNT FROM BATCH HISTORY
+                    const batchRef = getItemBatchRef(editingItem);
+                    if (batchRef) {
+                        const batch = batchHistory.find(b => b.batchCode === batchRef);
+                        if (batch) {
+                            try {
+                                const updatedItems = batch.items.map(item => {
+                                    if (normalizeText(item.productName) === normalizeText(editingItem.productName) &&
+                                        (item.condition || 'nuevo') === (editingItem.condition || 'nuevo')) {
+                                        return { ...item, quantity: Math.max(0, item.quantity - quantity) };
+                                    }
+                                    return item;
+                                }).filter(item => item.quantity > 0);
+
+                                await itemService.updateBatch(batch.id, {
+                                    items: updatedItems,
+                                    itemsCount: updatedItems.reduce((acc, i) => acc + i.quantity, 0)
+                                });
+                                // Refresh history state
+                                const dbBatches = await itemService.getBatches();
+                                setBatchHistory(dbBatches);
+                            } catch (e) {
+                                console.error("Error auto-discounting from batch", e);
+                            }
+                        }
+                    }
+
                     await loadItems();
                     setEditingItem(null);
                     setIsModalOpen(false);
@@ -1889,26 +1916,26 @@ function BulkPricingBoard({
     const [isProcessingReturn, setIsProcessingReturn] = useState(false);
 
     const handleReturnFromBatch = async (batch: BatchRecord, pricingItem: PricingItem) => {
-        const qtyToReturnStr = prompt(`¿Cuántas unidades de "${pricingItem.productName}" deseas devolver? (Máximo: ${pricingItem.quantity})`, pricingItem.quantity.toString());
-        if (!qtyToReturnStr) return;
+        const qtyToReturn = pricingItem.quantity;
+        
+        // Calculate original unit cost (approximate based on allocation)
+        
+        // Use listed price ratio for better approximation if possible
+        const totalListed = (Array.isArray(batch.items) ? batch.items : []).reduce((acc, i) => acc + (i.listedUnitPrice * i.quantity), 0);
+        const allocationFactor = totalListed > 0 ? batch.totalPaid / totalListed : 1;
+        const estimatedUnitCost = Math.round(pricingItem.listedUnitPrice * allocationFactor);
 
-        const qtyToReturn = parseInt(qtyToReturnStr);
-        if (isNaN(qtyToReturn) || qtyToReturn <= 0 || qtyToReturn > pricingItem.quantity) {
-            alert('Cantidad no válida.');
-            return;
-        }
-
-        const refundPerUnitStr = prompt(`¿Recibiste reembolso por unidad para esta devolución? (Ingresa 0 si no hubo reembolso)`, "0");
-        if (refundPerUnitStr === null) return;
-        const refundPerUnit = parseMoneyInput(refundPerUnitStr);
-
-        const confirmTotal = confirm(`Se devolverán ${qtyToReturn} unidades. Reembolso total: $${(qtyToReturn * refundPerUnit).toLocaleString('es-AR')}.\n¿Confirmar operación?`);
+        // Making it "directo": Only one confirmation with the estimated refund.
+        const confirmTotal = confirm(`¿Confirmar DEVOLUCIÓN TOTAL de "${pricingItem.productName}" (${qtyToReturn} unidades)?\n\nSe descontarán de la tanda y del inventario.\nReembolso estimado: $${(qtyToReturn * estimatedUnitCost).toLocaleString('es-AR')}`);
         if (!confirmTotal) return;
+
+        const refundPerUnit = estimatedUnitCost;
 
         setIsProcessingReturn(true);
         try {
-            // 1. Update the inventory items
+            // 1. Update the inventory items (only in_stock items from this batch)
             const matchingItems = inventoryItems.filter(i =>
+                i.status === 'in_stock' &&
                 (i.batchRef || itemBatchMap[i.id]) === batch.batchCode &&
                 normalizeText(i.productName) === normalizeText(pricingItem.productName) &&
                 (i.condition || 'nuevo') === pricingItem.condition
@@ -1953,7 +1980,7 @@ function BulkPricingBoard({
 
             await itemService.updateBatch(batch.id, {
                 items: updatedItems,
-                itemsCount: updatedItems.length,
+                itemsCount: updatedItems.reduce((acc, i) => acc + i.quantity, 0),
                 totalPaid: newTotalPaid,
                 totalSellRevenue: newTotalSellRevenue,
                 cashProfit: newExpectedProfit,
