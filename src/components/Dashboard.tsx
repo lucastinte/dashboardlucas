@@ -1914,6 +1914,11 @@ function BulkPricingBoard({
     const [bulkLocationInput, setBulkLocationInput] = useState('');
     const [isUpdatingBulk, setIsUpdatingBulk] = useState(false);
     const [isProcessingReturn, setIsProcessingReturn] = useState(false);
+    const [importCharges, setImportCharges] = useState(0);
+    const [importChargesInput, setImportChargesInput] = useState('');
+    const [creditAmount, setCreditAmount] = useState(0);
+    const [creditInput, setCreditInput] = useState('');
+    const [creditMode, setCreditMode] = useState<'already_applied' | 'manual'>('already_applied');
 
     const handleReturnFromBatch = async (batch: BatchRecord, pricingItem: PricingItem) => {
         const qtyToReturn = pricingItem.quantity;
@@ -2019,6 +2024,25 @@ function BulkPricingBoard({
     }, [totalPaid]);
 
     useEffect(() => {
+        try {
+            const raw = localStorage.getItem('pricing_batch_extras_v1');
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as { importCharges?: number; creditAmount?: number; creditMode?: string };
+            const ic = Number(parsed.importCharges || 0);
+            const ca = Number(parsed.creditAmount || 0);
+            setImportCharges(ic);
+            setImportChargesInput(ic > 0 ? new Intl.NumberFormat('es-AR').format(ic) : '');
+            setCreditAmount(ca);
+            setCreditInput(ca > 0 ? new Intl.NumberFormat('es-AR').format(ca) : '');
+            setCreditMode(parsed.creditMode === 'manual' ? 'manual' : 'already_applied');
+        } catch { /* ignore */ }
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem('pricing_batch_extras_v1', JSON.stringify({ importCharges, creditAmount, creditMode }));
+    }, [importCharges, creditAmount, creditMode]);
+
+    useEffect(() => {
         const loadHistory = async () => {
             try {
                 // Prioritize Supabase batches
@@ -2117,7 +2141,9 @@ function BulkPricingBoard({
 
     const normalizedItems = batchItems.map((item) => ({ ...item, disposition: item.disposition || 'sell' }));
     const listedSubtotal = normalizedItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
-    const allocationFactor = listedSubtotal > 0 ? totalPaid / listedSubtotal : 1;
+    // Si el crédito lo pone el usuario (manual), se descuenta del total real; si ya fue aplicado por Temu, no cambia nada.
+    const effectiveTotalPaid = creditMode === 'manual' ? Math.max(0, totalPaid - creditAmount) : totalPaid;
+    const allocationFactor = listedSubtotal > 0 ? effectiveTotalPaid / listedSubtotal : 1;
     const totalSellRevenue = normalizedItems
         .filter((item) => item.disposition === 'sell')
         .reduce((acc, item) => acc + (item.unitSalePrice * item.quantity), 0);
@@ -2128,7 +2154,7 @@ function BulkPricingBoard({
         .filter((item) => item.disposition === 'sell')
         .reduce((acc, item) => acc + ((item.listedUnitPrice * allocationFactor) * item.quantity), 0);
     const expectedProfit = totalSellRevenue - sellCostAdjusted;
-    const effectiveCostToRecover = Math.max(totalPaid - retainedValue, 0);
+    const effectiveCostToRecover = Math.max(effectiveTotalPaid - retainedValue, 0);
     const totalEconomicValue = expectedProfit + retainedValue;
 
     const addItem = () => {
@@ -2254,6 +2280,11 @@ function BulkPricingBoard({
 
             setBatchItems([]);
             setBatchDefaultLocation('');
+            setImportCharges(0);
+            setImportChargesInput('');
+            setCreditAmount(0);
+            setCreditInput('');
+            setCreditMode('already_applied');
             await onInventoryRefresh();
             alert('Tanda procesada: stock actualizado y resultado registrado.');
         } catch (error) {
@@ -2300,6 +2331,73 @@ function BulkPricingBoard({
                             placeholder="Ej: Jujuy, Depósito 1"
                             className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                         />
+                    </div>
+                </div>
+
+                {/* Desglose de costos adicionales */}
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                    <p className="text-xs font-semibold text-gray-600 mb-3">Desglose de costos (opcional)</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Cargos por importación</label>
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={importChargesInput}
+                                onChange={(e) => {
+                                    const value = parseMoneyInput(e.target.value);
+                                    setImportChargesInput(formatMoney(value));
+                                    setImportCharges(value);
+                                }}
+                                placeholder="Ej: 33.894"
+                                className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Crédito aplicado</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={creditInput}
+                                    onChange={(e) => {
+                                        const value = parseMoneyInput(e.target.value);
+                                        setCreditInput(formatMoney(value));
+                                        setCreditAmount(value);
+                                    }}
+                                    placeholder="Ej: 2.049"
+                                    className="flex-1 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                                />
+                                <div className="flex rounded-xl border border-gray-200 overflow-hidden text-xs font-medium">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCreditMode('already_applied')}
+                                        className={`px-3 py-2 transition-colors ${creditMode === 'already_applied' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                                        title="El crédito ya fue descontado por Temu en el total pagado"
+                                    >
+                                        Ya aplicado
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCreditMode('manual')}
+                                        className={`px-3 py-2 transition-colors ${creditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                                        title="El crédito lo ponés vos, reduce el costo efectivo"
+                                    >
+                                        Lo pongo yo
+                                    </button>
+                                </div>
+                            </div>
+                            {creditMode === 'manual' && creditAmount > 0 && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                    Costo efectivo: ${Math.round(effectiveTotalPaid).toLocaleString('es-AR')} (−${Math.round(creditAmount).toLocaleString('es-AR')} de crédito propio)
+                                </p>
+                            )}
+                            {creditMode === 'already_applied' && creditAmount > 0 && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Crédito informativo — ya incluido en el total pagado
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2388,6 +2486,10 @@ function BulkPricingBoard({
                     <tbody className="divide-y divide-gray-100">
                         {normalizedItems.map((item) => {
                             const adjustedUnitCost = item.listedUnitPrice * allocationFactor;
+                            const importShareUnit = listedSubtotal > 0 && importCharges > 0
+                                ? (item.listedUnitPrice / listedSubtotal) * importCharges
+                                : 0;
+                            const baseCostUnit = adjustedUnitCost - importShareUnit;
                             const marginPercent = adjustedUnitCost > 0
                                 ? ((item.unitSalePrice - adjustedUnitCost) / adjustedUnitCost) * 100
                                 : 0;
@@ -2400,7 +2502,16 @@ function BulkPricingBoard({
                                     <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
                                     <td className="px-4 py-3 text-center">{item.quantity}</td>
                                     <td className="px-4 py-3 text-right">${Math.round(item.listedUnitPrice).toLocaleString('es-AR')}</td>
-                                    <td className="px-4 py-3 text-right">${Math.round(adjustedUnitCost).toLocaleString('es-AR')}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        <span className="font-semibold">${Math.round(adjustedUnitCost).toLocaleString('es-AR')}</span>
+                                        {importCharges > 0 && (
+                                            <div className="text-xs text-gray-400 leading-tight mt-0.5">
+                                                <span>Base: ${Math.round(baseCostUnit).toLocaleString('es-AR')}</span>
+                                                <span className="mx-1">·</span>
+                                                <span className="text-amber-600">Import: ${Math.round(importShareUnit).toLocaleString('es-AR')}</span>
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 text-center">
                                         <select
                                             value={item.disposition}
@@ -2455,7 +2566,16 @@ function BulkPricingBoard({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Total invertido</p>
-                    <p className="text-lg font-bold text-gray-900">${Math.round(totalPaid).toLocaleString('es-AR')}</p>
+                    <p className="text-lg font-bold text-gray-900">${Math.round(effectiveTotalPaid).toLocaleString('es-AR')}</p>
+                    {importCharges > 0 && (
+                        <div className="text-xs text-gray-400 mt-1 space-y-0.5">
+                            <div>Productos: ${Math.round(effectiveTotalPaid - importCharges).toLocaleString('es-AR')}</div>
+                            <div className="text-amber-600">Importación: ${Math.round(importCharges).toLocaleString('es-AR')}</div>
+                        </div>
+                    )}
+                    {creditMode === 'manual' && creditAmount > 0 && (
+                        <p className="text-xs text-blue-500 mt-1">Crédito propio descontado: −${Math.round(creditAmount).toLocaleString('es-AR')}</p>
+                    )}
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Costo a recuperar con ventas</p>
