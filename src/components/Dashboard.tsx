@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -1920,6 +1920,18 @@ function BulkPricingBoard({
     const [creditInput, setCreditInput] = useState('');
     const [creditMode, setCreditMode] = useState<'already_applied' | 'manual'>('already_applied');
 
+    // Import JSON modal state
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importJsonText, setImportJsonText] = useState('');
+    const [importPreview, setImportPreview] = useState<{
+        productos: Array<{ producto: string; precio_unit_final: number; cantidad: number }>;
+        total_pagado: number;
+        credito: number;
+        cargo_importacion: number;
+    } | null>(null);
+    const [importError, setImportError] = useState('');
+    const [importCreditMode, setImportCreditMode] = useState<'already_applied' | 'manual'>('already_applied');
+
     const handleReturnFromBatch = async (batch: BatchRecord, pricingItem: PricingItem) => {
         const qtyToReturn = pricingItem.quantity;
         
@@ -2142,7 +2154,7 @@ function BulkPricingBoard({
     const normalizedItems = batchItems.map((item) => ({ ...item, disposition: item.disposition || 'sell' }));
     const listedSubtotal = normalizedItems.reduce((acc, item) => acc + (item.listedUnitPrice * item.quantity), 0);
     // Si el crédito lo pone el usuario (manual), se descuenta del total real; si ya fue aplicado por Temu, no cambia nada.
-    const effectiveTotalPaid = creditMode === 'manual' ? Math.max(0, totalPaid - creditAmount) : totalPaid;
+    const effectiveTotalPaid = creditMode === 'manual' ? totalPaid + creditAmount : totalPaid;
     const allocationFactor = listedSubtotal > 0 ? effectiveTotalPaid / listedSubtotal : 1;
     const totalSellRevenue = normalizedItems
         .filter((item) => item.disposition === 'sell')
@@ -2156,6 +2168,88 @@ function BulkPricingBoard({
     const expectedProfit = totalSellRevenue - sellCostAdjusted;
     const effectiveCostToRecover = Math.max(effectiveTotalPaid - retainedValue, 0);
     const totalEconomicValue = expectedProfit + retainedValue;
+
+    const parseImportJson = () => {
+        setImportError('');
+        setImportPreview(null);
+        try {
+            const parsed = JSON.parse(importJsonText.trim());
+            // Accept "productos" array at root or nested under "pedido"
+            const rawProducts = parsed.productos || parsed.items || parsed.products;
+            if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
+                setImportError('El JSON no tiene un array de productos válido.');
+                return;
+            }
+            // Normalize products: accept multiple field name formats
+            const productos: Array<{ producto: string; precio_unit_final: number; cantidad: number }> = [];
+            for (const p of rawProducts) {
+                const nombre = p.producto || p.nombre || p.name || p.productName || '';
+                const precio = Number(p.precio_unit_final || p.precioUnitFinal || p.precio || p.price || 0);
+                const cantidad = Number(p.cantidad || p.quantity || p.qty || 0);
+
+                if (!nombre || typeof nombre !== 'string') {
+                    setImportError('Cada producto debe tener un nombre (producto, nombre, name).');
+                    return;
+                }
+                if (precio <= 0) {
+                    setImportError(`Precio inválido para "${nombre}".`);
+                    return;
+                }
+                if (cantidad < 1) {
+                    setImportError(`Cantidad inválida para "${nombre}".`);
+                    return;
+                }
+                productos.push({ producto: nombre, precio_unit_final: precio, cantidad });
+            }
+            // Normalize order-level fields: accept multiple formats
+            const pedido = parsed.pedido || parsed;
+            const totalPagado = Math.abs(Number(pedido.total_pagado || pedido.totalPagado || pedido.total || 0));
+            const credito = Math.abs(Number(pedido.credito || pedido.credit || 0));
+            const cargoImportacion = Math.abs(Number(pedido.cargo_importacion || pedido.cargoImportacion || pedido.importCharges || 0));
+
+            setImportPreview({ productos, total_pagado: totalPagado, credito, cargo_importacion: cargoImportacion });
+        } catch {
+            setImportError('JSON inválido. Revisá que esté bien formateado.');
+        }
+    };
+
+    const confirmImport = () => {
+        if (!importPreview) return;
+
+        const newItems: PricingItem[] = importPreview.productos.map((p) => ({
+            id: crypto.randomUUID(),
+            productName: p.producto,
+            quantity: p.cantidad,
+            listedUnitPrice: p.precio_unit_final,
+            unitSalePrice: 0,
+            condition: 'nuevo' as ItemCondition,
+            disposition: 'sell' as const,
+        }));
+
+        setBatchItems((prev) => [...prev, ...newItems]);
+
+        // Siempre poner el total tal cual viene del JSON
+        // El modo de crédito se encarga de sumar o no en effectiveTotalPaid
+        setTotalPaid(importPreview.total_pagado);
+        setTotalPaidInput(new Intl.NumberFormat('es-AR').format(importPreview.total_pagado));
+        setCreditMode(importCreditMode);
+
+        if (importPreview.cargo_importacion > 0) {
+            setImportCharges(importPreview.cargo_importacion);
+            setImportChargesInput(new Intl.NumberFormat('es-AR').format(importPreview.cargo_importacion));
+        }
+        if (importPreview.credito > 0) {
+            setCreditAmount(importPreview.credito);
+            setCreditInput(new Intl.NumberFormat('es-AR').format(importPreview.credito));
+        }
+
+        // Reset modal
+        setShowImportModal(false);
+        setImportJsonText('');
+        setImportPreview(null);
+        setImportError('');
+        setImportCreditMode('already_applied');
+    };
 
     const addItem = () => {
         const quantity = Math.max(1, Math.floor(Number(newQty) || 1));
@@ -2389,12 +2483,12 @@ function BulkPricingBoard({
                             </div>
                             {creditMode === 'manual' && creditAmount > 0 && (
                                 <p className="text-xs text-blue-600 mt-1">
-                                    Costo efectivo: ${Math.round(effectiveTotalPaid).toLocaleString('es-AR')} (−${Math.round(creditAmount).toLocaleString('es-AR')} de crédito propio)
+                                    Costo efectivo: ${Math.round(effectiveTotalPaid).toLocaleString('es-AR')} (${Math.round(totalPaid).toLocaleString('es-AR')} + ${Math.round(creditAmount).toLocaleString('es-AR')} de crédito propio)
                                 </p>
                             )}
                             {creditMode === 'already_applied' && creditAmount > 0 && (
                                 <p className="text-xs text-gray-400 mt-1">
-                                    Crédito informativo — ya incluido en el total pagado
+                                    Crédito informativo — ya restado en el total pagado
                                 </p>
                             )}
                         </div>
@@ -2460,12 +2554,152 @@ function BulkPricingBoard({
                         Agregar a la tanda
                     </button>
                     <button
+                        onClick={() => setShowImportModal(true)}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2"
+                    >
+                        <ClipboardPaste size={16} />
+                        Importar JSON
+                    </button>
+                    <button
                         onClick={sendBatchToStock}
                         className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
                     >
                         Pasar tanda a stock
                     </button>
                 </div>
+
+                {/* Modal Importar JSON */}
+                {showImportModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                                <h3 className="text-lg font-bold text-gray-800">Importar pedido desde JSON</h3>
+                                <button
+                                    onClick={() => { setShowImportModal(false); setImportJsonText(''); setImportPreview(null); setImportError(''); }}
+                                    className="p-1 hover:bg-gray-100 rounded-lg"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-4">
+                                {!importPreview ? (
+                                    <>
+                                        <p className="text-sm text-gray-500">
+                                            Pegá el JSON que te devolvió la IA con los productos del pedido.
+                                        </p>
+                                        <textarea
+                                            value={importJsonText}
+                                            onChange={(e) => setImportJsonText(e.target.value)}
+                                            placeholder='{"productos": [...], "total_pagado": ..., "credito": ..., "cargo_importacion": ...}'
+                                            rows={10}
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none font-mono text-xs resize-y"
+                                        />
+                                        {importError && (
+                                            <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 px-3 py-2 rounded-xl">
+                                                <AlertTriangle size={16} />
+                                                {importError}
+                                            </div>
+                                        )}
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={() => { setShowImportModal(false); setImportJsonText(''); setImportError(''); }}
+                                                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={parseImportJson}
+                                                disabled={!importJsonText.trim()}
+                                                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
+                                            >
+                                                Previsualizar
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-gray-500">Revisá los datos antes de confirmar:</p>
+                                        <div className="rounded-xl border border-gray-200 overflow-hidden">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left">Producto</th>
+                                                        <th className="px-3 py-2 text-center">Cant.</th>
+                                                        <th className="px-3 py-2 text-right">Precio unit.</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {importPreview.productos.map((p, i) => (
+                                                        <tr key={i} className="border-t border-gray-100">
+                                                            <td className="px-3 py-2">{p.producto}</td>
+                                                            <td className="px-3 py-2 text-center">{p.cantidad}</td>
+                                                            <td className="px-3 py-2 text-right">${p.precio_unit_final.toLocaleString('es-AR')}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-3 text-sm">
+                                            <div className="bg-gray-50 rounded-xl px-3 py-2">
+                                                <p className="text-xs text-gray-500">Total del JSON</p>
+                                                <p className="font-semibold">${importPreview.total_pagado.toLocaleString('es-AR')}</p>
+                                            </div>
+                                            <div className="bg-gray-50 rounded-xl px-3 py-2">
+                                                <p className="text-xs text-gray-500">Crédito</p>
+                                                <p className="font-semibold">{importPreview.credito > 0 ? `$${importPreview.credito.toLocaleString('es-AR')}` : 'No aplica'}</p>
+                                            </div>
+                                            <div className="bg-gray-50 rounded-xl px-3 py-2">
+                                                <p className="text-xs text-gray-500">Cargo importación</p>
+                                                <p className="font-semibold">{importPreview.cargo_importacion > 0 ? `$${importPreview.cargo_importacion.toLocaleString('es-AR')}` : 'No aplica'}</p>
+                                            </div>
+                                        </div>
+                                        {importPreview.credito > 0 && (
+                                            <div className="bg-blue-50 rounded-xl px-4 py-3 space-y-2">
+                                                <p className="text-sm font-semibold text-gray-700">¿Cómo manejás el crédito?</p>
+                                                <div className="flex rounded-xl border border-gray-200 overflow-hidden text-xs font-medium w-fit">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setImportCreditMode('already_applied')}
+                                                        className={`px-4 py-2 transition-colors ${importCreditMode === 'already_applied' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                                                    >
+                                                        Ya aplicado
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setImportCreditMode('manual')}
+                                                        className={`px-4 py-2 transition-colors ${importCreditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                                                    >
+                                                        Lo pongo yo
+                                                    </button>
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    {importCreditMode === 'already_applied'
+                                                        ? `Costo efectivo: $${importPreview.total_pagado.toLocaleString('es-AR')} (el crédito ya fue restado por Temu)`
+                                                        : `Costo efectivo: $${(importPreview.total_pagado + importPreview.credito).toLocaleString('es-AR')} ($${importPreview.total_pagado.toLocaleString('es-AR')} + $${importPreview.credito.toLocaleString('es-AR')} de crédito propio)`
+                                                    }
+                                                </p>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={() => { setImportPreview(null); setImportError(''); }}
+                                                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+                                            >
+                                                Volver a editar
+                                            </button>
+                                            <button
+                                                onClick={confirmImport}
+                                                className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
+                                            >
+                                                Confirmar e importar
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
