@@ -2117,6 +2117,7 @@ function BulkPricingBoard({
     const [isProcessingReturn, setIsProcessingReturn] = useState(false);
     const [editingSaleItemId, setEditingSaleItemId] = useState<string | null>(null);
     const [editingSalePrice, setEditingSalePrice] = useState('');
+    const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
     const [importCharges, setImportCharges] = useState(0);
     const [importChargesInput, setImportChargesInput] = useState('');
     const [creditAmount, setCreditAmount] = useState(0);
@@ -2614,6 +2615,37 @@ function BulkPricingBoard({
                 }
             }
 
+            // Create personal inventory items for "keep" products
+            const rawItemsToKeep = normalizedItems.filter((item) => item.disposition === 'keep');
+            const itemsToKeep: PricingItem[] = [];
+            for (const item of rawItemsToKeep) {
+                const existing = itemsToKeep.find(i =>
+                    i.productName === item.productName &&
+                    i.condition === item.condition
+                );
+                if (existing) {
+                    existing.quantity += item.quantity;
+                } else {
+                    itemsToKeep.push({ ...item });
+                }
+            }
+            for (const item of itemsToKeep) {
+                const nowIso = new Date().toISOString();
+                const created = await itemService.createItem({
+                    productName: item.productName,
+                    purchasePrice: 0,
+                    quantity: item.quantity,
+                    date: nowIso,
+                    status: 'in_stock',
+                    condition: item.condition,
+                    itemType: 'personal',
+                    batchRef: batchCode,
+                    location: batchDefaultLocation,
+                    category: item.category
+                });
+                setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
+            }
+
             const record: Omit<BatchRecord, 'id'> = {
                 batchCode,
                 batchType,
@@ -2640,11 +2672,56 @@ function BulkPricingBoard({
             setCreditAmount(0);
             setCreditInput('');
             setCreditMode('already_applied');
+            setEditingBatchId(null);
             await onInventoryRefresh();
             alert('Tanda procesada: stock actualizado y resultado registrado.');
         } catch (error) {
             console.error('Error sending batch to stock', error);
             alert('Hubo un error al procesar la tanda.');
+        }
+    };
+
+    const updateExistingBatch = async () => {
+        if (!editingBatchId || normalizedItems.length === 0) return;
+        const target = batchHistory.find(b => b.id === editingBatchId);
+        if (!target) return;
+
+        try {
+            const listedSub = normalizedItems.reduce((acc, i) => acc + (i.listedUnitPrice * i.quantity), 0);
+            const effTotal = creditMode === 'manual' ? totalPaid + creditAmount : totalPaid;
+            const allocFactor = listedSub > 0 ? effTotal / listedSub : 1;
+            const sellItems = normalizedItems.filter(i => i.disposition === 'sell');
+            const keepItems = normalizedItems.filter(i => i.disposition === 'keep');
+            const newSellRevenue = sellItems.reduce((acc, i) => acc + (i.unitSalePrice * i.quantity), 0);
+            const newRetainedValue = keepItems.reduce((acc, i) => acc + ((i.listedUnitPrice * allocFactor) * i.quantity), 0);
+            const sellCostAdj = sellItems.reduce((acc, i) => acc + ((i.listedUnitPrice * allocFactor) * i.quantity), 0);
+            const newProfit = newSellRevenue - sellCostAdj;
+
+            await itemService.updateBatch(editingBatchId, {
+                totalPaid,
+                totalSellRevenue: newSellRevenue,
+                cashProfit: newProfit,
+                retainedValue: newRetainedValue,
+                itemsCount: normalizedItems.length,
+                items: normalizedItems.map(i => ({ ...i }))
+            });
+
+            setBatchHistory(prev => prev.map(b => b.id === editingBatchId ? {
+                ...b,
+                totalPaid,
+                totalSellRevenue: newSellRevenue,
+                cashProfit: newProfit,
+                retainedValue: newRetainedValue,
+                itemsCount: normalizedItems.length,
+                items: normalizedItems.map(i => ({ ...i }))
+            } : b));
+
+            setEditingBatchId(null);
+            setBatchItems([]);
+            alert(`Tanda ${target.batchCode} actualizada correctamente.`);
+        } catch (error) {
+            console.error('Error updating batch', error);
+            alert('Error al actualizar la tanda.');
         }
     };
 
@@ -2835,13 +2912,35 @@ function BulkPricingBoard({
                         <ClipboardPaste size={16} />
                         Importar JSON
                     </button>
-                    <button
-                        onClick={sendBatchToStock}
-                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
-                    >
-                        Pasar tanda a stock
-                    </button>
+                    {editingBatchId ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={updateExistingBatch}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
+                            >
+                                Actualizar tanda ({batchHistory.find(b => b.id === editingBatchId)?.batchCode})
+                            </button>
+                            <button
+                                onClick={() => { setEditingBatchId(null); setBatchItems([]); }}
+                                className="bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={sendBatchToStock}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium"
+                        >
+                            Pasar tanda a stock
+                        </button>
+                    )}
                 </div>
+                {editingBatchId && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-sm text-blue-700">
+                        Editando tanda <strong>{batchHistory.find(b => b.id === editingBatchId)?.batchCode}</strong> — modificá los productos y hacé clic en &quot;Actualizar tanda&quot; para guardar. Los items en inventario y ventas NO se tocan.
+                    </div>
+                )}
 
                 {/* Modal Importar JSON */}
                 {showImportModal && (
@@ -3272,6 +3371,7 @@ function BulkPricingBoard({
                                 onClick={() => {
                                     setTotalPaid(selectedRecord.totalPaid);
                                     setBatchItems(cloneItemsForTable(selectedRecordItems));
+                                    setEditingBatchId(selectedRecord.id);
                                 }}
                                 disabled={selectedRecordItems.length === 0}
                                 className="px-3 py-2 rounded-lg bg-black text-white text-xs font-medium"
