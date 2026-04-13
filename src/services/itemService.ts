@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabase';
-import type { Item, ItemCondition, ItemStatus } from '../types';
+import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 
 const hasMissingColumn = (error: { message?: string; details?: string; hint?: string } | null, column: string) => {
     if (!error) return false;
@@ -29,7 +29,9 @@ const mapFromDb = (dbItem: any): Item => ({
     location: dbItem.location || undefined,
     estimatedSalePrice: dbItem.estimated_sale_price ? Number(dbItem.estimated_sale_price) : undefined,
     publishUrls: dbItem.publish_urls || undefined,
-    imageUrl: dbItem.image_url || undefined
+    imageUrl: dbItem.image_url || undefined,
+    category: dbItem.category || undefined,
+    itemType: (dbItem.item_type || 'resale') as ItemType
 });
 
 // Helper to map application model to DB columns
@@ -48,6 +50,8 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.estimatedSalePrice !== undefined) dbItem.estimated_sale_price = item.estimatedSalePrice;
     if (item.publishUrls !== undefined) dbItem.publish_urls = item.publishUrls;
     if (item.imageUrl !== undefined) dbItem.image_url = item.imageUrl;
+    if (item.category !== undefined) dbItem.category = item.category;
+    if (item.itemType !== undefined) dbItem.item_type = item.itemType;
     return dbItem;
 };
 
@@ -75,6 +79,13 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(dbItems.map(item => withoutColumns(item, ['location', 'estimated_sale_price', 'publish_urls', 'image_url'])))
+                .select());
+        }
+        if (hasMissingColumn(error, 'item_type')) {
+            console.warn('Supabase: item_type column missing. Falling back without it.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(dbItems.map(item => withoutColumns(item, ['item_type'])))
                 .select());
         }
 
@@ -111,6 +122,14 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(withoutColumns(dbItem, ['location', 'estimated_sale_price', 'publish_urls', 'image_url']))
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'item_type')) {
+            console.warn('Supabase: item_type column missing. Falling back without it.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['item_type']))
                 .select()
                 .single());
         }
@@ -155,6 +174,15 @@ export const itemService = {
                 .select()
                 .single());
         }
+        if (hasMissingColumn(error, 'item_type')) {
+            console.warn('Supabase: item_type column missing. Falling back without it.');
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['item_type']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
 
         if (error) throw error;
         return mapFromDb(data);
@@ -181,6 +209,7 @@ export const itemService = {
             id: dbBatch.id,
             batchCode: dbBatch.batch_code,
             batchType: dbBatch.batch_type,
+            batchStatus: dbBatch.batch_status || 'completado',
             createdAt: dbBatch.created_at,
             totalPaid: Number(dbBatch.total_paid),
             totalSellRevenue: Number(dbBatch.total_sell_revenue),
@@ -197,6 +226,7 @@ export const itemService = {
             .insert({
                 batch_code: batch.batchCode,
                 batch_type: batch.batchType,
+                batch_status: batch.batchStatus || 'en_camino',
                 created_at: batch.createdAt,
                 total_paid: batch.totalPaid,
                 total_sell_revenue: batch.totalSellRevenue,
@@ -214,6 +244,7 @@ export const itemService = {
             id: data.id,
             batchCode: data.batch_code,
             batchType: data.batch_type,
+            batchStatus: data.batch_status || 'en_camino',
             createdAt: data.created_at,
             totalPaid: Number(data.total_paid),
             totalSellRevenue: Number(data.total_sell_revenue),
@@ -247,6 +278,7 @@ export const itemService = {
         const dbUpdates: any = {};
         if (updates.batchCode !== undefined) dbUpdates.batch_code = updates.batchCode;
         if (updates.batchType !== undefined) dbUpdates.batch_type = updates.batchType;
+        if (updates.batchStatus !== undefined) dbUpdates.batch_status = updates.batchStatus;
         if (updates.totalPaid !== undefined) dbUpdates.total_paid = updates.totalPaid;
         if (updates.totalSellRevenue !== undefined) dbUpdates.total_sell_revenue = updates.totalSellRevenue;
         if (updates.cashProfit !== undefined) dbUpdates.cash_profit = updates.cashProfit;
@@ -266,6 +298,7 @@ export const itemService = {
             id: data.id,
             batchCode: data.batch_code,
             batchType: data.batch_type,
+            batchStatus: data.batch_status || 'en_camino',
             createdAt: data.created_at,
             totalPaid: Number(data.total_paid),
             totalSellRevenue: Number(data.total_sell_revenue),

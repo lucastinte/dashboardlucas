@@ -61,7 +61,11 @@ create table if not exists batches (
 -- Enable RLS for batches
 alter table batches enable row level security;
 
-create policy "Allow public access for batches" 
-on batches for all 
+create policy "Allow public access for batches"
+on batches for all
 using (true)
 with check (true);
+
+-- New columns for categories and batch status
+alter table items add column if not exists category text;
+alter table batches add column if not exists batch_status text not null default 'completado';

@@ -1,5 +1,6 @@
 export type ItemStatus = 'in_stock' | 'sold';
 export type ItemCondition = 'nuevo' | 'semi_uso' | 'usado';
+export type ItemType = 'resale' | 'personal';
 
 export interface Item {
     id: string;
@@ -11,11 +12,13 @@ export interface Item {
     saleDate?: string; // Only if sold
     status: ItemStatus;
     condition: ItemCondition;
+    itemType: ItemType;
     batchRef?: string;
     location?: string;
     estimatedSalePrice?: number;
     publishUrls?: string;
     imageUrl?: string;
+    category?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

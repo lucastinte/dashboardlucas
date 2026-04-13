@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import type { Item, ItemCondition, ItemStatus } from '../types';
+import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -14,12 +14,16 @@ type PricingItem = {
     unitSalePrice: number;
     condition: ItemCondition;
     disposition: 'sell' | 'keep';
+    category?: string;
 };
+
+type BatchStatus = 'en_camino' | 'recibido' | 'completado';
 
 type BatchRecord = {
     id: string;
     batchCode: string;
     batchType: 'venta' | 'mixta' | 'retenido';
+    batchStatus: BatchStatus;
     createdAt: string;
     totalPaid: number;
     totalSellRevenue: number;
@@ -139,6 +143,7 @@ export default function Dashboard() {
         quantity: 1,
         status: 'in_stock',
         condition: 'nuevo',
+        itemType: 'resale',
         date: new Date().toISOString().split('T')[0],
         location: '',
         estimatedSalePrice: 0,
@@ -258,6 +263,7 @@ export default function Dashboard() {
                                 saleDate: item.saleDate || undefined,
                                 status: (item.status as ItemStatus) || 'in_stock',
                                 condition: (item.condition as ItemCondition) || 'nuevo',
+                                itemType: (item.itemType as ItemType) || 'resale',
                                 batchRef: item.batchRef || undefined
                             }));
                             await itemService.createItems(itemsToMigrate);
@@ -363,6 +369,7 @@ export default function Dashboard() {
                         date: editingItem.date,
                         status: 'sold',
                         condition: editingItem.condition,
+                        itemType: editingItem.itemType || 'resale',
                         batchRef: getItemBatchRef(editingItem),
                         location: formData.location || editingItem.location,
                         estimatedSalePrice: editingItem.estimatedSalePrice,
@@ -443,15 +450,17 @@ export default function Dashboard() {
                     }
                 }
 
+                const itemType = (formData.itemType as ItemType) || editingItem.itemType || 'resale';
                 const updates: Partial<Item> = {
                     productName: formData.productName ?? editingItem.productName,
-                    purchasePrice: Number(formData.purchasePrice) || editingItem.purchasePrice,
+                    purchasePrice: itemType === 'personal' ? 0 : (Number(formData.purchasePrice) || editingItem.purchasePrice),
                     salePrice: formData.salePrice !== undefined ? Number(formData.salePrice) || 0 : editingItem.salePrice,
                     quantity,
                     date: formDateISO,
                     saleDate,
                     status,
                     condition,
+                    itemType,
                     batchRef: getItemBatchRef(editingItem),
                     location: formData.location ?? editingItem.location,
                     estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice,
@@ -475,14 +484,16 @@ export default function Dashboard() {
                 setEditingItem(null);
             } else {
                 // Create new item
+                const newItemType = (formData.itemType as ItemType) || 'resale';
                 const newItemData = {
                     productName: formData.productName || 'Producto sin nombre',
-                    purchasePrice: Number(formData.purchasePrice) || 0,
+                    purchasePrice: newItemType === 'personal' ? 0 : (Number(formData.purchasePrice) || 0),
                     salePrice: Number(formData.salePrice) || 0,
                     quantity: Number(formData.quantity) || 1,
                     date: formData.date ? getISODate(formData.date) : new Date().toISOString(),
                     status: formData.status as ItemStatus,
                     condition: (formData.condition as ItemCondition) || 'nuevo',
+                    itemType: newItemType,
                     location: formData.location || '',
                     estimatedSalePrice: formData.estimatedSalePrice || 0,
                     publishUrls: formData.publishUrls || '',
@@ -552,10 +563,11 @@ export default function Dashboard() {
                     date: item.date,
                     status: item.status,
                     condition: item.condition,
+                    itemType: item.itemType || 'resale',
                     batchRef: bRef,
                     location: '',
                     estimatedSalePrice: item.estimatedSalePrice,
-                    publishUrls: item.publishUrls, // Ensure links carry over
+                    publishUrls: item.publishUrls,
                     imageUrl: item.imageUrl
                 });
 
@@ -611,6 +623,7 @@ export default function Dashboard() {
             quantity: 1,
             status: 'in_stock',
             condition: 'nuevo',
+            itemType: 'resale',
             date: new Date().toISOString().split('T')[0],
             location: '',
             estimatedSalePrice: 0,
@@ -636,11 +649,16 @@ export default function Dashboard() {
     const soldBatchRefs = Array.from(new Set(soldItems.map(getItemBatchRef).filter(Boolean)));
     const soldDirectCount = soldItems.filter(i => !getItemBatchRef(i)).length;
 
+    const soldResale = soldItems.filter(i => i.itemType !== 'personal');
+    const soldPersonal = soldItems.filter(i => i.itemType === 'personal');
+
     const totalSales = soldItems.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
-    const totalCostSold = soldItems.reduce((acc, item) => acc + (item.purchasePrice * item.quantity), 0);
-    const totalProfit = totalSales - totalCostSold;
+    const totalCostSold = soldResale.reduce((acc, item) => acc + (item.purchasePrice * item.quantity), 0);
+    const resaleRevenue = soldResale.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
+    const totalProfit = resaleRevenue - totalCostSold;
+    const personalIncome = soldPersonal.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
     const totalUnitsSold = soldItems.reduce((acc, item) => acc + item.quantity, 0);
-    const profitMargin = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
+    const profitMargin = resaleRevenue > 0 ? (totalProfit / resaleRevenue) * 100 : 0;
 
     // Stock value (potential revenue or sunk cost)
     const totalStockValue = stockItems.reduce((acc, item) => acc + (item.purchasePrice * item.quantity), 0);
@@ -734,7 +752,7 @@ export default function Dashboard() {
                         {/* Metrics Grid */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                             <MetricCard
-                                title="Ganancia Neta"
+                                title="Ganancia Reventa"
                                 value={`$${totalProfit.toLocaleString()}`}
                                 icon={<TrendingUp className="w-6 h-6 text-emerald-600" />}
                                 trend={profitMargin > 0 ? `+${profitMargin.toFixed(1)}% margen` : '0% margen'}
@@ -745,6 +763,8 @@ export default function Dashboard() {
                                 title="Ingresos Totales"
                                 value={`$${totalSales.toLocaleString()}`}
                                 icon={<DollarSign className="w-6 h-6 text-blue-600" />}
+                                trend={personalIncome > 0 ? `$${personalIncome.toLocaleString()} propios` : undefined}
+                                trendColor="text-violet-600"
                                 bgColor="bg-white"
                             />
                             <MetricCard
@@ -910,7 +930,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                     const isPositive = profit >= 0;
 
                     return (
-                        <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <div key={item.id} className={`rounded-2xl border p-4 shadow-sm ${item.itemType === 'personal' ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-center gap-3">
                                     {item.imageUrl && (
@@ -918,27 +938,36 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                             <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
                                         </div>
                                     )}
-                                    <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
+                                    <div>
+                                        <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
+                                        {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded mt-0.5 inline-block">PROPIO</span>}
+                                    </div>
                                 </div>
                                 <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
                                     x{item.quantity}
                                 </span>
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                                <div>
-                                    <p className="text-gray-400 text-xs">Compra</p>
-                                    <p className="font-medium text-gray-700">${item.purchasePrice.toLocaleString()}</p>
-                                </div>
+                                {item.itemType !== 'personal' && (
+                                    <div>
+                                        <p className="text-gray-400 text-xs">Compra</p>
+                                        <p className="font-medium text-gray-700">${item.purchasePrice.toLocaleString()}</p>
+                                    </div>
+                                )}
                                 <div>
                                     <p className="text-gray-400 text-xs">Venta</p>
                                     <p className="font-medium text-gray-900">${item.salePrice?.toLocaleString()}</p>
                                 </div>
                                 <div>
-                                    <p className="text-gray-400 text-xs">Ganancia</p>
-                                    <p className={`font-bold flex items-center gap-1 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                        ${Math.abs(profit).toLocaleString()}
-                                    </p>
+                                    <p className="text-gray-400 text-xs">{item.itemType === 'personal' ? 'Ingreso' : 'Ganancia'}</p>
+                                    {item.itemType === 'personal' ? (
+                                        <p className="font-bold text-violet-600">${((item.salePrice || 0) * item.quantity).toLocaleString()}</p>
+                                    ) : (
+                                        <p className={`font-bold flex items-center gap-1 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                            ${Math.abs(profit).toLocaleString()}
+                                        </p>
+                                    )}
                                 </div>
                                 <div>
                                     <p className="text-gray-400 text-xs">Fecha</p>
@@ -999,27 +1028,40 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                             const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
                             const isPositive = profit >= 0;
                             return (
-                                <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
+                                <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors group ${item.itemType === 'personal' ? 'bg-violet-50/30' : ''}`}>
                                     <td className="px-6 py-4">
                                         {item.imageUrl ? (
                                             <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100">
                                                 <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
                                             </div>
                                         ) : (
-                                            <div className="w-10 h-10 rounded-lg bg-gray-50 border border-dashed border-gray-200" />
+                                            <div className={`w-10 h-10 rounded-lg border border-dashed flex items-center justify-center ${item.itemType === 'personal' ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
+                                                {item.itemType === 'personal' && <User className="w-4 h-4 text-violet-400" />}
+                                            </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
+                                    <td className="px-6 py-4 font-medium text-gray-900">
+                                        <div className="flex items-center gap-2">
+                                            {item.productName}
+                                            {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 text-center">
                                         <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
                                     </td>
-                                    <td className="px-6 py-4 text-right font-mono text-gray-500">${item.purchasePrice.toLocaleString()}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-gray-500">{item.itemType === 'personal' ? <span className="text-violet-400">-</span> : `$${item.purchasePrice.toLocaleString()}`}</td>
                                     <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${item.salePrice?.toLocaleString()}</td>
-                                    <td className={`px-6 py-4 text-right font-bold w-32 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        <div className="flex items-center justify-end gap-1">
-                                            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                            ${Math.abs(profit).toLocaleString()}
-                                        </div>
+                                    <td className={`px-6 py-4 text-right font-bold w-32 ${item.itemType === 'personal' ? 'text-violet-600' : isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {item.itemType === 'personal' ? (
+                                            <div className="flex items-center justify-end gap-1">
+                                                ${((item.salePrice || 0) * item.quantity).toLocaleString()}
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-end gap-1">
+                                                {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                                ${Math.abs(profit).toLocaleString()}
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
                                         {conditionLabelMap[item.condition || 'nuevo']}
@@ -1069,256 +1111,399 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
     resolveBatchRef: (item: Item) => string | undefined,
     onSplit: (i: Item) => void
 }) {
-    const [isGrouped, setIsGrouped] = useState(false);
+    type ViewMode = 'products' | 'locations';
+    const [viewMode, setViewMode] = useState<ViewMode>('products');
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+    const toggleGroup = (key: string) => {
+        setExpandedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+    };
 
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
 
-    const displayItems = isGrouped ? (() => {
-        const groups: Record<string, Item & { allBatches: string[] }> = {};
-        items.forEach(item => {
-            const loc = typeof item.location === 'string' ? item.location.trim().toLowerCase() : '';
-            const key = `${item.productName.toLowerCase()}-${item.purchasePrice}-${item.condition}-${loc}`;
-            if (!groups[key]) {
-                groups[key] = { ...item, allBatches: [] };
-                const bRef = resolveBatchRef(item);
-                if (bRef) groups[key].allBatches.push(bRef);
-            } else {
-                groups[key].quantity += item.quantity;
-                const bRef = resolveBatchRef(item);
-                if (bRef && !groups[key].allBatches.includes(bRef)) {
-                    groups[key].allBatches.push(bRef);
-                }
-
-                // Merge publishUrls intelligently
-                if (item.publishUrls) {
-                    if (!groups[key].publishUrls) {
-                        groups[key].publishUrls = item.publishUrls;
-                    } else if (!groups[key].publishUrls?.includes(item.publishUrls)) {
-                        groups[key].publishUrls = `${groups[key].publishUrls}\n${item.publishUrls}`;
-                    }
-                }
-            }
-        });
-        return Object.values(groups);
-    })() : items;
-
-    const getBatchDisplay = (item: any) => {
-        if (isGrouped && item.allBatches) {
-            return item.allBatches.length > 0 ? item.allBatches.join(', ') : 'Directa';
-        }
-        return getBatchLabel(resolveBatchRef(item));
+    // --- Product groups: group by normalized name ---
+    type ProductGroup = {
+        key: string;
+        name: string;
+        imageUrl?: string;
+        totalQty: number;
+        avgCost: number;
+        totalValue: number;
+        locations: { loc: string; qty: number }[];
+        batches: string[];
+        children: Item[];
+        isPersonal: boolean;
     };
+
+    const productGroups: ProductGroup[] = (() => {
+        const map = new Map<string, ProductGroup>();
+        items.forEach(item => {
+            const normName = normalizeText(item.productName);
+            let grp = map.get(normName);
+            if (!grp) {
+                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, avgCost: 0, totalValue: 0, locations: [], batches: [], children: [], isPersonal: false };
+                map.set(normName, grp);
+            }
+            grp.children.push(item);
+            grp.totalQty += item.quantity;
+            grp.totalValue += item.purchasePrice * item.quantity;
+            if (!grp.imageUrl && item.imageUrl) grp.imageUrl = item.imageUrl;
+            const loc = item.location || 'Sin ubicación';
+            const existingLoc = grp.locations.find(l => normalizeText(l.loc) === normalizeText(loc));
+            if (existingLoc) existingLoc.qty += item.quantity;
+            else grp.locations.push({ loc, qty: item.quantity });
+            const bRef = resolveBatchRef(item);
+            if (bRef && !grp.batches.includes(bRef)) grp.batches.push(bRef);
+        });
+        for (const grp of map.values()) {
+            grp.avgCost = grp.totalQty > 0 ? Math.round(grp.totalValue / grp.totalQty) : 0;
+            grp.isPersonal = grp.children.every(c => c.itemType === 'personal');
+        }
+        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    })();
+
+    // --- Location groups ---
+    type LocationGroup = {
+        key: string;
+        location: string;
+        totalQty: number;
+        totalValue: number;
+        products: { name: string; qty: number; avgCost: number; items: Item[] }[];
+    };
+
+    const locationGroups: LocationGroup[] = (() => {
+        const map = new Map<string, LocationGroup>();
+        items.forEach(item => {
+            const loc = item.location || 'Sin ubicación';
+            const locKey = normalizeText(loc);
+            let grp = map.get(locKey);
+            if (!grp) {
+                grp = { key: locKey, location: loc, totalQty: 0, totalValue: 0, products: [] };
+                map.set(locKey, grp);
+            }
+            grp.totalQty += item.quantity;
+            grp.totalValue += item.purchasePrice * item.quantity;
+            const normName = normalizeText(item.productName);
+            let prod = grp.products.find(p => normalizeText(p.name) === normName);
+            if (!prod) {
+                prod = { name: item.productName, qty: 0, avgCost: 0, items: [] };
+                grp.products.push(prod);
+            }
+            prod.qty += item.quantity;
+            prod.items.push(item);
+        });
+        for (const grp of map.values()) {
+            for (const prod of grp.products) {
+                const totalCost = prod.items.reduce((a, i) => a + i.purchasePrice * i.quantity, 0);
+                prod.avgCost = prod.qty > 0 ? Math.round(totalCost / prod.qty) : 0;
+            }
+            grp.products.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return Array.from(map.values()).sort((a, b) => a.location.localeCompare(b.location));
+    })();
 
     return (
         <>
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-gray-500 italic">
-                    {isGrouped ? 'Mostrando totales por producto (mismo nombre y costo)' : 'Mostrando cada tanda por separado para control exacto'}
+                <p className="text-xs text-gray-500">
+                    {productGroups.length} productos · {items.reduce((a, i) => a + i.quantity, 0)} unidades · ${items.filter(i => i.itemType !== 'personal').reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
+                    {items.some(i => i.itemType === 'personal') && <span className="text-violet-500 ml-1">· {items.filter(i => i.itemType === 'personal').reduce((a, i) => a + i.quantity, 0)} propios</span>}
                 </p>
-                <button
-                    onClick={() => setIsGrouped(!isGrouped)}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${isGrouped ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
-                >
-                    <Layers className="w-3.5 h-3.5" />
-                    {isGrouped ? 'Ver detalle por Tandas' : 'Consolidar por Nombre'}
-                </button>
+                <div className="flex gap-1.5">
+                    <button
+                        onClick={() => { setViewMode('products'); setExpandedGroups(new Set()); }}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'products' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                    >
+                        <Layers className="w-3.5 h-3.5" />
+                        Por Producto
+                    </button>
+                    <button
+                        onClick={() => { setViewMode('locations'); setExpandedGroups(new Set()); }}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'locations' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                    >
+                        <MapPin className="w-3.5 h-3.5" />
+                        Por Ubicación
+                    </button>
+                </div>
             </div>
+
+            {/* ===== MOBILE VIEW ===== */}
             <div className="sm:hidden p-3 space-y-3">
-                {displayItems.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                                {item.imageUrl && (
-                                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                        <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
-                                    </div>
-                                )}
-                                <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
-                            </div>
-                            <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
-                                Stock: {item.quantity}
-                            </span>
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                            <div>
-                                <p className="text-gray-400 text-xs">Costo Unit.</p>
-                                <p className="font-medium text-gray-900">${item.purchasePrice.toLocaleString()}</p>
-                            </div>
-                            <div>
-                                <p className="text-gray-400 text-xs">Reventa Unit.</p>
-                                <p className="font-medium text-gray-900">
-                                    {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-gray-400 text-xs">Valor Total</p>
-                                <p className="font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</p>
-                            </div>
-                            <div className="col-span-2">
-                                <p className="text-gray-400 text-xs">Fecha Ingreso</p>
-                                <p className="font-medium text-gray-700">{new Date(item.date).toLocaleDateString()}</p>
-                            </div>
-                            <div className="col-span-1">
-                                <p className="text-gray-400 text-xs">Estado</p>
-                                <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
-                            </div>
-                            <div className="col-span-1">
-                                <p className="text-gray-400 text-xs">Ubicación</p>
-                                <p className="font-medium text-gray-700">{item.location || '-'}</p>
-                            </div>
-                            <div className="col-span-2">
-                                <p className="text-gray-400 text-xs">Tanda</p>
-                                <p className="font-medium text-gray-700">{getBatchDisplay(item)}</p>
-                            </div>
-                            {item.publishUrls && (
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Links Pub.</p>
-                                    <div className="flex flex-wrap gap-2 mt-1">
-                                        {(item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).length > 0) && (
-                                            <span className="text-emerald-600 bg-emerald-50 p-1 rounded-md" title="Tiene links guardados">
-                                                <Check className="w-4 h-4" />
-                                            </span>
-                                        )}
+                {viewMode === 'products' ? productGroups.map((grp) => (
+                    <div key={grp.key} className={`rounded-2xl border shadow-sm overflow-hidden ${grp.isPersonal ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
+                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                    {grp.imageUrl ? (
+                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                            <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                        </div>
+                                    ) : (
+                                        <div className={`w-10 h-10 rounded-lg border border-dashed flex-shrink-0 flex items-center justify-center ${grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
+                                            {grp.isPersonal && <User className="w-4 h-4 text-violet-400" />}
+                                        </div>
+                                    )}
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
+                                            {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-0.5">
+                                            {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
+                                        </p>
                                     </div>
                                 </div>
-                            )}
-                        </div>
-                        <div className="mt-4 space-y-2">
-                            <button
-                                onClick={() => onSell(item)}
-                                className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-2"
-                            >
-                                <DollarSign className="w-4 h-4" />
-                                Vender
-                            </button>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    onClick={() => onEdit(item)}
-                                    className="h-10 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2"
-                                >
-                                    <Edit2 className="w-4 h-4" />
-                                    Editar
-                                </button>
-                                <button
-                                    onClick={() => onDelete(item.id)}
-                                    className="h-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                    Eliminar
-                                </button>
-                                {item.quantity > 1 && !isGrouped && (
-                                    <button
-                                        onClick={() => onSplit(item)}
-                                        className="col-span-2 h-10 rounded-xl border border-amber-100 bg-amber-50 text-amber-700 text-sm font-medium flex items-center justify-center gap-2"
-                                    >
-                                        <Split className="w-4 h-4" />
-                                        Separar 1 unidad
-                                    </button>
-                                )}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`px-2 py-1 rounded-md text-xs font-semibold text-white ${grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'}`}>{grp.totalQty}</span>
+                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                </div>
                             </div>
-                        </div>
+                            <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                                {!grp.isPersonal && <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>}
+                                {!grp.isPersonal && <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>}
+                                {grp.isPersonal && <span className="text-violet-500">Solo ingreso (sin costo)</span>}
+                                <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
+                            </div>
+                        </button>
+                        {expandedGroups.has(grp.key) && (
+                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                {grp.children.map(item => (
+                                    <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <div>
+                                                <span className="text-gray-700 font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
+                                                <span className="text-gray-400 mx-2">·</span>
+                                                <span className="text-gray-500">{item.location || 'Sin ubicación'}</span>
+                                            </div>
+                                            <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
+                                        </div>
+                                        <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                            <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                            <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                        </div>
+                                        <div className="flex gap-2 mt-2">
+                                            <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                            <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                            {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                            <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )) : locationGroups.map((grp) => (
+                    <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <MapPin className="w-4 h-4 text-blue-500" />
+                                    <h3 className="font-semibold text-gray-900">{grp.location}</h3>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                        </button>
+                        {expandedGroups.has(grp.key) && (
+                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                {grp.products.map((prod) => (
+                                    <div key={prod.name} className="bg-white rounded-xl border border-gray-100 p-3">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="font-medium text-gray-900">{prod.name}</span>
+                                            <span className="text-xs font-semibold text-gray-600">×{prod.qty}</span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">Costo prom: ${prod.avgCost.toLocaleString('es-AR')}/u</p>
+                                        <div className="flex gap-2 mt-2 flex-wrap">
+                                            {prod.items.map(item => (
+                                                <div key={item.id} className="flex gap-1">
+                                                    <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                                    <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
+
+            {/* ===== DESKTOP VIEW ===== */}
             <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-left text-sm text-gray-600">
-                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
-                        <tr>
-                            <th className="px-6 py-4 w-12 text-center">Img</th>
-                            <th className="px-6 py-4">Producto</th>
-                            <th className="px-6 py-4 text-center">Stock</th>
-                            <th className="px-6 py-4 text-right">Costo Unit.</th>
-                            <th className="px-6 py-4 text-right">Reventa Unit.</th>
-                            <th className="px-6 py-4 text-right">Valor Total</th>
-                            <th className="px-6 py-4 text-center">Estado</th>
-                            <th className="px-6 py-4 text-center">Ubicación</th>
-                            <th className="px-6 py-4 text-center">Links</th>
-                            <th className="px-6 py-4 text-center">Tanda</th>
-                            <th className="px-6 py-4 text-center">Fecha Ingreso</th>
-                            <th className="px-6 py-4 text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {displayItems.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
-                                <td className="px-6 py-4">
-                                    {item.imageUrl ? (
-                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100">
-                                            <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
-                                        </div>
-                                    ) : (
-                                        <div className="w-10 h-10 rounded-lg bg-gray-50 border border-dashed border-gray-200" />
-                                    )}
-                                </td>
-                                <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
-                                <td className="px-6 py-4 text-center">
-                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
-                                </td>
-                                <td className="px-6 py-4 text-right font-mono">${item.purchasePrice.toLocaleString()}</td>
-                                <td className="px-6 py-4 text-right font-mono text-gray-700">
-                                    {item.salePrice ? `$${item.salePrice.toLocaleString()}` : '-'}
-                                </td>
-                                <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${(item.purchasePrice * item.quantity).toLocaleString()}</td>
-                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                    {conditionLabelMap[item.condition || 'nuevo']}
-                                </td>
-                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                    {item.location || '-'}
-                                </td>
-                                <td className="px-6 py-4 text-center flex justify-center items-center">
-                                    {item.publishUrls && item.publishUrls.split(/[\n, ]+/).filter(u => u.trim().startsWith('http')).length > 0 ? (
-                                        <span className="text-emerald-500" title="Tiene links de publicación">
-                                            <Check className="w-5 h-5" />
-                                        </span>
-                                    ) : '-'}
-                                </td>
-                                <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
-                                    {getBatchDisplay(item)}
-                                </td>
-                                <td className="px-6 py-4 text-center text-gray-400 text-xs">
-                                    {new Date(item.date).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                    <div className="flex justify-center items-center gap-2">
-                                        <button
-                                            onClick={() => onSell(item)}
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                                        >
-                                            <DollarSign className="w-3 h-3" />
-                                            Vender
-                                        </button>
-                                        <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                                        <button
-                                            onClick={() => onEdit(item)}
-                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                            title="Editar"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        {item.quantity > 1 && !isGrouped && (
-                                            <button
-                                                onClick={() => onSplit(item)}
-                                                className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
-                                                title="Separar 1 unidad"
-                                            >
-                                                <Split className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => onDelete(item.id)}
-                                            className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                            title="Eliminar"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
+                {viewMode === 'products' ? (
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                            <tr>
+                                <th className="px-4 py-3 w-8"></th>
+                                <th className="px-4 py-3 w-10">Img</th>
+                                <th className="px-4 py-3">Producto</th>
+                                <th className="px-4 py-3 text-center">Stock</th>
+                                <th className="px-4 py-3 text-right">Costo Prom.</th>
+                                <th className="px-4 py-3 text-right">Valor Total</th>
+                                <th className="px-4 py-3 text-center">Ubicaciones</th>
+                                <th className="px-4 py-3 text-center">Tandas</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {productGroups.map((grp) => (
+                                <>{/* Fragment key on first tr */}
+                                    <tr
+                                        key={grp.key}
+                                        onClick={() => toggleGroup(grp.key)}
+                                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer group ${grp.isPersonal ? 'bg-violet-50/40' : ''}`}
+                                    >
+                                        <td className="px-4 py-3 text-gray-400">
+                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {grp.imageUrl ? (
+                                                <div className="w-9 h-9 rounded-lg overflow-hidden border border-gray-100">
+                                                    <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                </div>
+                                            ) : (
+                                                <div className={`w-9 h-9 rounded-lg border border-dashed flex items-center justify-center ${grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
+                                                    {grp.isPersonal && <User className="w-3.5 h-3.5 text-violet-400" />}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-900">
+                                            <div className="flex items-center gap-2">
+                                                {grp.name}
+                                                {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className={`px-2 py-1 rounded-md text-xs font-semibold text-white ${grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'}`}>{grp.totalQty}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono">{grp.isPersonal ? <span className="text-violet-400 text-xs">-</span> : `$${grp.avgCost.toLocaleString('es-AR')}`}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">{grp.isPersonal ? <span className="text-violet-400 text-xs">-</span> : `$${grp.totalValue.toLocaleString('es-AR')}`}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <div className="flex flex-wrap justify-center gap-1">
+                                                {grp.locations.map(l => (
+                                                    <span key={l.loc} className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                                        {l.loc} ({l.qty})
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center text-xs text-gray-500">
+                                            {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
+                                        </td>
+                                    </tr>
+                                    {expandedGroups.has(grp.key) && grp.children.map(item => (
+                                        <tr key={item.id} className="bg-blue-50/30 border-l-2 border-blue-200">
+                                            <td className="px-4 py-2"></td>
+                                            <td className="px-4 py-2"></td>
+                                            <td className="px-4 py-2 text-gray-600 text-xs">
+                                                <span className="font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
+                                                <span className="text-gray-400 mx-1">·</span>
+                                                <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                                <span className="text-gray-400 mx-1">·</span>
+                                                <span>{new Date(item.date).toLocaleDateString('es-AR')}</span>
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-xs font-semibold">{item.quantity}</td>
+                                            <td className="px-4 py-2 text-right font-mono text-xs">${item.purchasePrice.toLocaleString('es-AR')}</td>
+                                            <td className="px-4 py-2 text-right font-mono text-xs">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</td>
+                                            <td className="px-4 py-2 text-center text-xs">{item.location || '-'}</td>
+                                            <td className="px-4 py-2 text-center">
+                                                <div className="flex justify-center items-center gap-1">
+                                                    <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-0.5">
+                                                        <DollarSign className="w-3 h-3" /> Vender
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all" title="Editar">
+                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    {item.quantity > 1 && (
+                                                        <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
+                                                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-all" title="Separar">
+                                                            <Split className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                                                        className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                            <tr>
+                                <th className="px-4 py-3 w-8"></th>
+                                <th className="px-4 py-3">Ubicación</th>
+                                <th className="px-4 py-3 text-center">Productos</th>
+                                <th className="px-4 py-3 text-center">Unidades</th>
+                                <th className="px-4 py-3 text-right">Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {locationGroups.map((grp) => (
+                                <>{/* Fragment key on first tr */}
+                                    <tr
+                                        key={grp.key}
+                                        onClick={() => toggleGroup(grp.key)}
+                                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                                    >
+                                        <td className="px-4 py-3 text-gray-400">
+                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                                            <MapPin className="w-4 h-4 text-blue-500" />
+                                            {grp.location}
+                                        </td>
+                                        <td className="px-4 py-3 text-center text-xs font-semibold">{grp.products.length}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">${grp.totalValue.toLocaleString('es-AR')}</td>
+                                    </tr>
+                                    {expandedGroups.has(grp.key) && grp.products.map(prod => (
+                                        <tr key={prod.name} className="bg-blue-50/30 border-l-2 border-blue-200">
+                                            <td className="px-4 py-2"></td>
+                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs">{prod.name}</td>
+                                            <td className="px-4 py-2 text-center text-xs text-gray-400">
+                                                prom: ${prod.avgCost.toLocaleString('es-AR')}/u
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-xs font-semibold">{prod.qty}</td>
+                                            <td className="px-4 py-2 text-right">
+                                                <div className="flex justify-end items-center gap-1">
+                                                    {prod.items.map(item => (
+                                                        <div key={item.id} className="flex gap-0.5">
+                                                            <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">Vender</button>
+                                                            <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                                                                className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Editar">
+                                                                <Edit2 className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
             </div>
         </>
     );
@@ -1693,6 +1878,19 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 </button>
             </div>
 
+            {/* Personal/Resale Toggle */}
+            <button
+                type="button"
+                onClick={() => {
+                    const next = formData.itemType === 'personal' ? 'resale' : 'personal';
+                    setFormData({ ...formData, itemType: next as ItemType, purchasePrice: next === 'personal' ? 0 : formData.purchasePrice });
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${formData.itemType === 'personal' ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'}`}
+            >
+                <User className="w-4 h-4" />
+                {formData.itemType === 'personal' ? 'Producto propio (solo ingreso, sin costo)' : 'Marcar como producto propio'}
+            </button>
+
             {!isEditing && (
                 <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-1 sm:mb-2 space-y-3">
                     <div>
@@ -1750,31 +1948,33 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 </datalist>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Costo ($)</label>
-                    <input
-                        type="text"
-                        inputMode="numeric"
-                        required
-                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
-                        placeholder="Ej: 14.092"
-                        value={purchasePriceInput}
-                        onChange={(e) => {
-                            const value = parseMoneyInput(e.target.value);
-                            setPurchasePriceInput(formatMoney(value));
-                            setFormData({ ...formData, purchasePrice: value });
-                        }}
-                    />
-                </div>
+            <div className={`grid grid-cols-1 ${formData.itemType === 'personal' ? '' : 'sm:grid-cols-2'} gap-4`}>
+                {formData.itemType !== 'personal' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Costo ($)</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            required
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
+                            placeholder="Ej: 14.092"
+                            value={purchasePriceInput}
+                            onChange={(e) => {
+                                const value = parseMoneyInput(e.target.value);
+                                setPurchasePriceInput(formatMoney(value));
+                                setFormData({ ...formData, purchasePrice: value });
+                            }}
+                        />
+                    </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {formData.status === 'sold' ? 'Precio Venta ($)' : 'Precio Objetivo ($)'}
+                        {formData.itemType === 'personal' ? 'Precio Venta ($)' : formData.status === 'sold' ? 'Precio Venta ($)' : 'Precio Objetivo ($)'}
                     </label>
                     <input
                         type="text"
                         inputMode="numeric"
-                        className={`w-full px-4 py-2 rounded-xl border border-gray-200 outline-none transition-all bg-gray-50 focus:bg-white ${formData.status === 'sold' ? 'focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-emerald-700' : 'focus:border-black focus:ring-1 focus:ring-black'}`}
+                        className={`w-full px-4 py-2 rounded-xl border border-gray-200 outline-none transition-all bg-gray-50 focus:bg-white ${formData.status === 'sold' || formData.itemType === 'personal' ? 'focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-emerald-700' : 'focus:border-black focus:ring-1 focus:ring-black'}`}
                         placeholder="Ej: 21.900"
                         value={salePriceInput}
                         onChange={(e) => {
@@ -1908,12 +2108,15 @@ function BulkPricingBoard({
     const [newListedPrice, setNewListedPrice] = useState('');
     const [newSalePrice, setNewSalePrice] = useState('');
     const [newDisposition, setNewDisposition] = useState<'sell' | 'keep'>('sell');
+    const [newCategory, setNewCategory] = useState('');
     const [totalPaidInput, setTotalPaidInput] = useState('');
     const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [batchDefaultLocation, setBatchDefaultLocation] = useState('');
     const [bulkLocationInput, setBulkLocationInput] = useState('');
     const [isUpdatingBulk, setIsUpdatingBulk] = useState(false);
     const [isProcessingReturn, setIsProcessingReturn] = useState(false);
+    const [editingSaleItemId, setEditingSaleItemId] = useState<string | null>(null);
+    const [editingSalePrice, setEditingSalePrice] = useState('');
     const [importCharges, setImportCharges] = useState(0);
     const [importChargesInput, setImportChargesInput] = useState('');
     const [creditAmount, setCreditAmount] = useState(0);
@@ -1924,7 +2127,11 @@ function BulkPricingBoard({
     const [showImportModal, setShowImportModal] = useState(false);
     const [importJsonText, setImportJsonText] = useState('');
     const [importPreview, setImportPreview] = useState<{
-        productos: Array<{ producto: string; precio_unit_final: number; cantidad: number }>;
+        productos: Array<{
+            producto: string; precio_unit_final: number; cantidad: number; merged: boolean;
+            existsInBatch: boolean; batchQty: number;
+            historyMatch: { totalSold: number; lastSalePrice: number; avgSalePrice: number; inStock: number } | null;
+        }>;
         total_pagado: number;
         credito: number;
         cargo_importacion: number;
@@ -2169,19 +2376,20 @@ function BulkPricingBoard({
     const effectiveCostToRecover = Math.max(effectiveTotalPaid - retainedValue, 0);
     const totalEconomicValue = expectedProfit + retainedValue;
 
+    const normalizeName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
     const parseImportJson = () => {
         setImportError('');
         setImportPreview(null);
         try {
             const parsed = JSON.parse(importJsonText.trim());
-            // Accept "productos" array at root or nested under "pedido"
             const rawProducts = parsed.productos || parsed.items || parsed.products;
             if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
                 setImportError('El JSON no tiene un array de productos válido.');
                 return;
             }
-            // Normalize products: accept multiple field name formats
-            const productos: Array<{ producto: string; precio_unit_final: number; cantidad: number }> = [];
+            // Parse and deduplicate products within the JSON
+            const mergedMap = new Map<string, { producto: string; precio_unit_final: number; cantidad: number; merged: boolean }>();
             for (const p of rawProducts) {
                 const nombre = p.producto || p.nombre || p.name || p.productName || '';
                 const precio = Number(p.precio_unit_final || p.precioUnitFinal || p.precio || p.price || 0);
@@ -2199,9 +2407,44 @@ function BulkPricingBoard({
                     setImportError(`Cantidad inválida para "${nombre}".`);
                     return;
                 }
-                productos.push({ producto: nombre, precio_unit_final: precio, cantidad });
+
+                const key = normalizeName(nombre);
+                const existing = mergedMap.get(key);
+                if (existing) {
+                    existing.cantidad += cantidad;
+                    existing.merged = true;
+                } else {
+                    mergedMap.set(key, { producto: nombre, precio_unit_final: precio, cantidad, merged: false });
+                }
             }
-            // Normalize order-level fields: accept multiple formats
+
+            // Check against current batch and inventory history
+            const productos = Array.from(mergedMap.values()).map((p) => {
+                const batchMatch = batchItems.find((b) => normalizeName(b.productName) === normalizeName(p.producto));
+                const key = normalizeName(p.producto);
+                const historyItems = inventoryItems.filter((it: Item) => normalizeName(it.productName) === key);
+                let historyMatch: { totalSold: number; lastSalePrice: number; avgSalePrice: number; inStock: number } | null = null;
+                if (historyItems.length > 0) {
+                    const sold = historyItems.filter((it: Item) => it.status === 'sold' && it.salePrice);
+                    const inStock = historyItems.filter((it: Item) => it.status === 'in_stock').reduce((s: number, it: Item) => s + it.quantity, 0);
+                    const totalSold = sold.reduce((s: number, it: Item) => s + it.quantity, 0);
+                    const lastSold = sold.sort((a: Item, b: Item) => (b.saleDate || '').localeCompare(a.saleDate || ''))[0];
+                    const avgSalePrice = totalSold > 0 ? sold.reduce((s: number, it: Item) => s + (it.salePrice || 0) * it.quantity, 0) / totalSold : 0;
+                    historyMatch = {
+                        totalSold,
+                        lastSalePrice: lastSold?.salePrice || 0,
+                        avgSalePrice,
+                        inStock,
+                    };
+                }
+                return {
+                    ...p,
+                    existsInBatch: !!batchMatch,
+                    batchQty: batchMatch?.quantity || 0,
+                    historyMatch,
+                };
+            });
+
             const pedido = parsed.pedido || parsed;
             const totalPagado = Math.abs(Number(pedido.total_pagado || pedido.totalPagado || pedido.total || 0));
             const credito = Math.abs(Number(pedido.credito || pedido.credit || 0));
@@ -2216,17 +2459,30 @@ function BulkPricingBoard({
     const confirmImport = () => {
         if (!importPreview) return;
 
-        const newItems: PricingItem[] = importPreview.productos.map((p) => ({
-            id: crypto.randomUUID(),
-            productName: p.producto,
-            quantity: p.cantidad,
-            listedUnitPrice: p.precio_unit_final,
-            unitSalePrice: 0,
-            condition: 'nuevo' as ItemCondition,
-            disposition: 'sell' as const,
-        }));
+        setBatchItems((prev) => {
+            const updated = [...prev];
+            const toAdd: PricingItem[] = [];
 
-        setBatchItems((prev) => [...prev, ...newItems]);
+            for (const p of importPreview.productos) {
+                const existingIdx = updated.findIndex((b) => normalizeName(b.productName) === normalizeName(p.producto));
+                if (existingIdx !== -1) {
+                    // Merge: sum quantity into existing batch item
+                    updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + p.cantidad };
+                } else {
+                    toAdd.push({
+                        id: crypto.randomUUID(),
+                        productName: p.producto,
+                        quantity: p.cantidad,
+                        listedUnitPrice: p.precio_unit_final,
+                        unitSalePrice: 0,
+                        condition: 'nuevo' as ItemCondition,
+                        disposition: 'sell' as const,
+                    });
+                }
+            }
+
+            return [...updated, ...toAdd];
+        });
 
         // Siempre poner el total tal cual viene del JSON
         // El modo de crédito se encarga de sumar o no en effectiveTotalPaid
@@ -2274,7 +2530,8 @@ function BulkPricingBoard({
                 listedUnitPrice: listedPrice,
                 unitSalePrice: newDisposition === 'sell' ? salePrice : 0,
                 condition: 'nuevo',
-                disposition: newDisposition
+                disposition: newDisposition,
+                category: newCategory.trim() || undefined
             }
         ]);
 
@@ -2283,6 +2540,7 @@ function BulkPricingBoard({
         setNewListedPrice('');
         setNewSalePrice('');
         setNewDisposition('sell');
+        setNewCategory('');
     };
 
     const sendBatchToStock = async () => {
@@ -2346,9 +2604,11 @@ function BulkPricingBoard({
                         date: nowIso,
                         status: 'in_stock',
                         condition: item.condition,
+                        itemType: 'resale',
                         batchRef: batchCode,
                         estimatedSalePrice: item.unitSalePrice,
-                        location: batchDefaultLocation
+                        location: batchDefaultLocation,
+                        category: item.category
                     });
                     setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
                 }
@@ -2357,6 +2617,7 @@ function BulkPricingBoard({
             const record: Omit<BatchRecord, 'id'> = {
                 batchCode,
                 batchType,
+                batchStatus: 'en_camino',
                 createdAt: new Date().toISOString(),
                 totalPaid,
                 totalSellRevenue,
@@ -2498,7 +2759,7 @@ function BulkPricingBoard({
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
                 <h3 className="text-base font-bold text-gray-800 mb-3">Agregar producto al pedido</h3>
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
                     <input
                         type="text"
                         value={newName}
@@ -2506,6 +2767,20 @@ function BulkPricingBoard({
                         placeholder="Nombre del producto"
                         className="md:col-span-2 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
+                    <input
+                        type="text"
+                        list="category-suggestions"
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        placeholder="Categoría"
+                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                    />
+                    <datalist id="category-suggestions">
+                        {Array.from(new Set([
+                            ...inventoryItems.map((i: Item) => i.category).filter(Boolean),
+                            ...batchItems.map(i => i.category).filter(Boolean)
+                        ])).map(cat => <option key={cat} value={cat} />)}
+                    </datalist>
                     <input
                         type="number"
                         min="1"
@@ -2619,6 +2894,12 @@ function BulkPricingBoard({
                                 ) : (
                                     <>
                                         <p className="text-sm text-gray-500">Revisá los datos antes de confirmar:</p>
+                                        {importPreview.productos.some((p) => p.merged || p.existsInBatch) && (
+                                            <div className="flex items-center gap-2 text-amber-700 text-xs bg-amber-50 px-3 py-2 rounded-xl">
+                                                <Merge size={14} />
+                                                Algunos productos se fusionarán (se suma la cantidad)
+                                            </div>
+                                        )}
                                         <div className="rounded-xl border border-gray-200 overflow-hidden">
                                             <table className="w-full text-sm">
                                                 <thead className="bg-gray-50 text-xs uppercase text-gray-600">
@@ -2630,8 +2911,31 @@ function BulkPricingBoard({
                                                 </thead>
                                                 <tbody>
                                                     {importPreview.productos.map((p, i) => (
-                                                        <tr key={i} className="border-t border-gray-100">
-                                                            <td className="px-3 py-2">{p.producto}</td>
+                                                        <tr key={i} className={`border-t border-gray-100 ${p.merged || p.existsInBatch ? 'bg-amber-50' : ''}`}>
+                                                            <td className="px-3 py-2">
+                                                                <div className="flex flex-wrap items-center gap-1">
+                                                                    <span>{p.producto}</span>
+                                                                    {p.merged && (
+                                                                        <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">fusionado</span>
+                                                                    )}
+                                                                    {p.existsInBatch && (
+                                                                        <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded-full font-medium">+{p.batchQty} en tanda</span>
+                                                                    )}
+                                                                </div>
+                                                                {p.historyMatch && (
+                                                                    <div className="flex flex-wrap gap-2 mt-1 text-[10px] text-gray-500">
+                                                                        {p.historyMatch.totalSold > 0 && (
+                                                                            <span>Vendidos: {p.historyMatch.totalSold} u. a ~${p.historyMatch.avgSalePrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</span>
+                                                                        )}
+                                                                        {p.historyMatch.lastSalePrice > 0 && (
+                                                                            <span className="text-green-600 font-medium">Últ. venta: ${p.historyMatch.lastSalePrice.toLocaleString('es-AR')}</span>
+                                                                        )}
+                                                                        {p.historyMatch.inStock > 0 && (
+                                                                            <span className="text-blue-600 font-medium">{p.historyMatch.inStock} en stock</span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </td>
                                                             <td className="px-3 py-2 text-center">{p.cantidad}</td>
                                                             <td className="px-3 py-2 text-right">${p.precio_unit_final.toLocaleString('es-AR')}</td>
                                                         </tr>
@@ -2707,6 +3011,7 @@ function BulkPricingBoard({
                     <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
                         <tr>
                             <th className="px-4 py-3 text-left">Producto</th>
+                            <th className="px-4 py-3 text-left">Categoría</th>
                             <th className="px-4 py-3 text-center">Cant.</th>
                             <th className="px-4 py-3 text-right">Lista Unit.</th>
                             <th className="px-4 py-3 text-right">Costo Ajustado Unit.</th>
@@ -2734,6 +3039,16 @@ function BulkPricingBoard({
                             return (
                                 <tr key={item.id}>
                                     <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
+                                    <td className="px-4 py-3">
+                                        <input
+                                            type="text"
+                                            list="category-suggestions"
+                                            value={item.category || ''}
+                                            onChange={(e) => setBatchItems((prev) => prev.map((p) => p.id === item.id ? { ...p, category: e.target.value || undefined } : p))}
+                                            placeholder="—"
+                                            className="w-24 px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs outline-none"
+                                        />
+                                    </td>
                                     <td className="px-4 py-3 text-center">{item.quantity}</td>
                                     <td className="px-4 py-3 text-right">${Math.round(item.listedUnitPrice).toLocaleString('es-AR')}</td>
                                     <td className="px-4 py-3 text-right">
@@ -2852,7 +3167,17 @@ function BulkPricingBoard({
                                     className="flex-1 text-left"
                                 >
                                     <div className="text-gray-700">
-                                        <p className="font-semibold">{record.batchCode} ({record.batchType}) - {new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</p>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <p className="font-semibold">{record.batchCode} ({record.batchType})</p>
+                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                                record.batchStatus === 'en_camino' ? 'bg-yellow-100 text-yellow-700' :
+                                                record.batchStatus === 'recibido' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-green-100 text-green-700'
+                                            }`}>
+                                                {record.batchStatus === 'en_camino' ? 'En camino' : record.batchStatus === 'recibido' ? 'Recibido' : 'Completado'}
+                                            </span>
+                                            <span className="text-xs text-gray-400">{new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</span>
+                                        </div>
                                         <p className="text-xs text-gray-500">Invertido: ${safeMoney(record.totalPaid).toLocaleString('es-AR')} | Venta esperada: ${safeMoney(record.totalSellRevenue).toLocaleString('es-AR')} | Retenido: ${safeMoney(record.retainedValue).toLocaleString('es-AR')}</p>
                                     </div>
                                 </button>
@@ -2876,6 +3201,21 @@ function BulkPricingBoard({
                                             );
                                         })()}
                                     </div>
+                                    <select
+                                        value={record.batchStatus || 'completado'}
+                                        onChange={async (e) => {
+                                            const newStatus = e.target.value as BatchStatus;
+                                            try {
+                                                await itemService.updateBatch(record.id, { batchStatus: newStatus });
+                                                setBatchHistory((prev) => prev.map((b) => b.id === record.id ? { ...b, batchStatus: newStatus } : b));
+                                            } catch { alert('Error al cambiar estado.'); }
+                                        }}
+                                        className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-gray-50"
+                                    >
+                                        <option value="en_camino">En camino</option>
+                                        <option value="recibido">Recibido</option>
+                                        <option value="completado">Completado</option>
+                                    </select>
                                     <button
                                         type="button"
                                         onClick={() => void deleteBatchRecord(record.id)}
@@ -2949,50 +3289,197 @@ function BulkPricingBoard({
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-gray-700">
-                            <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
-                                <tr>
-                                    <th className="px-3 py-2 text-left">Producto</th>
-                                    <th className="px-3 py-2 text-center">Cant.</th>
-                                    <th className="px-3 py-2 text-right">Lista Unit.</th>
-                                    <th className="px-3 py-2 text-right">Venta Unit.</th>
-                                    <th className="px-3 py-2 text-center">Destino</th>
-                                    <th className="px-3 py-2 text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {selectedRecordItems.map((item) => (
-                                    <tr key={item.id}>
-                                        <td className="px-3 py-2 font-medium text-gray-900">{item.productName}</td>
-                                        <td className="px-3 py-2 text-center">{item.quantity}</td>
-                                        <td className="px-3 py-2 text-right">${safeMoney(item.listedUnitPrice).toLocaleString('es-AR')}</td>
-                                        <td className="px-3 py-2 text-right">
-                                            {item.disposition === 'sell' ? `$${safeMoney(item.unitSalePrice).toLocaleString('es-AR')}` : '-'}
-                                        </td>
-                                        <td className="px-3 py-2 text-center text-xs font-semibold text-gray-700">
-                                            {item.disposition === 'sell' ? 'Vender' : 'Me lo quedo'}
-                                        </td>
-                                        <td className="px-3 py-2 text-center">
-                                            <button
-                                                type="button"
-                                                disabled={isProcessingReturn}
-                                                onClick={() => handleReturnFromBatch(selectedRecord, item)}
-                                                className="text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 bg-rose-50 px-2 py-1 rounded-md transition-all disabled:opacity-50"
-                                            >
-                                                {isProcessingReturn ? '...' : 'Devolver'}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {selectedRecordItems.length === 0 && (
-                        <p className="text-xs text-amber-600 mt-3">
-                            No hay detalle guardado para esta tanda (registro antiguo sin productos vinculados).
-                        </p>
-                    )}
+                    {(() => {
+                        const detailTotalListed = selectedRecordItems.reduce((acc, i) => acc + (i.listedUnitPrice * i.quantity), 0);
+                        const detailAllocFactor = detailTotalListed > 0 ? selectedRecord.totalPaid / detailTotalListed : 1;
+
+                        // Build a map of actual inventory data per product in this batch
+                        const batchInvItems = inventoryItems.filter((inv: Item) =>
+                            (inv.batchRef || itemBatchMap[inv.id]) === selectedRecord.batchCode
+                        );
+                        const getActualData = (pItem: PricingItem) => {
+                            const matches = batchInvItems.filter((inv: Item) =>
+                                normalizeText(inv.productName) === normalizeText(pItem.productName) &&
+                                (inv.condition || 'nuevo') === pItem.condition
+                            );
+                            const soldItems = matches.filter((inv: Item) => inv.status === 'sold');
+                            const inStockItems = matches.filter((inv: Item) => inv.status === 'in_stock');
+                            const totalSoldQty = soldItems.reduce((a: number, i: Item) => a + i.quantity, 0);
+                            const totalInStockQty = inStockItems.reduce((a: number, i: Item) => a + i.quantity, 0);
+                            const totalSoldRevenue = soldItems.reduce((a: number, i: Item) => a + (i.salePrice || 0) * i.quantity, 0);
+                            const avgSalePrice = totalSoldQty > 0 ? totalSoldRevenue / totalSoldQty : 0;
+                            return { totalSoldQty, totalInStockQty, totalSoldRevenue, avgSalePrice, matches };
+                        };
+
+                        let grandTotalCost = 0;
+                        let grandTotalRevenue = 0;
+                        let grandTotalExpectedRevenue = 0;
+
+                        const rows = selectedRecordItems.map((item) => {
+                            const unitCost = Math.round(item.listedUnitPrice * detailAllocFactor);
+                            const totalCost = unitCost * item.quantity;
+                            const actual = getActualData(item);
+                            const expectedRevenue = item.disposition === 'sell' ? item.unitSalePrice * item.quantity : 0;
+                            const realProfit = actual.totalSoldRevenue - (unitCost * actual.totalSoldQty);
+
+                            grandTotalCost += totalCost;
+                            grandTotalRevenue += actual.totalSoldRevenue;
+                            grandTotalExpectedRevenue += expectedRevenue;
+
+                            return { item, unitCost, totalCost, actual, expectedRevenue, realProfit };
+                        });
+
+                        const grandTotalProfit = grandTotalRevenue - grandTotalCost;
+
+                        return (
+                            <>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-gray-700">
+                                        <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left">Producto</th>
+                                                <th className="px-3 py-2 text-center">Cant.</th>
+                                                <th className="px-3 py-2 text-right">Costo Unit.</th>
+                                                <th className="px-3 py-2 text-right">Costo Total</th>
+                                                <th className="px-3 py-2 text-right">Venta Esperada</th>
+                                                <th className="px-3 py-2 text-center">Vendidos</th>
+                                                <th className="px-3 py-2 text-right">Venta Real</th>
+                                                <th className="px-3 py-2 text-right">Ganancia</th>
+                                                <th className="px-3 py-2 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {rows.map(({ item, unitCost, totalCost, actual, expectedRevenue, realProfit }) => (
+                                                <tr key={item.id} className={item.disposition === 'keep' ? 'bg-amber-50/40' : ''}>
+                                                    <td className="px-3 py-2">
+                                                        <span className="font-medium text-gray-900">{item.productName}</span>
+                                                        {item.category && <span className="ml-1.5 text-[10px] text-gray-400">({item.category})</span>}
+                                                        {item.disposition === 'keep' && <span className="ml-1.5 text-[10px] font-bold text-amber-600">RETENIDO</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">{item.quantity}</td>
+                                                    <td className="px-3 py-2 text-right text-gray-600">${safeMoney(unitCost).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2 text-right font-medium">${safeMoney(totalCost).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2 text-right text-gray-500">
+                                                        {item.disposition === 'sell' ? `$${safeMoney(expectedRevenue).toLocaleString('es-AR')}` : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {actual.totalSoldQty > 0 ? (
+                                                            <span className="text-emerald-600 font-semibold">{actual.totalSoldQty}</span>
+                                                        ) : actual.totalInStockQty > 0 ? (
+                                                            <span className="text-blue-500 text-xs">{actual.totalInStockQty} en stock</span>
+                                                        ) : (
+                                                            <span className="text-gray-400">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {actual.totalSoldQty > 0 ? (
+                                                            <span className="font-semibold text-emerald-700">${safeMoney(actual.totalSoldRevenue).toLocaleString('es-AR')}</span>
+                                                        ) : (
+                                                            <span className="text-gray-400">—</span>
+                                                        )}
+                                                        {actual.totalSoldQty > 0 && actual.avgSalePrice > 0 && (
+                                                            <span className="block text-[10px] text-gray-400">prom: ${safeMoney(actual.avgSalePrice).toLocaleString('es-AR')}/u</span>
+                                                        )}
+                                                    </td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${actual.totalSoldQty > 0 ? (realProfit >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-300'}`}>
+                                                        {actual.totalSoldQty > 0 ? `$${safeMoney(realProfit).toLocaleString('es-AR')}` : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                                                            {actual.totalInStockQty > 0 && editingSaleItemId === item.id ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-[10px] text-gray-500">$</span>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editingSalePrice}
+                                                                        onChange={(e) => setEditingSalePrice(e.target.value)}
+                                                                        className="w-16 px-1 py-0.5 text-xs border rounded"
+                                                                        placeholder="Precio"
+                                                                        autoFocus
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={async () => {
+                                                                            const price = Number(editingSalePrice);
+                                                                            if (!price || price <= 0) return;
+                                                                            try {
+                                                                                const stockMatches = actual.matches.filter((inv: Item) => inv.status === 'in_stock');
+                                                                                for (const inv of stockMatches) {
+                                                                                    await itemService.updateItem(inv.id, {
+                                                                                        salePrice: price,
+                                                                                        status: 'sold',
+                                                                                        saleDate: new Date().toISOString()
+                                                                                    });
+                                                                                }
+                                                                                await onInventoryRefresh();
+                                                                                setEditingSaleItemId(null);
+                                                                                setEditingSalePrice('');
+                                                                            } catch { alert('Error al marcar como vendido.'); }
+                                                                        }}
+                                                                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded"
+                                                                    >
+                                                                        <Check size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => { setEditingSaleItemId(null); setEditingSalePrice(''); }}
+                                                                        className="text-[10px] text-gray-400 px-1"
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : actual.totalInStockQty > 0 ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setEditingSaleItemId(item.id);
+                                                                        setEditingSalePrice(String(item.unitSalePrice || ''));
+                                                                    }}
+                                                                    className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md transition-all"
+                                                                >
+                                                                    Vender
+                                                                </button>
+                                                            ) : null}
+                                                            <button
+                                                                type="button"
+                                                                disabled={isProcessingReturn}
+                                                                onClick={() => handleReturnFromBatch(selectedRecord, item)}
+                                                                className="text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 bg-rose-50 px-2 py-1 rounded-md transition-all disabled:opacity-50"
+                                                            >
+                                                                {isProcessingReturn ? '...' : 'Devolver'}
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        {selectedRecordItems.length > 0 && (
+                                            <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                                                <tr className="text-xs font-bold uppercase tracking-wider">
+                                                    <td className="px-3 py-2.5 text-gray-700" colSpan={3}>Totales</td>
+                                                    <td className="px-3 py-2.5 text-right text-gray-900">${safeMoney(grandTotalCost).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2.5 text-right text-gray-500">${safeMoney(grandTotalExpectedRevenue).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2.5 text-center text-emerald-600">
+                                                        {rows.reduce((a, r) => a + r.actual.totalSoldQty, 0)} / {selectedRecordItems.reduce((a, i) => a + i.quantity, 0)}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right text-emerald-700">${safeMoney(grandTotalRevenue).toLocaleString('es-AR')}</td>
+                                                    <td className={`px-3 py-2.5 text-right font-bold ${grandTotalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        ${safeMoney(grandTotalProfit).toLocaleString('es-AR')}
+                                                    </td>
+                                                    <td />
+                                                </tr>
+                                            </tfoot>
+                                        )}
+                                    </table>
+                                </div>
+                                {selectedRecordItems.length === 0 && (
+                                    <p className="text-xs text-amber-600 mt-3">
+                                        No hay detalle guardado para esta tanda (registro antiguo sin productos vinculados).
+                                    </p>
+                                )}
+                            </>
+                        );
+                    })()}
                 </div>
             )}
         </div>
