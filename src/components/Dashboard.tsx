@@ -2795,7 +2795,7 @@ function BulkPricingBoard({
                 batchType,
                 batchStatus: 'en_camino',
                 createdAt: new Date().toISOString(),
-                totalPaid,
+                totalPaid: effectiveTotalPaid,
                 totalSellRevenue,
                 cashProfit: expectedProfit,
                 retainedValue,
@@ -2886,7 +2886,7 @@ function BulkPricingBoard({
             }
 
             await itemService.updateBatch(editingBatchId, {
-                totalPaid,
+                totalPaid: effTotal,
                 totalSellRevenue: newSellRevenue,
                 cashProfit: newProfit,
                 retainedValue: newRetainedValue,
@@ -2896,7 +2896,7 @@ function BulkPricingBoard({
 
             setBatchHistory(prev => prev.map(b => b.id === editingBatchId ? {
                 ...b,
-                totalPaid,
+                totalPaid: effTotal,
                 totalSellRevenue: newSellRevenue,
                 cashProfit: newProfit,
                 retainedValue: newRetainedValue,
@@ -3002,9 +3002,9 @@ function BulkPricingBoard({
                                         type="button"
                                         onClick={() => setCreditMode('manual')}
                                         className={`px-3 py-2 transition-colors ${creditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
-                                        title="El crédito lo ponés vos, reduce el costo efectivo"
+                                        title="El crédito lo pagaste vos, se suma al total invertido"
                                     >
-                                        Lo pongo yo
+                                        Lo pagué yo
                                     </button>
                                 </div>
                             </div>
@@ -3261,13 +3261,13 @@ function BulkPricingBoard({
                                                         onClick={() => setImportCreditMode('manual')}
                                                         className={`px-4 py-2 transition-colors ${importCreditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
                                                     >
-                                                        Lo pongo yo
+                                                        Lo pagué yo
                                                     </button>
                                                 </div>
                                                 <p className="text-xs text-gray-500">
                                                     {importCreditMode === 'already_applied'
                                                         ? `Costo efectivo: $${importPreview.total_pagado.toLocaleString('es-AR')} (el crédito ya fue restado por Temu)`
-                                                        : `Costo efectivo: $${(importPreview.total_pagado + importPreview.credito).toLocaleString('es-AR')} ($${importPreview.total_pagado.toLocaleString('es-AR')} + $${importPreview.credito.toLocaleString('es-AR')} de crédito propio)`
+                                                        : `Costo efectivo: $${(importPreview.total_pagado + importPreview.credito).toLocaleString('es-AR')} ($${importPreview.total_pagado.toLocaleString('es-AR')} + $${importPreview.credito.toLocaleString('es-AR')} de crédito pagado por vos)`
                                                     }
                                                 </p>
                                             </div>
