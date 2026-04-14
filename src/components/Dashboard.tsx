@@ -2417,10 +2417,12 @@ function BulkPricingBoard({
     };
 
     const selectedRecord = batchHistory.find((record) => record.id === selectedHistoryId) || null;
-    const selectedRecordItems: PricingItem[] = selectedRecord
-        ? ((selectedRecord.items && selectedRecord.items.length > 0)
-            ? selectedRecord.items
-            : inventoryItems
+    const selectedRecordItems: PricingItem[] = (() => {
+        if (!selectedRecord) return [];
+        const storedItems = selectedRecord.items && selectedRecord.items.length > 0 ? selectedRecord.items : [];
+        if (storedItems.length === 0) {
+            // No stored items — reconstruct from inventory
+            return inventoryItems
                 .filter((item) => (item.batchRef || itemBatchMap[item.id]) === selectedRecord.batchCode)
                 .map((item) => ({
                     id: item.id,
@@ -2430,8 +2432,41 @@ function BulkPricingBoard({
                     unitSalePrice: item.salePrice || item.purchasePrice,
                     condition: item.condition,
                     disposition: 'sell' as const
-                })))
-        : [];
+                }));
+        }
+        // Merge stored items with sold inventory items missing from the stored list
+        const batchInv = inventoryItems.filter(i =>
+            (i.batchRef || itemBatchMap[i.id]) === selectedRecord.batchCode
+        );
+        const missingItems: PricingItem[] = [];
+        for (const inv of batchInv) {
+            const alreadyInStored = storedItems.some(si =>
+                normalizeText(si.productName) === normalizeText(inv.productName) &&
+                (si.condition || 'nuevo') === (inv.condition || 'nuevo')
+            );
+            if (!alreadyInStored) {
+                // Check if we already added this product+condition to missingItems
+                const existing = missingItems.find(m =>
+                    normalizeText(m.productName) === normalizeText(inv.productName) &&
+                    (m.condition || 'nuevo') === (inv.condition || 'nuevo')
+                );
+                if (existing) {
+                    existing.quantity += inv.quantity;
+                } else {
+                    missingItems.push({
+                        id: crypto.randomUUID(),
+                        productName: inv.productName,
+                        quantity: inv.quantity,
+                        listedUnitPrice: inv.purchasePrice,
+                        unitSalePrice: inv.salePrice || inv.purchasePrice,
+                        condition: inv.condition,
+                        disposition: inv.itemType === 'personal' ? 'keep' : 'sell'
+                    });
+                }
+            }
+        }
+        return [...storedItems, ...missingItems];
+    })();
 
     const deleteBatchRecord = async (recordId: string) => {
         const target = batchHistory.find((record) => record.id === recordId);
