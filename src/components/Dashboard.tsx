@@ -479,10 +479,15 @@ export default function Dashboard() {
                 // Sync state with DB response to detect if columns were dropped by fallback
                 setItems(prev => prev.map(i => i.id === editingItem.id ? savedItem : i));
 
-                // Sync product name change to batch record
+                // Sync name AND price changes to batch record
                 const oldName = editingItem.productName;
                 const newName = updates.productName || oldName;
-                if (normalizeText(newName) !== normalizeText(oldName)) {
+                const oldSalePrice = editingItem.salePrice || 0;
+                const newSalePrice = updates.salePrice || 0;
+                const nameChanged = normalizeText(newName) !== normalizeText(oldName);
+                const priceChanged = newSalePrice !== oldSalePrice && newSalePrice > 0;
+
+                if (nameChanged || priceChanged) {
                     const batchRef = getItemBatchRef(editingItem);
                     if (batchRef) {
                         const batch = batchHistory.find(b => b.batchCode === batchRef);
@@ -491,7 +496,10 @@ export default function Dashboard() {
                                 const updatedBatchItems = batch.items.map(bi => {
                                     if (normalizeText(bi.productName) === normalizeText(oldName) &&
                                         (bi.condition || 'nuevo') === (editingItem.condition || 'nuevo')) {
-                                        return { ...bi, productName: newName };
+                                        const upd = { ...bi };
+                                        if (nameChanged) upd.productName = newName;
+                                        if (priceChanged && bi.disposition === 'sell') upd.unitSalePrice = newSalePrice;
+                                        return upd;
                                     }
                                     return bi;
                                 });
@@ -499,30 +507,56 @@ export default function Dashboard() {
                                 const dbBatches = await itemService.getBatches();
                                 setBatchHistory(dbBatches);
                             } catch (e) {
-                                console.error("Error syncing product name to batch", e);
+                                console.error("Error syncing to batch", e);
                             }
                         }
                     }
                     // Also sync other items with same name + batch (e.g. sold copies)
-                    const batchRef2 = getItemBatchRef(editingItem);
-                    const otherItems = items.filter(i =>
-                        i.id !== editingItem.id &&
-                        normalizeText(i.productName) === normalizeText(oldName) &&
-                        (i.batchRef || itemBatchMap[i.id]) === batchRef2
-                    );
-                    for (const other of otherItems) {
-                        try {
-                            await itemService.updateItem(other.id, { productName: newName });
-                        } catch (e) {
-                            console.error("Error syncing name to related item", e);
+                    if (nameChanged) {
+                        const batchRef2 = getItemBatchRef(editingItem);
+                        const otherItems = items.filter(i =>
+                            i.id !== editingItem.id &&
+                            normalizeText(i.productName) === normalizeText(oldName) &&
+                            (i.batchRef || itemBatchMap[i.id]) === batchRef2
+                        );
+                        for (const other of otherItems) {
+                            try {
+                                await itemService.updateItem(other.id, { productName: newName });
+                            } catch (e) {
+                                console.error("Error syncing name to related item", e);
+                            }
+                        }
+                        if (otherItems.length > 0) {
+                            setItems(prev => prev.map(i =>
+                                otherItems.some(o => o.id === i.id)
+                                    ? { ...i, productName: newName }
+                                    : i
+                            ));
                         }
                     }
-                    if (otherItems.length > 0) {
-                        setItems(prev => prev.map(i =>
-                            otherItems.some(o => o.id === i.id)
-                                ? { ...i, productName: newName }
-                                : i
-                        ));
+                    // Sync price to other in_stock items with same product in same batch
+                    if (priceChanged) {
+                        const batchRef2 = getItemBatchRef(editingItem);
+                        const otherStockItems = items.filter(i =>
+                            i.id !== editingItem.id &&
+                            i.status === 'in_stock' &&
+                            normalizeText(i.productName) === normalizeText(oldName) &&
+                            (i.batchRef || itemBatchMap[i.id]) === batchRef2
+                        );
+                        for (const other of otherStockItems) {
+                            try {
+                                await itemService.updateItem(other.id, { salePrice: newSalePrice });
+                            } catch (e) {
+                                console.error("Error syncing price to related item", e);
+                            }
+                        }
+                        if (otherStockItems.length > 0) {
+                            setItems(prev => prev.map(i =>
+                                otherStockItems.some(o => o.id === i.id)
+                                    ? { ...i, salePrice: newSalePrice }
+                                    : i
+                            ));
+                        }
                     }
                 }
 
@@ -1459,7 +1493,10 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                             </td>
                                             <td className="px-4 py-2 text-center text-xs font-semibold">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right font-mono text-xs">${item.purchasePrice.toLocaleString('es-AR')}</td>
-                                            <td className="px-4 py-2 text-right font-mono text-xs">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</td>
+                                            <td className="px-4 py-2 text-right font-mono text-xs">
+                                                ${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}
+                                                {item.salePrice ? <span className="block text-emerald-600">Venta: ${item.salePrice.toLocaleString('es-AR')}/u</span> : null}
+                                            </td>
                                             <td className="px-4 py-2 text-center text-xs">{item.location || '-'}</td>
                                             <td className="px-4 py-2 text-center">
                                                 <div className="flex justify-center items-center gap-1">
@@ -2016,7 +2053,7 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {formData.itemType === 'personal' ? 'Precio Venta ($)' : formData.status === 'sold' ? 'Precio Venta ($)' : 'Precio Objetivo ($)'}
+                        Precio Venta ($)
                     </label>
                     <input
                         type="text"
@@ -2668,7 +2705,6 @@ function BulkPricingBoard({
                         condition: item.condition,
                         itemType: 'resale',
                         batchRef: batchCode,
-                        estimatedSalePrice: item.unitSalePrice,
                         location: batchDefaultLocation,
                         category: item.category
                     });
@@ -2758,11 +2794,17 @@ function BulkPricingBoard({
             const sellCostAdj = sellItems.reduce((acc, i) => acc + ((i.listedUnitPrice * allocFactor) * i.quantity), 0);
             const newProfit = newSellRevenue - sellCostAdj;
 
-            // Sync product name changes to inventory/sales items
+            // Sync product name AND price changes to inventory/sales items
             const oldItems = target.items;
             for (const newItem of normalizedItems) {
                 const oldItem = oldItems.find(oi => oi.id === newItem.id);
-                if (oldItem && normalizeText(oldItem.productName) !== normalizeText(newItem.productName)) {
+                if (!oldItem) continue;
+
+                const nameChanged = normalizeText(oldItem.productName) !== normalizeText(newItem.productName);
+                const priceChanged = newItem.disposition === 'sell' && oldItem.unitSalePrice !== newItem.unitSalePrice;
+
+                if (nameChanged || priceChanged) {
+                    // Find matching inventory items (in_stock)
                     const relatedInvItems = inventoryItems.filter(inv =>
                         normalizeText(inv.productName) === normalizeText(oldItem.productName) &&
                         (inv.batchRef || itemBatchMap[inv.id]) === target.batchCode &&
@@ -2770,22 +2812,27 @@ function BulkPricingBoard({
                     );
                     for (const inv of relatedInvItems) {
                         try {
-                            await itemService.updateItem(inv.id, { productName: newItem.productName });
+                            const upd: Partial<Item> = {};
+                            if (nameChanged) upd.productName = newItem.productName;
+                            if (priceChanged) upd.salePrice = newItem.unitSalePrice;
+                            await itemService.updateItem(inv.id, upd);
                         } catch (e) {
-                            console.error("Error syncing name to inventory item", e);
+                            console.error("Error syncing to inventory item", e);
                         }
                     }
-                    // Also sync sold items with same name + batch
-                    const soldRelated = items.filter(i =>
-                        i.status === 'sold' &&
-                        normalizeText(i.productName) === normalizeText(oldItem.productName) &&
-                        (i.batchRef || itemBatchMap[i.id]) === target.batchCode
-                    );
-                    for (const sold of soldRelated) {
-                        try {
-                            await itemService.updateItem(sold.id, { productName: newItem.productName });
-                        } catch (e) {
-                            console.error("Error syncing name to sold item", e);
+                    // Also sync sold items with same name + batch (name only — sale price is the actual sold price)
+                    if (nameChanged) {
+                        const soldRelated = inventoryItems.filter(i =>
+                            i.status === 'sold' &&
+                            normalizeText(i.productName) === normalizeText(oldItem.productName) &&
+                            (i.batchRef || itemBatchMap[i.id]) === target.batchCode
+                        );
+                        for (const sold of soldRelated) {
+                            try {
+                                await itemService.updateItem(sold.id, { productName: newItem.productName });
+                            } catch (e) {
+                                console.error("Error syncing name to sold item", e);
+                            }
                         }
                     }
                 }
@@ -3612,6 +3659,14 @@ function BulkPricingBoard({
                                                                                         status: 'sold',
                                                                                         saleDate: new Date().toISOString()
                                                                                     });
+                                                                                }
+                                                                                // Sync price back to batch unitSalePrice
+                                                                                if (price !== item.unitSalePrice) {
+                                                                                    const updBatchItems = selectedRecord.items.map(bi =>
+                                                                                        bi.id === item.id ? { ...bi, unitSalePrice: price } : bi
+                                                                                    );
+                                                                                    await itemService.updateBatch(selectedRecord.id, { items: updBatchItems });
+                                                                                    setBatchHistory(prev => prev.map(b => b.id === selectedRecord.id ? { ...b, items: updBatchItems } : b));
                                                                                 }
                                                                                 await onInventoryRefresh();
                                                                                 setEditingSaleItemId(null);
