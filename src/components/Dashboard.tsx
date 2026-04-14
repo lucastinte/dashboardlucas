@@ -2238,6 +2238,18 @@ function BulkPricingBoard({
     const [importError, setImportError] = useState('');
     const [importCreditMode, setImportCreditMode] = useState<'already_applied' | 'manual'>('already_applied');
 
+    // When editing a batch, check which items have sold copies in inventory (cannot be removed)
+    const editingBatch = batchHistory.find(b => b.id === editingBatchId) || null;
+    const getSoldQtyForBatchItem = (pItem: PricingItem): number => {
+        if (!editingBatch) return 0;
+        return inventoryItems.filter(inv =>
+            inv.status === 'sold' &&
+            normalizeText(inv.productName) === normalizeText(pItem.productName) &&
+            (inv.batchRef || itemBatchMap[inv.id]) === editingBatch.batchCode &&
+            (inv.condition || 'nuevo') === (pItem.condition || 'nuevo')
+        ).reduce((a, i) => a + i.quantity, 0);
+    };
+
     const handleReturnFromBatch = async (batch: BatchRecord, pricingItem: PricingItem) => {
         const qtyToReturn = pricingItem.quantity;
         
@@ -3277,8 +3289,11 @@ function BulkPricingBoard({
                                 ? (item.unitSalePrice - adjustedUnitCost) * item.quantity
                                 : 0;
 
+                            const soldQty = getSoldQtyForBatchItem(item);
+                            const hasSoldCopies = soldQty > 0;
+
                             return (
-                                <tr key={item.id}>
+                                <tr key={item.id} className={hasSoldCopies ? 'bg-emerald-50/30' : ''}>
                                     <td className="px-4 py-3 font-medium text-gray-900">
                                         <input
                                             type="text"
@@ -3286,6 +3301,7 @@ function BulkPricingBoard({
                                             onChange={(e) => setBatchItems((prev) => prev.map((p) => p.id === item.id ? { ...p, productName: e.target.value } : p))}
                                             className="w-full px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:bg-white"
                                         />
+                                        {hasSoldCopies && <span className="text-[10px] font-bold text-emerald-600 mt-0.5 block">{soldQty} vendido{soldQty > 1 ? 's' : ''}</span>}
                                     </td>
                                     <td className="px-4 py-3">
                                         <input
@@ -3346,12 +3362,16 @@ function BulkPricingBoard({
                                             : `$${Math.round(totalProfit).toLocaleString('es-AR')}`}
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <button
-                                            onClick={() => setBatchItems((prev) => prev.filter((p) => p.id !== item.id))}
-                                            className="text-rose-600 hover:text-rose-700"
-                                        >
-                                            Eliminar
-                                        </button>
+                                        {hasSoldCopies ? (
+                                            <span className="text-[10px] text-gray-400" title="No se puede eliminar: tiene ventas registradas">Vendido</span>
+                                        ) : (
+                                            <button
+                                                onClick={() => setBatchItems((prev) => prev.filter((p) => p.id !== item.id))}
+                                                className="text-rose-600 hover:text-rose-700"
+                                            >
+                                                Eliminar
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             );
@@ -3598,12 +3618,15 @@ function BulkPricingBoard({
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {rows.map(({ item, unitCost, totalCost, actual, expectedRevenue, realProfit }) => (
-                                                <tr key={item.id} className={item.disposition === 'keep' ? 'bg-amber-50/40' : ''}>
+                                            {rows.map(({ item, unitCost, totalCost, actual, expectedRevenue, realProfit }) => {
+                                                const allSold = actual.totalSoldQty >= item.quantity && item.disposition === 'sell';
+                                                return (
+                                                <tr key={item.id} className={allSold ? 'bg-emerald-50/40' : item.disposition === 'keep' ? 'bg-amber-50/40' : ''}>
                                                     <td className="px-3 py-2">
                                                         <span className="font-medium text-gray-900">{item.productName}</span>
                                                         {item.category && <span className="ml-1.5 text-[10px] text-gray-400">({item.category})</span>}
                                                         {item.disposition === 'keep' && <span className="ml-1.5 text-[10px] font-bold text-amber-600">RETENIDO</span>}
+                                                        {allSold && <span className="ml-1.5 text-[10px] font-bold text-emerald-600">VENDIDO</span>}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">{item.quantity}</td>
                                                     <td className="px-3 py-2 text-right text-gray-600">${safeMoney(unitCost).toLocaleString('es-AR')}</td>
@@ -3612,10 +3635,15 @@ function BulkPricingBoard({
                                                         {item.disposition === 'sell' ? `$${safeMoney(expectedRevenue).toLocaleString('es-AR')}` : '—'}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">
-                                                        {actual.totalSoldQty > 0 ? (
-                                                            <span className="text-emerald-600 font-semibold">{actual.totalSoldQty}</span>
-                                                        ) : actual.totalInStockQty > 0 ? (
-                                                            <span className="text-blue-500 text-xs">{actual.totalInStockQty} en stock</span>
+                                                        {actual.totalSoldQty > 0 || actual.totalInStockQty > 0 ? (
+                                                            <div>
+                                                                <span className={`font-semibold ${allSold ? 'text-emerald-600' : actual.totalSoldQty > 0 ? 'text-emerald-600' : 'text-blue-500'}`}>
+                                                                    {actual.totalSoldQty} / {item.quantity}
+                                                                </span>
+                                                                {actual.totalInStockQty > 0 && (
+                                                                    <span className="block text-[10px] text-blue-500">{actual.totalInStockQty} en stock</span>
+                                                                )}
+                                                            </div>
                                                         ) : (
                                                             <span className="text-gray-400">—</span>
                                                         )}
@@ -3708,7 +3736,8 @@ function BulkPricingBoard({
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                         {selectedRecordItems.length > 0 && (
                                             <tfoot className="bg-gray-50 border-t-2 border-gray-200">
