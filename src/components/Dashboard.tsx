@@ -3424,7 +3424,7 @@ function BulkPricingBoard({
                     <p className="text-sm text-gray-500">Sin registros todavía.</p>
                 ) : (
                     <div className="space-y-2">
-                        {batchHistory.slice(0, 8).map((record) => (
+                        {batchHistory.map((record) => (
                             <div
                                 key={record.id}
                                 className={`w-full rounded-xl border px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 transition-colors ${selectedHistoryId === record.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'}`}
