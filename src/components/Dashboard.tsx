@@ -451,6 +451,7 @@ export default function Dashboard() {
                 }
 
                 const itemType = (formData.itemType as ItemType) || editingItem.itemType || 'resale';
+                const resolvedBatchRef = formData.batchRef !== undefined ? (formData.batchRef || undefined) : getItemBatchRef(editingItem);
                 const updates: Partial<Item> = {
                     productName: formData.productName ?? editingItem.productName,
                     purchasePrice: itemType === 'personal' ? 0 : (Number(formData.purchasePrice) || editingItem.purchasePrice),
@@ -461,7 +462,7 @@ export default function Dashboard() {
                     status,
                     condition,
                     itemType,
-                    batchRef: getItemBatchRef(editingItem),
+                    batchRef: resolvedBatchRef,
                     location: formData.location ?? editingItem.location,
                     estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice,
                     publishUrls: formData.publishUrls ?? editingItem.publishUrls,
@@ -478,8 +479,52 @@ export default function Dashboard() {
                 // Sync state with DB response to detect if columns were dropped by fallback
                 setItems(prev => prev.map(i => i.id === editingItem.id ? savedItem : i));
 
-                // Refresh to ensure consistency (optional)
-                // loadItems(); 
+                // Sync product name change to batch record
+                const oldName = editingItem.productName;
+                const newName = updates.productName || oldName;
+                if (normalizeText(newName) !== normalizeText(oldName)) {
+                    const batchRef = getItemBatchRef(editingItem);
+                    if (batchRef) {
+                        const batch = batchHistory.find(b => b.batchCode === batchRef);
+                        if (batch) {
+                            try {
+                                const updatedBatchItems = batch.items.map(bi => {
+                                    if (normalizeText(bi.productName) === normalizeText(oldName) &&
+                                        (bi.condition || 'nuevo') === (editingItem.condition || 'nuevo')) {
+                                        return { ...bi, productName: newName };
+                                    }
+                                    return bi;
+                                });
+                                await itemService.updateBatch(batch.id, { items: updatedBatchItems });
+                                const dbBatches = await itemService.getBatches();
+                                setBatchHistory(dbBatches);
+                            } catch (e) {
+                                console.error("Error syncing product name to batch", e);
+                            }
+                        }
+                    }
+                    // Also sync other items with same name + batch (e.g. sold copies)
+                    const batchRef2 = getItemBatchRef(editingItem);
+                    const otherItems = items.filter(i =>
+                        i.id !== editingItem.id &&
+                        normalizeText(i.productName) === normalizeText(oldName) &&
+                        (i.batchRef || itemBatchMap[i.id]) === batchRef2
+                    );
+                    for (const other of otherItems) {
+                        try {
+                            await itemService.updateItem(other.id, { productName: newName });
+                        } catch (e) {
+                            console.error("Error syncing name to related item", e);
+                        }
+                    }
+                    if (otherItems.length > 0) {
+                        setItems(prev => prev.map(i =>
+                            otherItems.some(o => o.id === i.id)
+                                ? { ...i, productName: newName }
+                                : i
+                        ));
+                    }
+                }
 
                 setEditingItem(null);
             } else {
@@ -902,6 +947,7 @@ export default function Dashboard() {
                             editingItemStatus={editingItem?.status}
                             suggestedNames={Array.from(new Set(items.map(i => i.productName))).filter(Boolean).sort()}
                             suggestedLocations={Array.from(new Set(items.map(i => i.location))).filter(Boolean).sort() as string[]}
+                            batchCodes={batchHistory.map(b => b.batchCode)}
                         />
                     </div>
                 </div>
@@ -1509,7 +1555,7 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [] }: {
+function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [] }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
@@ -1517,7 +1563,8 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
     isEditing: boolean,
     editingItemStatus?: ItemStatus,
     suggestedNames?: string[],
-    suggestedLocations?: string[]
+    suggestedLocations?: string[],
+    batchCodes?: string[]
 }) {
     const [url, setUrl] = useState('');
     const [isDetectingFromUrl, setIsDetectingFromUrl] = useState(false);
@@ -2041,6 +2088,20 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     </datalist>
                 </div>
             </div>
+
+            {isEditing && batchCodes.length > 0 && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanda</label>
+                    <select
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                        value={formData.batchRef || ''}
+                        onChange={e => setFormData({ ...formData, batchRef: e.target.value || undefined })}
+                    >
+                        <option value="">Sin tanda (Directa)</option>
+                        {batchCodes.map(code => <option key={code} value={code}>{code}</option>)}
+                    </select>
+                </div>
+            )}
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Imagen de referencia (URL)</label>
@@ -2697,6 +2758,39 @@ function BulkPricingBoard({
             const sellCostAdj = sellItems.reduce((acc, i) => acc + ((i.listedUnitPrice * allocFactor) * i.quantity), 0);
             const newProfit = newSellRevenue - sellCostAdj;
 
+            // Sync product name changes to inventory/sales items
+            const oldItems = target.items;
+            for (const newItem of normalizedItems) {
+                const oldItem = oldItems.find(oi => oi.id === newItem.id);
+                if (oldItem && normalizeText(oldItem.productName) !== normalizeText(newItem.productName)) {
+                    const relatedInvItems = inventoryItems.filter(inv =>
+                        normalizeText(inv.productName) === normalizeText(oldItem.productName) &&
+                        (inv.batchRef || itemBatchMap[inv.id]) === target.batchCode &&
+                        (inv.condition || 'nuevo') === (oldItem.condition || 'nuevo')
+                    );
+                    for (const inv of relatedInvItems) {
+                        try {
+                            await itemService.updateItem(inv.id, { productName: newItem.productName });
+                        } catch (e) {
+                            console.error("Error syncing name to inventory item", e);
+                        }
+                    }
+                    // Also sync sold items with same name + batch
+                    const soldRelated = items.filter(i =>
+                        i.status === 'sold' &&
+                        normalizeText(i.productName) === normalizeText(oldItem.productName) &&
+                        (i.batchRef || itemBatchMap[i.id]) === target.batchCode
+                    );
+                    for (const sold of soldRelated) {
+                        try {
+                            await itemService.updateItem(sold.id, { productName: newItem.productName });
+                        } catch (e) {
+                            console.error("Error syncing name to sold item", e);
+                        }
+                    }
+                }
+            }
+
             await itemService.updateBatch(editingBatchId, {
                 totalPaid,
                 totalSellRevenue: newSellRevenue,
@@ -2716,6 +2810,7 @@ function BulkPricingBoard({
                 items: normalizedItems.map(i => ({ ...i }))
             } : b));
 
+            await onInventoryRefresh();
             setEditingBatchId(null);
             setBatchItems([]);
             alert(`Tanda ${target.batchCode} actualizada correctamente.`);
@@ -2938,7 +3033,7 @@ function BulkPricingBoard({
                 </div>
                 {editingBatchId && (
                     <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-sm text-blue-700">
-                        Editando tanda <strong>{batchHistory.find(b => b.id === editingBatchId)?.batchCode}</strong> — modificá los productos y hacé clic en &quot;Actualizar tanda&quot; para guardar. Los items en inventario y ventas NO se tocan.
+                        Editando tanda <strong>{batchHistory.find(b => b.id === editingBatchId)?.batchCode}</strong> — modificá los productos y hacé clic en &quot;Actualizar tanda&quot; para guardar. Los nombres se sincronizan con inventario y ventas.
                     </div>
                 )}
 
@@ -3137,7 +3232,14 @@ function BulkPricingBoard({
 
                             return (
                                 <tr key={item.id}>
-                                    <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
+                                    <td className="px-4 py-3 font-medium text-gray-900">
+                                        <input
+                                            type="text"
+                                            value={item.productName}
+                                            onChange={(e) => setBatchItems((prev) => prev.map((p) => p.id === item.id ? { ...p, productName: e.target.value } : p))}
+                                            className="w-full px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:bg-white"
+                                        />
+                                    </td>
                                     <td className="px-4 py-3">
                                         <input
                                             type="text"
