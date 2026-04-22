@@ -342,6 +342,11 @@ export default function Dashboard() {
 
         const getISODate = (dateStr: string) => {
             if (!dateStr) return new Date().toISOString();
+            // If date-only string (YYYY-MM-DD), treat as local midnight to avoid timezone shift
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                const [y, m, d] = dateStr.split('-').map(Number);
+                return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+            }
             return new Date(dateStr).toISOString();
         };
 
@@ -910,7 +915,7 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onSell={(item) => {
+                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -1183,13 +1188,15 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
     );
 }
 
-function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSplit }: {
+function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, batchHistory }: {
     items: Item[],
+    allItems: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     onSell: (i: Item) => void,
     resolveBatchRef: (item: Item) => string | undefined,
-    onSplit: (i: Item) => void
+    onSplit: (i: Item) => void,
+    batchHistory: BatchRecord[]
 }) {
     type ViewMode = 'products' | 'locations';
     const [viewMode, setViewMode] = useState<ViewMode>('products');
@@ -1201,6 +1208,28 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
             if (next.has(key)) next.delete(key); else next.add(key);
             return next;
         });
+    };
+
+    // Compute effective batch status for a set of batch codes
+    const getBatchStatus = (batchCodes: string[]): { label: string; color: string } | null => {
+        if (batchCodes.length === 0) return null;
+        // Check each batch and pick the most relevant status
+        const statuses = batchCodes.map(code => {
+            const batch = batchHistory.find(b => b.batchCode === code);
+            if (!batch) return null;
+            // Check if ALL sell-disposition items from this batch are sold
+            const batchItems = allItems.filter(i => (i.batchRef || '') === code || resolveBatchRef(i) === code);
+            const sellItems = batchItems.filter(i => i.itemType !== 'personal');
+            const allSold = sellItems.length > 0 && sellItems.every(i => i.status === 'sold');
+            if (allSold) return 'completado' as BatchStatus;
+            return batch.batchStatus;
+        }).filter(Boolean) as BatchStatus[];
+        if (statuses.length === 0) return null;
+        // Priority: en_camino > recibido > completado (show most urgent)
+        if (statuses.includes('en_camino')) return { label: 'En camino', color: 'bg-yellow-100 text-yellow-700' };
+        if (statuses.includes('recibido')) return { label: 'Retirado', color: 'bg-blue-100 text-blue-700' };
+        if (statuses.every(s => s === 'completado')) return { label: 'Completado', color: 'bg-emerald-100 text-emerald-700' };
+        return null;
     };
 
     if (items.length === 0) {
@@ -1330,9 +1359,14 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                         </div>
                                     )}
                                     <div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                             <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
                                             {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                            {(() => {
+                                                const status = getBatchStatus(grp.batches);
+                                                if (!status) return null;
+                                                return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                            })()}
                                         </div>
                                         <p className="text-xs text-gray-400 mt-0.5">
                                             {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
@@ -1457,9 +1491,14 @@ function InventoryTable({ items, onEdit, onDelete, onSell, resolveBatchRef, onSp
                                             )}
                                         </td>
                                         <td className="px-4 py-3 font-medium text-gray-900">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                                 {grp.name}
                                                 {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                                {(() => {
+                                                    const status = getBatchStatus(grp.batches);
+                                                    if (!status) return null;
+                                                    return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                                })()}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-center">
