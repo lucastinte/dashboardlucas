@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing';
@@ -997,18 +997,165 @@ export default function Dashboard() {
 
 // Subcomponents
 
+// Helper: format date to DD/MM/AAAA with zero-padded day/month
+function formatDateDDMMAAAA(dateStr: string): string {
+    const d = new Date(dateStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+}
+
+// Facturar ARCA Modal
+function FacturarModal({ item, onClose }: { item: Item; onClose: () => void }) {
+    const [producto, setProducto] = useState(item.productName);
+    const [cantidad, setCantidad] = useState(item.quantity);
+    const [precio, setPrecio] = useState(item.salePrice || 0);
+    const [fecha, setFecha] = useState(() => {
+        if (!item.saleDate) return '';
+        const d = new Date(item.saleDate);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+    const [formaPago, setFormaPago] = useState('transferencia');
+
+    const formasPago = [
+        { label: 'Contado', value: 'contado' },
+        { label: 'Tarjeta de Débito', value: 'tarjeta_debito' },
+        { label: 'Tarjeta de Crédito', value: 'tarjeta_credito' },
+        { label: 'Cuenta Corriente', value: 'cuenta_corriente' },
+        { label: 'Cheque', value: 'cheque' },
+        { label: 'Transferencia Bancaria', value: 'transferencia' },
+        { label: 'Otra', value: 'otra' },
+        { label: 'Otros medios de pago electrónico', value: 'electronico' },
+    ];
+
+    const handleFacturar = () => {
+        const [y, m, d] = fecha.split('-');
+        const fechaFormatted = `${d}/${m}/${y}`;
+        const ventaObj = {
+            fecha: fechaFormatted,
+            producto,
+            cantidad,
+            precio: Math.round(precio),
+            formaPago,
+        };
+        const base64 = btoa(JSON.stringify(ventaObj));
+        const url = `https://fe.afip.gob.ar/rcel/jsp/index_bis.jsp?venta=${encodeURIComponent(base64)}`;
+        window.open(url, '_blank');
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md ring-1 ring-white/10" onClick={e => e.stopPropagation()}>
+                <div className="p-6 border-b border-gray-700/50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-blue-600/20 flex items-center justify-center">
+                            <FileText className="w-5 h-5 text-blue-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-white">Facturar en ARCA</h2>
+                            <p className="text-sm text-gray-400">Verificá los datos antes de facturar</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 flex items-center justify-center transition-colors">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Producto</label>
+                        <input
+                            type="text"
+                            value={producto}
+                            onChange={e => setProducto(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1.5">Cantidad</label>
+                            <input
+                                type="number"
+                                min={1}
+                                value={cantidad}
+                                onChange={e => setCantidad(Number(e.target.value))}
+                                className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1.5">Precio unitario</label>
+                            <input
+                                type="number"
+                                min={0}
+                                value={precio}
+                                onChange={e => setPrecio(Number(e.target.value))}
+                                className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Fecha</label>
+                        <input
+                            type="date"
+                            value={fecha}
+                            onChange={e => setFecha(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [color-scheme:dark]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Forma de pago</label>
+                        <select
+                            value={formaPago}
+                            onChange={e => setFormaPago(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                        >
+                            {formasPago.map(fp => (
+                                <option key={fp.value} value={fp.value}>{fp.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50">
+                        <p className="text-xs text-gray-400">
+                            Total: <span className="text-white font-semibold text-sm">${(cantidad * Math.round(precio)).toLocaleString()}</span>
+                        </p>
+                    </div>
+                </div>
+                <div className="p-6 border-t border-gray-700/50 flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 px-4 py-2.5 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700 transition-colors font-medium text-sm"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleFacturar}
+                        className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                    >
+                        <FileText className="w-4 h-4" />
+                        Facturar en ARCA
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     resolveBatchRef: (item: Item) => string | undefined
 }) {
+    const [facturarItem, setFacturarItem] = useState<Item | null>(null);
+
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
     }
 
     return (
         <>
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} />}
             <div className="sm:hidden p-3 space-y-3">
                 {items.map((item) => {
                     const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
@@ -1056,7 +1203,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                 </div>
                                 <div>
                                     <p className="text-gray-400 text-xs">Fecha</p>
-                                    <p className="font-medium text-gray-700">{item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}</p>
+                                    <p className="font-medium text-gray-700">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</p>
                                 </div>
                                 <div className="col-span-2">
                                     <p className="text-gray-400 text-xs">Estado</p>
@@ -1086,6 +1233,32 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                     <Trash2 className="w-4 h-4" />
                                     Eliminar
                                 </button>
+                                {item.facturado ? (
+                                    <button
+                                        disabled
+                                        className="flex-1 h-10 rounded-xl bg-green-600 text-white text-sm font-medium flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Ya facturada
+                                    </button>
+                                ) : item.saleDate ? (
+                                    <button
+                                        onClick={() => setFacturarItem(item)}
+                                        className="flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Facturar
+                                    </button>
+                                ) : (
+                                    <button
+                                        disabled
+                                        title="Falta fecha de venta"
+                                        className="flex-1 h-10 rounded-xl bg-gray-300 text-gray-500 text-sm font-medium flex items-center justify-center gap-2 cursor-not-allowed"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Facturar
+                                    </button>
+                                )}
                             </div>
                         </div>
                     );
@@ -1105,6 +1278,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                             <th className="px-6 py-4 text-center">Ubicación</th>
                             <th className="px-6 py-4 text-center">Tanda</th>
                             <th className="px-6 py-4 text-center">Fecha Venta</th>
+                            <th className="px-6 py-4 text-center">Facturar</th>
                             <th className="px-6 py-4 text-center">Acciones</th>
                         </tr>
                     </thead>
@@ -1158,7 +1332,35 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                         {resolveBatchRef(item) || 'Directa'}
                                     </td>
                                     <td className="px-6 py-4 text-center text-gray-400 text-xs">
-                                        {item.saleDate ? new Date(item.saleDate).toLocaleDateString() : '-'}
+                                        {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        {item.facturado ? (
+                                            <button
+                                                disabled
+                                                className="bg-green-600 text-white text-xs px-2 py-1 rounded cursor-not-allowed inline-flex items-center gap-1"
+                                            >
+                                                <FileText className="w-3 h-3" />
+                                                Ya facturada
+                                            </button>
+                                        ) : item.saleDate ? (
+                                            <button
+                                                onClick={() => setFacturarItem(item)}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                            >
+                                                <FileText className="w-3 h-3" />
+                                                Facturar
+                                            </button>
+                                        ) : (
+                                            <button
+                                                disabled
+                                                title="Falta fecha de venta"
+                                                className="bg-gray-300 text-gray-500 text-xs px-2 py-1 rounded cursor-not-allowed inline-flex items-center gap-1"
+                                            >
+                                                <FileText className="w-3 h-3" />
+                                                Facturar
+                                            </button>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                         <div className="flex justify-center gap-2">

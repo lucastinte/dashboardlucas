@@ -19,6 +19,7 @@ export interface Item {
     publishUrls?: string;
     imageUrl?: string;
     category?: string;
+    facturado?: boolean;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
