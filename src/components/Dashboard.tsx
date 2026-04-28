@@ -1692,21 +1692,21 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                 })}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-left text-sm text-gray-600">
-                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                <table className="w-full text-left text-xs text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-[11px] tracking-wider">
                         <tr>
-                            <th className="px-6 py-4 w-12 text-center">Img</th>
-                            <th className="px-6 py-4">Producto</th>
-                            <th className="px-6 py-4 text-center">Unidades</th>
-                            <th className="px-6 py-4 text-right">Compra (Unit)</th>
-                            <th className="px-6 py-4 text-right">Venta (Unit)</th>
-                            <th className="px-6 py-4 text-right">Ganancia</th>
-                            <th className="px-6 py-4 text-center">Estado</th>
-                            <th className="px-6 py-4 text-center">Ubicación</th>
-                            <th className="px-6 py-4 text-center">Tanda</th>
-                            <th className="px-6 py-4 text-center">Fecha Venta</th>
-                            <th className="px-6 py-4 text-center">Facturar</th>
-                            <th className="px-6 py-4 text-center">Acciones</th>
+                            <th className="px-2 py-3 text-center w-10"></th>
+                            <th className="px-2 py-3">Producto</th>
+                            <th className="px-2 py-3 text-center">Ud</th>
+                            <th className="px-2 py-3 text-right">Compra</th>
+                            <th className="px-2 py-3 text-right">Venta</th>
+                            <th className="px-2 py-3 text-right">Ganancia</th>
+                            <th className="px-2 py-3 text-center">Estado</th>
+                            <th className="px-2 py-3 text-center">Ubic.</th>
+                            <th className="px-2 py-3 text-center">Tanda</th>
+                            <th className="px-2 py-3 text-center whitespace-nowrap">F. Venta</th>
+                            <th className="px-2 py-3 text-center">Facturar</th>
+                            <th className="px-2 py-3 text-center w-20">Acción</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1715,57 +1715,55 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                             const isPositive = profit >= 0;
                             return (
                                 <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors group ${item.itemType === 'personal' ? 'bg-violet-50/30' : ''}`}>
-                                    <td className="px-6 py-4">
+                                    <td className="px-2 py-2">
                                         {item.imageUrl ? (
-                                            <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100">
+                                            <div className="w-8 h-8 rounded-md overflow-hidden border border-gray-100">
                                                 <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
                                             </div>
                                         ) : (
-                                            <div className={`w-10 h-10 rounded-lg border border-dashed flex items-center justify-center ${item.itemType === 'personal' ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
-                                                {item.itemType === 'personal' && <User className="w-4 h-4 text-violet-400" />}
+                                            <div className={`w-8 h-8 rounded-md border border-dashed flex items-center justify-center ${item.itemType === 'personal' ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
+                                                {item.itemType === 'personal' && <User className="w-3 h-3 text-violet-400" />}
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 font-medium text-gray-900">
-                                        <div className="flex items-center gap-2">
-                                            {item.productName}
-                                            {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                    <td className="px-2 py-2 font-medium text-gray-900 max-w-[200px]">
+                                        <div className="flex items-center gap-1.5 truncate">
+                                            <span className="truncate" title={item.productName}>{item.productName}</span>
+                                            {item.itemType === 'personal' && <span className="text-[9px] font-bold bg-violet-100 text-violet-600 px-1 py-0.5 rounded shrink-0">PROPIO</span>}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold">{item.quantity}</span>
+                                    <td className="px-2 py-2 text-center">
+                                        <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[11px] font-semibold">{item.quantity}</span>
                                     </td>
-                                    <td className="px-6 py-4 text-right font-mono text-gray-500">{item.itemType === 'personal' ? <span className="text-violet-400">-</span> : `$${item.purchasePrice.toLocaleString()}`}</td>
-                                    <td className="px-6 py-4 text-right font-mono font-medium text-gray-900">${item.salePrice?.toLocaleString()}</td>
-                                    <td className={`px-6 py-4 text-right font-bold w-32 ${item.itemType === 'personal' ? 'text-violet-600' : isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    <td className="px-2 py-2 text-right font-mono text-gray-500 whitespace-nowrap">{item.itemType === 'personal' ? <span className="text-violet-400">-</span> : `$${item.purchasePrice.toLocaleString()}`}</td>
+                                    <td className="px-2 py-2 text-right font-mono font-medium text-gray-900 whitespace-nowrap">${item.salePrice?.toLocaleString()}</td>
+                                    <td className={`px-2 py-2 text-right font-bold whitespace-nowrap ${item.itemType === 'personal' ? 'text-violet-600' : isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
                                         {item.itemType === 'personal' ? (
-                                            <div className="flex items-center justify-end gap-1">
-                                                ${((item.salePrice || 0) * item.quantity).toLocaleString()}
-                                            </div>
+                                            <span>${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
                                         ) : (
-                                            <div className="flex items-center justify-end gap-1">
+                                            <span className="inline-flex items-center gap-0.5">
                                                 {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                 ${Math.abs(profit).toLocaleString()}
-                                            </div>
+                                            </span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-center text-xs font-semibold text-gray-700">
+                                    <td className="px-2 py-2 text-center text-[11px] font-semibold text-gray-700 whitespace-nowrap">
                                         {conditionLabelMap[item.condition || 'nuevo']}
                                     </td>
-                                    <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
+                                    <td className="px-2 py-2 text-center text-[11px] text-gray-600 font-medium whitespace-nowrap">
                                         {item.location || '-'}
                                     </td>
-                                    <td className="px-6 py-4 text-center text-xs text-gray-600 font-medium">
+                                    <td className="px-2 py-2 text-center text-[11px] text-gray-600 font-medium whitespace-nowrap">
                                         {resolveBatchRef(item) || 'Directa'}
                                     </td>
-                                    <td className="px-6 py-4 text-center text-gray-400 text-xs">
+                                    <td className="px-2 py-2 text-center text-gray-400 text-[11px] whitespace-nowrap">
                                         {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}
                                     </td>
-                                    <td className="px-6 py-4 text-center">
+                                    <td className="px-2 py-2 text-center">
                                         {item.facturado ? (
                                             <button
                                                 onClick={() => onToggleFacturado(item.id, false)}
-                                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                className="bg-green-600 hover:bg-green-700 text-white text-[11px] px-1.5 py-0.5 rounded transition-colors inline-flex items-center gap-0.5"
                                                 title="Click para desmarcar facturacion"
                                             >
                                                 <CheckCircle className="w-3 h-3" />
@@ -1774,7 +1772,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                         ) : canFacturar(item) ? (
                                             <button
                                                 onClick={() => setFacturarItem(item)}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-1.5 py-0.5 rounded transition-colors inline-flex items-center gap-0.5"
                                             >
                                                 <FileText className="w-3 h-3" />
                                                 Facturar
@@ -1783,21 +1781,21 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                             <span className="text-gray-500 text-xs">—</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <div className="flex justify-center gap-2">
+                                    <td className="px-2 py-2 text-center">
+                                        <div className="flex justify-center gap-1">
                                             <button
                                                 onClick={() => onEdit(item)}
-                                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
                                                 title="Editar"
                                             >
-                                                <Edit2 className="w-4 h-4" />
+                                                <Edit2 className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={() => onDelete(item.id)}
-                                                className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all"
                                                 title="Eliminar"
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
                                     </td>
