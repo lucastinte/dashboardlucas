@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
+import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
 import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Calendar } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -1028,19 +1029,18 @@ function FacturacionTab({ items, onToggleFacturado }: {
 }) {
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-    const [limiteAnual, setLimiteAnual] = useState(() => {
-        const saved = localStorage.getItem('facturacion_limite_anual');
-        return saved ? Number(saved) : 68000000; // Default monotributo cat. K 2024/2025
-    });
 
-    // Save limite when changed
-    const updateLimite = (val: number) => {
-        setLimiteAnual(val);
-        localStorage.setItem('facturacion_limite_anual', String(val));
+    const fmtMoney = (n: number) => '$' + Math.round(n).toLocaleString('es-AR');
+
+    // Cutoff: solo contar ventas desde 18/04/2026 en adelante
+    const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
+    const afterCutoff = (dateStr?: string) => {
+        if (!dateStr) return false;
+        return new Date(dateStr) >= FACTURACION_CUTOFF;
     };
 
-    // All facturated items
-    const facturados = items.filter(i => i.facturado);
+    // All facturated items (solo desde la fecha de corte)
+    const facturados = items.filter(i => i.facturado && afterCutoff(i.saleDate));
 
     // Parse selected month
     const [selYear, selMonth] = selectedMonth.split('-').map(Number);
@@ -1061,7 +1061,32 @@ function FacturacionTab({ items, onToggleFacturado }: {
         return new Date(i.saleDate).getFullYear() === selYear;
     });
     const totalAnio = facturadosAnio.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
-    const porcentajeAnio = limiteAnual > 0 ? (totalAnio / limiteAnual) * 100 : 0;
+
+    // Rolling 12 meses
+    const hace12Meses = new Date(now);
+    hace12Meses.setDate(hace12Meses.getDate() - 365);
+    const facturadosRolling = facturados.filter(i => {
+        if (!i.saleDate) return false;
+        const d = new Date(i.saleDate);
+        return d >= hace12Meses && d <= now;
+    });
+    const totalRolling = facturadosRolling.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+    const porcentajeRolling = TOPE.anual > 0 ? (totalRolling / TOPE.anual) * 100 : 0;
+
+    // Progress bar color & message
+    const getProgressColor = (pct: number) => {
+        if (pct >= 100) return '#ef4444';
+        if (pct >= 85) return '#f97316';
+        if (pct >= 70) return '#f59e0b';
+        return '#10b981';
+    };
+    const getProgressMessage = (pct: number) => {
+        if (pct >= 100) return { icon: '\u{1F6A8}', text: `Excediste el tope categoria ${CATEGORIA_ACTUAL}`, color: 'bg-red-50 text-red-700' };
+        if (pct >= 85) return { icon: '\u26A0\uFE0F', text: `Considera pasar a categoria B`, color: 'bg-orange-50 text-orange-700' };
+        if (pct >= 70) return { icon: '\u26A0\uFE0F', text: `Acercandote al tope categoria ${CATEGORIA_ACTUAL}`, color: 'bg-amber-50 text-amber-700' };
+        return null;
+    };
+    const progressMsg = getProgressMessage(porcentajeRolling);
 
     // Monthly totals for the year (for bar chart)
     const monthlyTotals = Array.from({ length: 12 }, (_, m) => {
@@ -1097,7 +1122,12 @@ function FacturacionTab({ items, onToggleFacturado }: {
 
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-    const barMax = Math.max(...monthlyTotals.map(m => m.total), 1);
+    // barMax must account for reference lines
+    const barMax = Math.max(...monthlyTotals.map(m => m.total), TOPE.mensualTope * 1.15, 1);
+
+    // Reference line positions as percentages
+    const lineTopePercent = (TOPE.mensualTope / barMax) * 100;
+    const lineSeguroPercent = (TOPE.mensualSeguro / barMax) * 100;
 
     return (
         <div className="space-y-5 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1107,7 +1137,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
                     <div>
                         <h2 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
                             <Receipt className="w-5 h-5 text-blue-600" />
-                            Control de Facturación ARCA
+                            Control de Facturacion ARCA
                         </h2>
                         <p className="text-gray-500 text-sm mt-1">Seguimiento de ventas facturadas — separado de ganancias e inventario.</p>
                     </div>
@@ -1125,87 +1155,116 @@ function FacturacionTab({ items, onToggleFacturado }: {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado este mes</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">${totalMes.toLocaleString()}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalMes)}</p>
                     <p className="text-sm text-gray-500 mt-1">{facturadosMes.length} {facturadosMes.length === 1 ? 'venta' : 'ventas'}</p>
                 </div>
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado en {selYear}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">${totalAnio.toLocaleString()}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalAnio)}</p>
                     <p className="text-sm text-gray-500 mt-1">{facturadosAnio.length} ventas facturadas</p>
                 </div>
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Límite anual</p>
-                    <div className="flex items-center gap-2 mt-2">
-                        <span className="text-lg font-bold text-gray-900">$</span>
-                        <input
-                            type="number"
-                            value={limiteAnual}
-                            onChange={e => updateLimite(Number(e.target.value))}
-                            className="text-lg font-bold text-gray-900 bg-transparent border-b border-dashed border-gray-300 w-full focus:outline-none focus:border-blue-500"
-                        />
+                    <div className="flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
+                        <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Rolling 12 meses</p>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">Editá según tu categoría</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalRolling)}</p>
+                    <p className="text-sm text-gray-500 mt-1">{facturadosRolling.length} ventas — ultimos 365 dias</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Tope anual cat. {CATEGORIA_ACTUAL}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(TOPE.anual)}</p>
+                    <p className="text-sm text-gray-500 mt-1">{fmtMoney(TOPE.anual - totalRolling)} restante</p>
                 </div>
             </div>
 
-            {/* Progress bar anual */}
+            {/* Progress bar — rolling 12 meses */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                 <div className="flex justify-between items-center mb-3">
-                    <p className="text-sm font-semibold text-gray-700">Progreso anual {selYear}</p>
-                    <p className="text-sm font-bold" style={{ color: porcentajeAnio > 90 ? '#ef4444' : porcentajeAnio > 70 ? '#f59e0b' : '#10b981' }}>
-                        {porcentajeAnio.toFixed(1)}%
+                    <p className="text-sm font-semibold text-gray-700">Progreso rolling 12 meses vs tope cat. {CATEGORIA_ACTUAL}</p>
+                    <p className="text-sm font-bold" style={{ color: getProgressColor(porcentajeRolling) }}>
+                        {porcentajeRolling.toFixed(1)}%
                     </p>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
                     <div
                         className="h-full rounded-full transition-all duration-700"
                         style={{
-                            width: `${Math.min(porcentajeAnio, 100)}%`,
-                            backgroundColor: porcentajeAnio > 90 ? '#ef4444' : porcentajeAnio > 70 ? '#f59e0b' : '#10b981'
+                            width: `${Math.min(porcentajeRolling, 100)}%`,
+                            backgroundColor: getProgressColor(porcentajeRolling)
                         }}
                     />
                 </div>
                 <div className="flex justify-between mt-2 text-xs text-gray-400">
-                    <span>${totalAnio.toLocaleString()} facturado</span>
-                    <span>${(limiteAnual - totalAnio).toLocaleString()} restante</span>
+                    <span>{fmtMoney(totalRolling)} facturado</span>
+                    <span>{fmtMoney(Math.max(TOPE.anual - totalRolling, 0))} restante</span>
                 </div>
-                {porcentajeAnio > 85 && (
-                    <div className="mt-3 flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                        {porcentajeAnio >= 100
-                            ? '¡Superaste el límite anual! Revisá tu categoría de monotributo.'
-                            : `Estás cerca del límite (${(100 - porcentajeAnio).toFixed(1)}% restante). Planificá tus próximas facturas.`
-                        }
+                {progressMsg && (
+                    <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${progressMsg.color}`}>
+                        <span>{progressMsg.icon}</span>
+                        <span>{progressMsg.text}</span>
                     </div>
                 )}
             </div>
 
-            {/* Monthly bar chart */}
+            {/* Monthly bar chart with reference lines */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                 <p className="text-sm font-semibold text-gray-700 mb-4">Facturado por mes — {selYear}</p>
-                <div className="flex items-end gap-1 sm:gap-2 h-40">
-                    {monthlyTotals.map(m => (
-                        <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-[10px] text-gray-500 font-medium">
-                                {m.total > 0 ? `$${(m.total / 1000).toFixed(0)}k` : ''}
-                            </span>
-                            <div
-                                className={`w-full rounded-t-md transition-all duration-500 cursor-pointer ${
-                                    m.month === selMonth - 1 ? 'bg-blue-600' : m.total > 0 ? 'bg-blue-200 hover:bg-blue-300' : 'bg-gray-100'
-                                }`}
-                                style={{ height: `${Math.max((m.total / barMax) * 100, m.total > 0 ? 4 : 1)}%` }}
-                                title={`${monthNames[m.month]}: $${m.total.toLocaleString()} (${m.count} ventas)`}
-                                onClick={() => setSelectedMonth(`${selYear}-${String(m.month + 1).padStart(2, '0')}`)}
-                            />
-                            <span className={`text-[10px] font-medium ${m.month === selMonth - 1 ? 'text-blue-600' : 'text-gray-400'}`}>
-                                {m.label}
-                            </span>
-                        </div>
-                    ))}
+                <div className="relative">
+                    {/* Reference lines */}
+                    <div
+                        className="absolute left-0 right-0 border-t-2 border-dashed border-gray-300 z-10 pointer-events-none"
+                        style={{ bottom: `${lineTopePercent}%` }}
+                    >
+                        <span className="absolute right-0 -top-4 text-[9px] text-gray-400 font-medium bg-white px-1">
+                            {fmtMoney(TOPE.mensualTope)} tope
+                        </span>
+                    </div>
+                    <div
+                        className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-400 z-10 pointer-events-none"
+                        style={{ bottom: `${lineSeguroPercent}%` }}
+                    >
+                        <span className="absolute right-0 -top-4 text-[9px] text-emerald-500 font-medium bg-white px-1">
+                            {fmtMoney(TOPE.mensualSeguro)} holgado
+                        </span>
+                    </div>
+                    <div className="flex items-end gap-1 sm:gap-2 h-44">
+                        {monthlyTotals.map(m => {
+                            const barColor = m.total > TOPE.mensualTope
+                                ? 'bg-red-500'
+                                : m.total > TOPE.mensualSeguro
+                                    ? 'bg-amber-400'
+                                    : m.month === selMonth - 1
+                                        ? 'bg-blue-600'
+                                        : m.total > 0
+                                            ? 'bg-blue-200 hover:bg-blue-300'
+                                            : 'bg-gray-100';
+                            return (
+                                <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                                    <span className="text-[10px] text-gray-500 font-medium">
+                                        {m.total > 0 ? `$${(m.total / 1000).toFixed(0)}k` : ''}
+                                    </span>
+                                    <div
+                                        className={`w-full rounded-t-md transition-all duration-500 cursor-pointer ${barColor}`}
+                                        style={{ height: `${Math.max((m.total / barMax) * 100, m.total > 0 ? 4 : 1)}%` }}
+                                        title={`${monthNames[m.month]}: ${fmtMoney(m.total)} (${m.count} ventas)`}
+                                        onClick={() => setSelectedMonth(`${selYear}-${String(m.month + 1).padStart(2, '0')}`)}
+                                    />
+                                    <span className={`text-[10px] font-medium ${m.month === selMonth - 1 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                        {m.label}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
+                {/* Sugerencia de tope mensual */}
+                <p className="mt-4 text-xs text-gray-400 text-center">
+                    Para mantenerte holgado en cat. {CATEGORIA_ACTUAL}, no factures mas de <span className="font-semibold text-gray-600">{fmtMoney(TOPE.mensualSeguro)}/mes</span> (tope anual / 12 x 0.85).
+                </p>
             </div>
 
             {/* Table of facturados del mes */}
@@ -1234,10 +1293,10 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                             <p className="font-semibold text-gray-900">{item.productName}</p>
                                             <p className="text-xs text-gray-500 mt-0.5">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</p>
                                         </div>
-                                        <p className="font-bold text-gray-900">${((item.salePrice || 0) * item.quantity).toLocaleString()}</p>
+                                        <p className="font-bold text-gray-900">{fmtMoney((item.salePrice || 0) * item.quantity)}</p>
                                     </div>
                                     <div className="mt-2 flex justify-between items-center text-sm">
-                                        <span className="text-gray-500">x{item.quantity} a ${item.salePrice?.toLocaleString()}</span>
+                                        <span className="text-gray-500">x{item.quantity} a {fmtMoney(item.salePrice || 0)}</span>
                                         <button
                                             onClick={() => onToggleFacturado(item.id, false)}
                                             className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
@@ -1269,14 +1328,14 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                             <td className="px-6 py-4 text-center">
                                                 <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold">{item.quantity}</span>
                                             </td>
-                                            <td className="px-6 py-4 text-right font-mono">${item.salePrice?.toLocaleString()}</td>
-                                            <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">${((item.salePrice || 0) * item.quantity).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-right font-mono">{fmtMoney(item.salePrice || 0)}</td>
+                                            <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">{fmtMoney((item.salePrice || 0) * item.quantity)}</td>
                                             <td className="px-6 py-4 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
                                             <td className="px-6 py-4 text-center">
                                                 <button
                                                     onClick={() => onToggleFacturado(item.id, false)}
                                                     className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
-                                                    title="Desmarcar facturación"
+                                                    title="Desmarcar facturacion"
                                                 >
                                                     <XCircle className="w-3 h-3" />
                                                     Desmarcar
@@ -1288,7 +1347,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                 <tfoot>
                                     <tr className="bg-gray-50 font-bold text-gray-900">
                                         <td className="px-6 py-3" colSpan={3}>Total del mes</td>
-                                        <td className="px-6 py-3 text-right font-mono">${totalMes.toLocaleString()}</td>
+                                        <td className="px-6 py-3 text-right font-mono">{fmtMoney(totalMes)}</td>
                                         <td colSpan={2}></td>
                                     </tr>
                                 </tfoot>
@@ -1300,7 +1359,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
 
             {/* Ventas sin facturar */}
             {(() => {
-                const sinFacturar = items.filter(i => !i.facturado && i.saleDate);
+                const sinFacturar = items.filter(i => !i.facturado && i.saleDate && afterCutoff(i.saleDate));
                 if (sinFacturar.length === 0) return null;
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
@@ -1309,7 +1368,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                 <AlertTriangle className="w-4 h-4" />
                                 Ventas sin facturar ({sinFacturar.length})
                             </h3>
-                            <p className="text-sm text-amber-600 mt-1">Estas ventas aún no fueron marcadas como facturadas.</p>
+                            <p className="text-sm text-amber-600 mt-1">Estas ventas aun no fueron marcadas como facturadas.</p>
                         </div>
                         <div className="hidden sm:block overflow-x-auto">
                             <table className="w-full text-left text-sm text-gray-600">
@@ -1320,7 +1379,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                         <th className="px-6 py-3 text-right">Precio Unit.</th>
                                         <th className="px-6 py-3 text-right">Total</th>
                                         <th className="px-6 py-3 text-center">Fecha Venta</th>
-                                        <th className="px-6 py-3 text-center">Acción</th>
+                                        <th className="px-6 py-3 text-center">Accion</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -1328,8 +1387,8 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                         <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="px-6 py-3 font-medium text-gray-900">{item.productName}</td>
                                             <td className="px-6 py-3 text-center text-xs">{item.quantity}</td>
-                                            <td className="px-6 py-3 text-right font-mono text-xs">${item.salePrice?.toLocaleString()}</td>
-                                            <td className="px-6 py-3 text-right font-mono font-medium">${((item.salePrice || 0) * item.quantity).toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-xs">{fmtMoney(item.salePrice || 0)}</td>
+                                            <td className="px-6 py-3 text-right font-mono font-medium">{fmtMoney((item.salePrice || 0) * item.quantity)}</td>
                                             <td className="px-6 py-3 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
                                             <td className="px-6 py-3 text-center">
                                                 <button
@@ -1350,7 +1409,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                 <div key={item.id} className="flex justify-between items-center rounded-lg border border-gray-200 p-3">
                                     <div>
                                         <p className="font-medium text-gray-900 text-sm">{item.productName}</p>
-                                        <p className="text-xs text-gray-500">${((item.salePrice || 0) * item.quantity).toLocaleString()} — {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}</p>
+                                        <p className="text-xs text-gray-500">{fmtMoney((item.salePrice || 0) * item.quantity)} — {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}</p>
                                     </div>
                                     <button
                                         onClick={() => onToggleFacturado(item.id, true)}
