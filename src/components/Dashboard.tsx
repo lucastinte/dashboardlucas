@@ -1580,6 +1580,8 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     onToggleFacturado: (id: string, value: boolean) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
+    const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
+    const canFacturar = (item: Item) => item.saleDate && new Date(item.saleDate) >= FACTURACION_CUTOFF;
 
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
@@ -1673,7 +1675,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                         <CheckCircle className="w-4 h-4" />
                                         Facturada
                                     </button>
-                                ) : item.saleDate ? (
+                                ) : canFacturar(item) ? (
                                     <button
                                         onClick={() => setFacturarItem(item)}
                                         className="flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
@@ -1682,14 +1684,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                         Facturar
                                     </button>
                                 ) : (
-                                    <button
-                                        disabled
-                                        title="Falta fecha de venta"
-                                        className="flex-1 h-10 rounded-xl bg-gray-300 text-gray-500 text-sm font-medium flex items-center justify-center gap-2 cursor-not-allowed"
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                        Facturar
-                                    </button>
+                                    <span className="flex-1 h-10 rounded-xl text-gray-500 text-sm font-medium flex items-center justify-center">—</span>
                                 )}
                             </div>
                         </div>
@@ -1771,12 +1766,12 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                             <button
                                                 onClick={() => onToggleFacturado(item.id, false)}
                                                 className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
-                                                title="Click para desmarcar facturación"
+                                                title="Click para desmarcar facturacion"
                                             >
                                                 <CheckCircle className="w-3 h-3" />
                                                 Facturada
                                             </button>
-                                        ) : item.saleDate ? (
+                                        ) : canFacturar(item) ? (
                                             <button
                                                 onClick={() => setFacturarItem(item)}
                                                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
@@ -1785,14 +1780,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 Facturar
                                             </button>
                                         ) : (
-                                            <button
-                                                disabled
-                                                title="Falta fecha de venta"
-                                                className="bg-gray-300 text-gray-500 text-xs px-2 py-1 rounded cursor-not-allowed inline-flex items-center gap-1"
-                                            >
-                                                <FileText className="w-3 h-3" />
-                                                Facturar
-                                            </button>
+                                            <span className="text-gray-500 text-xs">—</span>
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-center">
