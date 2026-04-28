@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Calendar } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-type Tab = 'dashboard' | 'inventory' | 'pricing';
+type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
 type PricingItem = {
     id: string;
@@ -620,6 +620,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleToggleFacturado = async (id: string, value: boolean) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, facturado: value } : i));
+            await itemService.updateItem(id, { facturado: value });
+        } catch (err) {
+            console.error('Error updating facturado:', err);
+            loadItems();
+        }
+    };
+
     const handleSplitItem = async (item: Item) => {
         if (item.quantity <= 1) return;
         if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
@@ -787,14 +797,14 @@ export default function Dashboard() {
                     </div>
 
                     <div className="w-full md:w-auto flex flex-col sm:flex-row gap-2">
-                        <div className="grid grid-cols-3 bg-white p-1 rounded-xl shadow-sm border border-gray-200">
+                        <div className="grid grid-cols-4 bg-white p-1 rounded-xl shadow-sm border border-gray-200">
                             <button
                                 onClick={() => setActiveTab('dashboard')}
                                 className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <TrendingUp className="w-4 h-4" />
-                                    Resumen
+                                    <span className="hidden sm:inline">Resumen</span>
                                 </div>
                             </button>
                             <button
@@ -803,7 +813,7 @@ export default function Dashboard() {
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <Box className="w-4 h-4" />
-                                    Inventario ({stockItems.length})
+                                    <span className="hidden sm:inline">Inventario ({stockItems.length})</span>
                                 </div>
                             </button>
                             <button
@@ -812,7 +822,16 @@ export default function Dashboard() {
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <DollarSign className="w-4 h-4" />
-                                    Pedidos
+                                    <span className="hidden sm:inline">Pedidos</span>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('facturacion')}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'facturacion' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                                <div className="flex items-center justify-center gap-2">
+                                    <Receipt className="w-4 h-4" />
+                                    <span className="hidden sm:inline">ARCA</span>
                                 </div>
                             </button>
                         </div>
@@ -893,7 +912,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -933,7 +952,7 @@ export default function Dashboard() {
                             }} />
                         </div>
                     </div>
-                ) : (
+                ) : activeTab === 'pricing' ? (
                     <BulkPricingBoard
                         totalPaid={batchTotalPaid}
                         setTotalPaid={setBatchTotalPaid}
@@ -945,6 +964,11 @@ export default function Dashboard() {
                         setItemBatchMap={setItemBatchMap}
                         batchHistory={batchHistory}
                         setBatchHistory={setBatchHistory}
+                    />
+                ) : (
+                    <FacturacionTab
+                        items={soldItems}
+                        onToggleFacturado={handleToggleFacturado}
                     />
                 )}
             </div>
@@ -997,6 +1021,353 @@ export default function Dashboard() {
 
 // Subcomponents
 
+// Facturación Tab - Control de facturación ARCA separado del dashboard de ganancias
+function FacturacionTab({ items, onToggleFacturado }: {
+    items: Item[],
+    onToggleFacturado: (id: string, value: boolean) => void
+}) {
+    const now = new Date();
+    const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    const [limiteAnual, setLimiteAnual] = useState(() => {
+        const saved = localStorage.getItem('facturacion_limite_anual');
+        return saved ? Number(saved) : 68000000; // Default monotributo cat. K 2024/2025
+    });
+
+    // Save limite when changed
+    const updateLimite = (val: number) => {
+        setLimiteAnual(val);
+        localStorage.setItem('facturacion_limite_anual', String(val));
+    };
+
+    // All facturated items
+    const facturados = items.filter(i => i.facturado);
+
+    // Parse selected month
+    const [selYear, selMonth] = selectedMonth.split('-').map(Number);
+
+    // Items facturados with saleDate in selected month
+    const facturadosMes = facturados.filter(i => {
+        if (!i.saleDate) return false;
+        const d = new Date(i.saleDate);
+        return d.getFullYear() === selYear && d.getMonth() + 1 === selMonth;
+    });
+
+    // Total del mes
+    const totalMes = facturadosMes.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+
+    // Total del año (based on selYear)
+    const facturadosAnio = facturados.filter(i => {
+        if (!i.saleDate) return false;
+        return new Date(i.saleDate).getFullYear() === selYear;
+    });
+    const totalAnio = facturadosAnio.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+    const porcentajeAnio = limiteAnual > 0 ? (totalAnio / limiteAnual) * 100 : 0;
+
+    // Monthly totals for the year (for bar chart)
+    const monthlyTotals = Array.from({ length: 12 }, (_, m) => {
+        const monthItems = facturados.filter(i => {
+            if (!i.saleDate) return false;
+            const d = new Date(i.saleDate);
+            return d.getFullYear() === selYear && d.getMonth() === m;
+        });
+        return {
+            month: m,
+            label: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m],
+            total: monthItems.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0),
+            count: monthItems.length
+        };
+    });
+
+    // Available months for selector (from items)
+    const availableMonths = Array.from(new Set(facturados.map(i => {
+        if (!i.saleDate) return null;
+        const d = new Date(i.saleDate);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }).filter(Boolean) as string[])).sort().reverse();
+
+    // Ensure current month is always in options
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (!availableMonths.includes(currentMonthKey)) {
+        availableMonths.unshift(currentMonthKey);
+    }
+    if (!availableMonths.includes(selectedMonth)) {
+        availableMonths.push(selectedMonth);
+        availableMonths.sort().reverse();
+    }
+
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    const barMax = Math.max(...monthlyTotals.map(m => m.total), 1);
+
+    return (
+        <div className="space-y-5 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header */}
+            <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                    <div>
+                        <h2 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
+                            <Receipt className="w-5 h-5 text-blue-600" />
+                            Control de Facturación ARCA
+                        </h2>
+                        <p className="text-gray-500 text-sm mt-1">Seguimiento de ventas facturadas — separado de ganancias e inventario.</p>
+                    </div>
+                    <select
+                        value={selectedMonth}
+                        onChange={e => setSelectedMonth(e.target.value)}
+                        className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        {availableMonths.map(m => {
+                            const [y, mo] = m.split('-').map(Number);
+                            return <option key={m} value={m}>{monthNames[mo - 1]} {y}</option>;
+                        })}
+                    </select>
+                </div>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado este mes</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">${totalMes.toLocaleString()}</p>
+                    <p className="text-sm text-gray-500 mt-1">{facturadosMes.length} {facturadosMes.length === 1 ? 'venta' : 'ventas'}</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado en {selYear}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">${totalAnio.toLocaleString()}</p>
+                    <p className="text-sm text-gray-500 mt-1">{facturadosAnio.length} ventas facturadas</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Límite anual</p>
+                    <div className="flex items-center gap-2 mt-2">
+                        <span className="text-lg font-bold text-gray-900">$</span>
+                        <input
+                            type="number"
+                            value={limiteAnual}
+                            onChange={e => updateLimite(Number(e.target.value))}
+                            className="text-lg font-bold text-gray-900 bg-transparent border-b border-dashed border-gray-300 w-full focus:outline-none focus:border-blue-500"
+                        />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">Editá según tu categoría</p>
+                </div>
+            </div>
+
+            {/* Progress bar anual */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex justify-between items-center mb-3">
+                    <p className="text-sm font-semibold text-gray-700">Progreso anual {selYear}</p>
+                    <p className="text-sm font-bold" style={{ color: porcentajeAnio > 90 ? '#ef4444' : porcentajeAnio > 70 ? '#f59e0b' : '#10b981' }}>
+                        {porcentajeAnio.toFixed(1)}%
+                    </p>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+                    <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                            width: `${Math.min(porcentajeAnio, 100)}%`,
+                            backgroundColor: porcentajeAnio > 90 ? '#ef4444' : porcentajeAnio > 70 ? '#f59e0b' : '#10b981'
+                        }}
+                    />
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-400">
+                    <span>${totalAnio.toLocaleString()} facturado</span>
+                    <span>${(limiteAnual - totalAnio).toLocaleString()} restante</span>
+                </div>
+                {porcentajeAnio > 85 && (
+                    <div className="mt-3 flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        {porcentajeAnio >= 100
+                            ? '¡Superaste el límite anual! Revisá tu categoría de monotributo.'
+                            : `Estás cerca del límite (${(100 - porcentajeAnio).toFixed(1)}% restante). Planificá tus próximas facturas.`
+                        }
+                    </div>
+                )}
+            </div>
+
+            {/* Monthly bar chart */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <p className="text-sm font-semibold text-gray-700 mb-4">Facturado por mes — {selYear}</p>
+                <div className="flex items-end gap-1 sm:gap-2 h-40">
+                    {monthlyTotals.map(m => (
+                        <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-[10px] text-gray-500 font-medium">
+                                {m.total > 0 ? `$${(m.total / 1000).toFixed(0)}k` : ''}
+                            </span>
+                            <div
+                                className={`w-full rounded-t-md transition-all duration-500 cursor-pointer ${
+                                    m.month === selMonth - 1 ? 'bg-blue-600' : m.total > 0 ? 'bg-blue-200 hover:bg-blue-300' : 'bg-gray-100'
+                                }`}
+                                style={{ height: `${Math.max((m.total / barMax) * 100, m.total > 0 ? 4 : 1)}%` }}
+                                title={`${monthNames[m.month]}: $${m.total.toLocaleString()} (${m.count} ventas)`}
+                                onClick={() => setSelectedMonth(`${selYear}-${String(m.month + 1).padStart(2, '0')}`)}
+                            />
+                            <span className={`text-[10px] font-medium ${m.month === selMonth - 1 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                {m.label}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Table of facturados del mes */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-4 sm:p-6 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800">
+                        Facturadas — {monthNames[selMonth - 1]} {selYear}
+                    </h3>
+                    <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-lg font-medium">
+                        {facturadosMes.length} {facturadosMes.length === 1 ? 'venta' : 'ventas'}
+                    </span>
+                </div>
+                {facturadosMes.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">
+                        <Receipt className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p>No hay ventas facturadas en este mes.</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Mobile cards */}
+                        <div className="sm:hidden p-3 space-y-3">
+                            {facturadosMes.map(item => (
+                                <div key={item.id} className="rounded-xl border border-gray-200 p-4">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-semibold text-gray-900">{item.productName}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</p>
+                                        </div>
+                                        <p className="font-bold text-gray-900">${((item.salePrice || 0) * item.quantity).toLocaleString()}</p>
+                                    </div>
+                                    <div className="mt-2 flex justify-between items-center text-sm">
+                                        <span className="text-gray-500">x{item.quantity} a ${item.salePrice?.toLocaleString()}</span>
+                                        <button
+                                            onClick={() => onToggleFacturado(item.id, false)}
+                                            className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                                        >
+                                            <XCircle className="w-3 h-3" />
+                                            Desmarcar
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Desktop table */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-left text-sm text-gray-600">
+                                <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-3">Producto</th>
+                                        <th className="px-6 py-3 text-center">Cant.</th>
+                                        <th className="px-6 py-3 text-right">Precio Unit.</th>
+                                        <th className="px-6 py-3 text-right">Total</th>
+                                        <th className="px-6 py-3 text-center">Fecha</th>
+                                        <th className="px-6 py-3 text-center">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {facturadosMes.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-6 py-4 font-medium text-gray-900">{item.productName}</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold">{item.quantity}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-mono">${item.salePrice?.toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">${((item.salePrice || 0) * item.quantity).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <button
+                                                    onClick={() => onToggleFacturado(item.id, false)}
+                                                    className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                    title="Desmarcar facturación"
+                                                >
+                                                    <XCircle className="w-3 h-3" />
+                                                    Desmarcar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-gray-50 font-bold text-gray-900">
+                                        <td className="px-6 py-3" colSpan={3}>Total del mes</td>
+                                        <td className="px-6 py-3 text-right font-mono">${totalMes.toLocaleString()}</td>
+                                        <td colSpan={2}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Ventas sin facturar */}
+            {(() => {
+                const sinFacturar = items.filter(i => !i.facturado && i.saleDate);
+                if (sinFacturar.length === 0) return null;
+                return (
+                    <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
+                        <div className="p-4 sm:p-6 border-b border-amber-100 bg-amber-50/50">
+                            <h3 className="font-bold text-amber-800 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                Ventas sin facturar ({sinFacturar.length})
+                            </h3>
+                            <p className="text-sm text-amber-600 mt-1">Estas ventas aún no fueron marcadas como facturadas.</p>
+                        </div>
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-left text-sm text-gray-600">
+                                <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-3">Producto</th>
+                                        <th className="px-6 py-3 text-center">Cant.</th>
+                                        <th className="px-6 py-3 text-right">Precio Unit.</th>
+                                        <th className="px-6 py-3 text-right">Total</th>
+                                        <th className="px-6 py-3 text-center">Fecha Venta</th>
+                                        <th className="px-6 py-3 text-center">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {sinFacturar.slice(0, 20).map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-6 py-3 font-medium text-gray-900">{item.productName}</td>
+                                            <td className="px-6 py-3 text-center text-xs">{item.quantity}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-xs">${item.salePrice?.toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono font-medium">${((item.salePrice || 0) * item.quantity).toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
+                                            <td className="px-6 py-3 text-center">
+                                                <button
+                                                    onClick={() => onToggleFacturado(item.id, true)}
+                                                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                >
+                                                    <CheckCircle className="w-3 h-3" />
+                                                    Marcar facturada
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="sm:hidden p-3 space-y-2">
+                            {sinFacturar.slice(0, 20).map(item => (
+                                <div key={item.id} className="flex justify-between items-center rounded-lg border border-gray-200 p-3">
+                                    <div>
+                                        <p className="font-medium text-gray-900 text-sm">{item.productName}</p>
+                                        <p className="text-xs text-gray-500">${((item.salePrice || 0) * item.quantity).toLocaleString()} — {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => onToggleFacturado(item.id, true)}
+                                        className="bg-blue-600 text-white text-xs px-2 py-1 rounded flex-shrink-0"
+                                    >
+                                        Facturar
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
+        </div>
+    );
+}
+
 // Helper: format date to DD/MM/AAAA with zero-padded day/month
 function formatDateDDMMAAAA(dateStr: string): string {
     const d = new Date(dateStr);
@@ -1007,7 +1378,7 @@ function formatDateDDMMAAAA(dateStr: string): string {
 }
 
 // Facturar ARCA Modal
-function FacturarModal({ item, onClose }: { item: Item; onClose: () => void }) {
+function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void }) {
     const [producto, setProducto] = useState(item.productName);
     const [cantidad, setCantidad] = useState(item.quantity);
     const [precio, setPrecio] = useState(item.salePrice || 0);
@@ -1042,6 +1413,7 @@ function FacturarModal({ item, onClose }: { item: Item; onClose: () => void }) {
         const base64 = btoa(JSON.stringify(ventaObj));
         const url = `https://fe.afip.gob.ar/rcel/jsp/index_bis.jsp?venta=${encodeURIComponent(base64)}`;
         window.open(url, '_blank');
+        onFacturado?.(item.id);
         onClose();
     };
 
@@ -1141,11 +1513,12 @@ function FacturarModal({ item, onClose }: { item: Item; onClose: () => void }) {
     );
 }
 
-function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
-    resolveBatchRef: (item: Item) => string | undefined
+    resolveBatchRef: (item: Item) => string | undefined,
+    onToggleFacturado: (id: string, value: boolean) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
 
@@ -1155,7 +1528,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
 
     return (
         <>
-            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} />}
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} />}
             <div className="sm:hidden p-3 space-y-3">
                 {items.map((item) => {
                     const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
@@ -1235,11 +1608,11 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                 </button>
                                 {item.facturado ? (
                                     <button
-                                        disabled
-                                        className="flex-1 h-10 rounded-xl bg-green-600 text-white text-sm font-medium flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
+                                        onClick={() => onToggleFacturado(item.id, false)}
+                                        className="flex-1 h-10 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
                                     >
-                                        <FileText className="w-4 h-4" />
-                                        Ya facturada
+                                        <CheckCircle className="w-4 h-4" />
+                                        Facturada
                                     </button>
                                 ) : item.saleDate ? (
                                     <button
@@ -1337,11 +1710,12 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef }: {
                                     <td className="px-6 py-4 text-center">
                                         {item.facturado ? (
                                             <button
-                                                disabled
-                                                className="bg-green-600 text-white text-xs px-2 py-1 rounded cursor-not-allowed inline-flex items-center gap-1"
+                                                onClick={() => onToggleFacturado(item.id, false)}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                title="Click para desmarcar facturación"
                                             >
-                                                <FileText className="w-3 h-3" />
-                                                Ya facturada
+                                                <CheckCircle className="w-3 h-3" />
+                                                Facturada
                                             </button>
                                         ) : item.saleDate ? (
                                             <button
