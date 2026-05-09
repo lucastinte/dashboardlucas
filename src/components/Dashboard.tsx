@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
+import { imageService } from '../services/imageService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -1359,7 +1360,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
 
             {/* Ventas sin facturar */}
             {(() => {
-                const sinFacturar = items.filter(i => !i.facturado && i.saleDate && afterCutoff(i.saleDate));
+                const sinFacturar = items.filter(i => !i.facturado && i.saleDate && afterCutoff(i.saleDate) && i.condition !== 'usado');
                 if (sinFacturar.length === 0) return null;
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
@@ -1581,7 +1582,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
-    const canFacturar = (item: Item) => item.saleDate && new Date(item.saleDate) >= FACTURACION_CUTOFF;
+    const canFacturar = (item: Item) => item.saleDate && new Date(item.saleDate) >= FACTURACION_CUTOFF && item.condition !== 'usado';
 
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
@@ -2252,6 +2253,92 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     );
 }
 
+function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUploaded: (url: string) => void }) {
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [mode, setMode] = useState<'file' | 'url'>(currentUrl ? 'url' : 'file');
+    const [urlInput, setUrlInput] = useState(currentUrl);
+
+    const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        setError(null);
+        try {
+            const publicUrl = await imageService.upload(file);
+            onUploaded(publicUrl);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error al subir imagen');
+        } finally {
+            setUploading(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleUrlUpload = async () => {
+        if (!urlInput || urlInput === currentUrl) return;
+        setUploading(true);
+        setError(null);
+        try {
+            const publicUrl = await imageService.upload(urlInput);
+            onUploaded(publicUrl);
+            setUrlInput(publicUrl);
+        } catch (err) {
+            // If upload fails (CORS, etc.), keep the URL directly
+            onUploaded(urlInput);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    return (
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Imagen del producto</label>
+            <div className="flex gap-1 mb-2">
+                <button type="button" onClick={() => setMode('file')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-all ${mode === 'file' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    <Upload className="w-3 h-3" /> Subir foto
+                </button>
+                <button type="button" onClick={() => setMode('url')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-all ${mode === 'url' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    <ImageIcon className="w-3 h-3" /> Pegar link
+                </button>
+            </div>
+            <div className="flex gap-3 items-start">
+                {mode === 'file' ? (
+                    <label className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed transition-all cursor-pointer ${uploading ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
+                        {uploading ? (
+                            <><Loader2 className="w-4 h-4 animate-spin text-blue-600" /><span className="text-sm text-blue-600">Comprimiendo y subiendo...</span></>
+                        ) : (
+                            <><Upload className="w-4 h-4 text-gray-400" /><span className="text-sm text-gray-500">Elegir foto o sacar con cámara</span></>
+                        )}
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+                    </label>
+                ) : (
+                    <div className="flex-1 flex gap-2">
+                        <input
+                            type="url"
+                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700 text-sm"
+                            placeholder="Pega el link de una imagen"
+                            value={urlInput}
+                            onChange={e => setUrlInput(e.target.value)}
+                            onBlur={handleUrlUpload}
+                            disabled={uploading}
+                        />
+                        {uploading && <Loader2 className="w-5 h-5 animate-spin text-blue-600 shrink-0 mt-2" />}
+                    </div>
+                )}
+                {currentUrl && (
+                    <div className="w-12 h-12 rounded-lg border border-gray-200 overflow-hidden shrink-0 bg-white">
+                        <img src={currentUrl} alt="Vista previa" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = 'https://placehold.co/100x100?text=Error')} />
+                    </div>
+                )}
+            </div>
+            {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+        </div>
+    );
+}
+
 function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [] }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
@@ -2681,15 +2768,17 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Producto</label>
                 <input
                     type="text"
-                    list="product-names"
+                    list={isEditing ? undefined : "product-names"}
                     required
                     className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
                     value={formData.productName}
                     onChange={e => setFormData({ ...formData, productName: e.target.value })}
                 />
-                <datalist id="product-names">
-                    {suggestedNames.map(name => <option key={name} value={name} />)}
-                </datalist>
+                {!isEditing && (
+                    <datalist id="product-names">
+                        {suggestedNames.map(name => <option key={name} value={name} />)}
+                    </datalist>
+                )}
             </div>
 
             <div className={`grid grid-cols-1 ${formData.itemType === 'personal' ? '' : 'sm:grid-cols-2'} gap-4`}>
@@ -2800,23 +2889,10 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 </div>
             )}
 
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Imagen de referencia (URL)</label>
-                <div className="flex gap-3 items-start">
-                    <input
-                        type="url"
-                        className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700 text-sm"
-                        placeholder="Pega el link de una imagen (Google Photos, Link web, etc.)"
-                        value={formData.imageUrl || ''}
-                        onChange={e => setFormData({ ...formData, imageUrl: e.target.value })}
-                    />
-                    {formData.imageUrl && (
-                        <div className="w-12 h-12 rounded-lg border border-gray-200 overflow-hidden shrink-0 bg-white">
-                            <img src={formData.imageUrl} alt="Vista previa" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = 'https://placehold.co/100x100?text=Error')} />
-                        </div>
-                    )}
-                </div>
-            </div>
+            <ImageUploadField
+                currentUrl={formData.imageUrl || ''}
+                onUploaded={(url) => setFormData({ ...formData, imageUrl: url })}
+            />
 
             <div className="pt-3 sm:pt-4 flex flex-col-reverse sm:flex-row gap-3">
                 <button
