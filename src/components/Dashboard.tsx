@@ -746,7 +746,7 @@ export default function Dashboard() {
     };
 
     // Metrics Calculations
-    const stockItems = items.filter(i => i.status === 'in_stock').sort((a, b) => (a.productName || '').localeCompare(b.productName || ''));
+    const stockItems = items.filter(i => i.status === 'in_stock' && i.itemType !== 'personal').sort((a, b) => (a.productName || '').localeCompare(b.productName || ''));
     const soldItems = items.filter(i => i.status === 'sold').sort((a, b) => {
         const dateA = new Date(a.saleDate || a.date || 0).getTime();
         const dateB = new Date(b.saleDate || b.date || 0).getTime();
@@ -1024,6 +1024,7 @@ export default function Dashboard() {
                             suggestedNames={Array.from(new Set(items.map(i => i.productName))).filter(Boolean).sort()}
                             suggestedLocations={Array.from(new Set(items.map(i => i.location))).filter(Boolean).sort() as string[]}
                             batchCodes={batchHistory.map(b => b.batchCode)}
+                            existingImages={Array.from(new Map(items.filter(i => i.imageUrl).map(i => [i.imageUrl!, { url: i.imageUrl!, name: i.productName }])).values())}
                         />
                     </div>
                 </div>
@@ -2521,11 +2522,12 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     );
 }
 
-function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUploaded: (url: string) => void }) {
+function ImageUploadField({ currentUrl, onUploaded, existingImages = [] }: { currentUrl: string, onUploaded: (url: string) => void, existingImages?: { url: string; name: string }[] }) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [urlInput, setUrlInput] = useState('');
     const [showUrlInput, setShowUrlInput] = useState(false);
+    const [showGallery, setShowGallery] = useState(false);
 
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -2602,6 +2604,13 @@ function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUp
                             <ImageIcon className="w-4 h-4 text-gray-400" />
                             <span className="text-sm text-gray-500">Pegar link</span>
                         </button>
+                        {existingImages.length > 0 && (
+                            <button type="button" onClick={() => { setShowGallery(!showGallery); setShowUrlInput(false); }}
+                                className={`flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed transition-all ${showGallery ? 'border-black bg-gray-100' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
+                                <Layers className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm text-gray-500">Existente</span>
+                            </button>
+                        )}
                     </div>
 
                     {showUrlInput && (
@@ -2622,6 +2631,25 @@ function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUp
                             </button>
                         </div>
                     )}
+
+                    {showGallery && existingImages.length > 0 && (
+                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 p-2 rounded-xl border border-gray-200 bg-gray-50 max-h-40 overflow-y-auto">
+                            {existingImages.map((img, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => { onUploaded(img.url); setShowGallery(false); }}
+                                    className="group relative aspect-square rounded-lg border-2 border-transparent hover:border-black overflow-hidden bg-white transition-all"
+                                    title={img.name}
+                                >
+                                    <img src={img.url} alt={img.name} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = 'https://placehold.co/80x80?text=?')} />
+                                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <p className="text-[9px] text-white truncate">{img.name}</p>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2630,7 +2658,7 @@ function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUp
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [] }: {
+function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [], existingImages = [] }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
@@ -2639,7 +2667,8 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
     editingItemStatus?: ItemStatus,
     suggestedNames?: string[],
     suggestedLocations?: string[],
-    batchCodes?: string[]
+    batchCodes?: string[],
+    existingImages?: { url: string; name: string }[]
 }) {
     const [url, setUrl] = useState('');
     const [isDetectingFromUrl, setIsDetectingFromUrl] = useState(false);
@@ -3183,6 +3212,7 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
             <ImageUploadField
                 currentUrl={formData.imageUrl || ''}
                 onUploaded={(url) => setFormData({ ...formData, imageUrl: url })}
+                existingImages={existingImages}
             />
 
             <div className="pt-3 sm:pt-4 flex flex-col-reverse sm:flex-row gap-3">
