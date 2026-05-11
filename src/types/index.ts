@@ -20,6 +20,7 @@ export interface Item {
     imageUrl?: string;
     category?: string;
     facturado?: boolean;
+    noFacturar?: boolean;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

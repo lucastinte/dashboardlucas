@@ -32,7 +32,8 @@ const mapFromDb = (dbItem: any): Item => ({
     imageUrl: dbItem.image_url || undefined,
     category: dbItem.category || undefined,
     itemType: (dbItem.item_type || 'resale') as ItemType,
-    facturado: dbItem.facturado === true
+    facturado: dbItem.facturado === true,
+    noFacturar: dbItem.no_facturar === true
 });
 
 // Helper to map application model to DB columns
@@ -54,6 +55,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.category !== undefined) dbItem.category = item.category;
     if (item.itemType !== undefined) dbItem.item_type = item.itemType;
     if (item.facturado !== undefined) dbItem.facturado = item.facturado;
+    if (item.noFacturar !== undefined) dbItem.no_facturar = item.noFacturar;
     return dbItem;
 };
 

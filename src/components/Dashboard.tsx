@@ -3,7 +3,7 @@ import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -632,6 +632,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleToggleNoFacturar = async (id: string, value: boolean) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, noFacturar: value } : i));
+            await itemService.updateItem(id, { noFacturar: value });
+        } catch (err) {
+            console.error('Error updating noFacturar:', err);
+            loadItems();
+        }
+    };
+
     const handleSplitItem = async (item: Item) => {
         if (item.quantity <= 1) return;
         if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
@@ -914,7 +924,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -971,6 +981,7 @@ export default function Dashboard() {
                     <FacturacionTab
                         items={soldItems}
                         onToggleFacturado={handleToggleFacturado}
+                        onToggleNoFacturar={handleToggleNoFacturar}
                     />
                 )}
             </div>
@@ -1024,9 +1035,10 @@ export default function Dashboard() {
 // Subcomponents
 
 // Facturación Tab - Control de facturación ARCA separado del dashboard de ganancias
-function FacturacionTab({ items, onToggleFacturado }: {
+function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
     items: Item[],
-    onToggleFacturado: (id: string, value: boolean) => void
+    onToggleFacturado: (id: string, value: boolean) => void,
+    onToggleNoFacturar: (id: string, value: boolean) => void
 }) {
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -1360,7 +1372,7 @@ function FacturacionTab({ items, onToggleFacturado }: {
 
             {/* Ventas sin facturar */}
             {(() => {
-                const sinFacturar = items.filter(i => !i.facturado && i.saleDate && afterCutoff(i.saleDate) && i.condition !== 'usado');
+                const sinFacturar = items.filter(i => !i.facturado && !i.noFacturar && i.saleDate && afterCutoff(i.saleDate) && i.condition !== 'usado');
                 if (sinFacturar.length === 0) return null;
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
@@ -1392,13 +1404,22 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                             <td className="px-6 py-3 text-right font-mono font-medium">{fmtMoney((item.salePrice || 0) * item.quantity)}</td>
                                             <td className="px-6 py-3 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
                                             <td className="px-6 py-3 text-center">
-                                                <button
-                                                    onClick={() => onToggleFacturado(item.id, true)}
-                                                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
-                                                >
-                                                    <CheckCircle className="w-3 h-3" />
-                                                    Marcar facturada
-                                                </button>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button
+                                                        onClick={() => onToggleFacturado(item.id, true)}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
+                                                    >
+                                                        <CheckCircle className="w-3 h-3" />
+                                                        Facturada
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onToggleNoFacturar(item.id, true)}
+                                                        className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                                        title="Excluir de facturacion"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -1412,12 +1433,21 @@ function FacturacionTab({ items, onToggleFacturado }: {
                                         <p className="font-medium text-gray-900 text-sm">{item.productName}</p>
                                         <p className="text-xs text-gray-500">{fmtMoney((item.salePrice || 0) * item.quantity)} — {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}</p>
                                     </div>
-                                    <button
-                                        onClick={() => onToggleFacturado(item.id, true)}
-                                        className="bg-blue-600 text-white text-xs px-2 py-1 rounded flex-shrink-0"
-                                    >
-                                        Facturar
-                                    </button>
+                                    <div className="flex gap-1 flex-shrink-0">
+                                        <button
+                                            onClick={() => onToggleFacturado(item.id, true)}
+                                            className="bg-blue-600 text-white text-xs px-2 py-1 rounded"
+                                        >
+                                            Facturar
+                                        </button>
+                                        <button
+                                            onClick={() => onToggleNoFacturar(item.id, true)}
+                                            className="text-gray-400 hover:text-red-500 p-1 rounded"
+                                            title="No facturar"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1573,12 +1603,13 @@ function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: ()
     );
 }
 
-function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado }: {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     resolveBatchRef: (item: Item) => string | undefined,
-    onToggleFacturado: (id: string, value: boolean) => void
+    onToggleFacturado: (id: string, value: boolean) => void,
+    onToggleNoFacturar: (id: string, value: boolean) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
@@ -1676,14 +1707,31 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                         <CheckCircle className="w-4 h-4" />
                                         Facturada
                                     </button>
-                                ) : canFacturar(item) ? (
+                                ) : item.noFacturar ? (
                                     <button
-                                        onClick={() => setFacturarItem(item)}
-                                        className="flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                        onClick={() => onToggleNoFacturar(item.id, false)}
+                                        className="flex-1 h-10 rounded-xl bg-gray-400 hover:bg-gray-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
                                     >
-                                        <FileText className="w-4 h-4" />
-                                        Facturar
+                                        <XCircle className="w-4 h-4" />
+                                        Excluida
                                     </button>
+                                ) : canFacturar(item) ? (
+                                    <div className="flex-1 flex gap-1">
+                                        <button
+                                            onClick={() => setFacturarItem(item)}
+                                            className="flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            Facturar
+                                        </button>
+                                        <button
+                                            onClick={() => onToggleNoFacturar(item.id, true)}
+                                            className="h-10 px-2 rounded-xl border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center transition-colors"
+                                            title="No facturar"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 ) : (
                                     <span className="flex-1 h-10 rounded-xl text-gray-500 text-sm font-medium flex items-center justify-center">—</span>
                                 )}
@@ -1770,14 +1818,32 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 <CheckCircle className="w-3 h-3" />
                                                 Facturada
                                             </button>
-                                        ) : canFacturar(item) ? (
+                                        ) : item.noFacturar ? (
                                             <button
-                                                onClick={() => setFacturarItem(item)}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-1.5 py-0.5 rounded transition-colors inline-flex items-center gap-0.5"
+                                                onClick={() => onToggleNoFacturar(item.id, false)}
+                                                className="bg-gray-400 hover:bg-gray-500 text-white text-[11px] px-1.5 py-0.5 rounded transition-colors inline-flex items-center gap-0.5"
+                                                title="Click para volver a incluir en facturacion"
                                             >
-                                                <FileText className="w-3 h-3" />
-                                                Facturar
+                                                <XCircle className="w-3 h-3" />
+                                                Excluida
                                             </button>
+                                        ) : canFacturar(item) ? (
+                                            <div className="flex items-center justify-center gap-1">
+                                                <button
+                                                    onClick={() => setFacturarItem(item)}
+                                                    className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-1.5 py-0.5 rounded transition-colors inline-flex items-center gap-0.5"
+                                                >
+                                                    <FileText className="w-3 h-3" />
+                                                    Facturar
+                                                </button>
+                                                <button
+                                                    onClick={() => onToggleNoFacturar(item.id, true)}
+                                                    className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-0.5 rounded transition-colors"
+                                                    title="Excluir de facturacion"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
                                         ) : (
                                             <span className="text-gray-500 text-xs">—</span>
                                         )}
@@ -1820,9 +1886,10 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     onSplit: (i: Item) => void,
     batchHistory: BatchRecord[]
 }) {
-    type ViewMode = 'products' | 'locations';
+    type ViewMode = 'products' | 'locations' | 'batches';
     const [viewMode, setViewMode] = useState<ViewMode>('products');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+    const [searchQuery, setSearchQuery] = useState('');
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => {
@@ -1858,6 +1925,16 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
 
+    // Filter by search query
+    const filteredItems = searchQuery.trim()
+        ? items.filter(item => {
+            const q = normalizeText(searchQuery);
+            return normalizeText(item.productName).includes(q)
+                || normalizeText(item.location || '').includes(q)
+                || normalizeText(resolveBatchRef(item) || '').includes(q);
+        })
+        : items;
+
     // --- Product groups: group by normalized name ---
     type ProductGroup = {
         key: string;
@@ -1874,7 +1951,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 
     const productGroups: ProductGroup[] = (() => {
         const map = new Map<string, ProductGroup>();
-        items.forEach(item => {
+        filteredItems.forEach(item => {
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
@@ -1896,7 +1973,12 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
             grp.avgCost = grp.totalQty > 0 ? Math.round(grp.totalValue / grp.totalQty) : 0;
             grp.isPersonal = grp.children.every(c => c.itemType === 'personal');
         }
-        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+        // Sort by newest item date first
+        return Array.from(map.values()).sort((a, b) => {
+            const newestA = Math.max(...a.children.map(c => new Date(c.date).getTime()));
+            const newestB = Math.max(...b.children.map(c => new Date(c.date).getTime()));
+            return newestB - newestA;
+        });
     })();
 
     // --- Location groups ---
@@ -1910,7 +1992,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 
     const locationGroups: LocationGroup[] = (() => {
         const map = new Map<string, LocationGroup>();
-        items.forEach(item => {
+        filteredItems.forEach(item => {
             const loc = item.location || 'Sin ubicación';
             const locKey = normalizeText(loc);
             let grp = map.get(locKey);
@@ -1939,28 +2021,98 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         return Array.from(map.values()).sort((a, b) => a.location.localeCompare(b.location));
     })();
 
+    // --- Batch groups: group by batch ---
+    type BatchGroup = {
+        key: string;
+        batchCode: string;
+        label: string;
+        status: { label: string; color: string } | null;
+        totalQty: number;
+        totalValue: number;
+        children: Item[];
+    };
+
+    const batchGroups: BatchGroup[] = (() => {
+        const map = new Map<string, BatchGroup>();
+        filteredItems.forEach(item => {
+            const bRef = resolveBatchRef(item) || '';
+            const bKey = bRef || '__direct__';
+            let grp = map.get(bKey);
+            if (!grp) {
+                grp = {
+                    key: bKey,
+                    batchCode: bRef,
+                    label: bRef ? getBatchLabel(bRef) : 'Venta directa',
+                    status: bRef ? getBatchStatus([bRef]) : null,
+                    totalQty: 0,
+                    totalValue: 0,
+                    children: []
+                };
+                map.set(bKey, grp);
+            }
+            grp.children.push(item);
+            grp.totalQty += item.quantity;
+            grp.totalValue += item.purchasePrice * item.quantity;
+        });
+        // Sort by batch number descending (newest first)
+        return Array.from(map.values()).sort((a, b) => {
+            if (a.key === '__direct__') return 1;
+            if (b.key === '__direct__') return -1;
+            const numA = Number(a.batchCode.match(/\d+/)?.[0] || 0);
+            const numB = Number(b.batchCode.match(/\d+/)?.[0] || 0);
+            return numB - numA;
+        });
+    })();
+
     return (
         <>
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-gray-500">
-                    {productGroups.length} productos · {items.reduce((a, i) => a + i.quantity, 0)} unidades · ${items.filter(i => i.itemType !== 'personal').reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
-                    {items.some(i => i.itemType === 'personal') && <span className="text-violet-500 ml-1">· {items.filter(i => i.itemType === 'personal').reduce((a, i) => a + i.quantity, 0)} propios</span>}
-                </p>
-                <div className="flex gap-1.5">
-                    <button
-                        onClick={() => { setViewMode('products'); setExpandedGroups(new Set()); }}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'products' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
-                    >
-                        <Layers className="w-3.5 h-3.5" />
-                        Por Producto
-                    </button>
-                    <button
-                        onClick={() => { setViewMode('locations'); setExpandedGroups(new Set()); }}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'locations' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
-                    >
-                        <MapPin className="w-3.5 h-3.5" />
-                        Por Ubicación
-                    </button>
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-gray-500">
+                        {productGroups.length} productos · {filteredItems.reduce((a, i) => a + i.quantity, 0)} unidades · ${filteredItems.filter(i => i.itemType !== 'personal').reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
+                        {filteredItems.some(i => i.itemType === 'personal') && <span className="text-violet-500 ml-1">· {filteredItems.filter(i => i.itemType === 'personal').reduce((a, i) => a + i.quantity, 0)} propios</span>}
+                    </p>
+                    <div className="flex gap-1.5">
+                        <button
+                            onClick={() => { setViewMode('products'); setExpandedGroups(new Set()); }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'products' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                        >
+                            <Layers className="w-3.5 h-3.5" />
+                            Por Producto
+                        </button>
+                        <button
+                            onClick={() => { setViewMode('locations'); setExpandedGroups(new Set()); }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'locations' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                        >
+                            <MapPin className="w-3.5 h-3.5" />
+                            Por Ubicación
+                        </button>
+                        <button
+                            onClick={() => { setViewMode('batches'); setExpandedGroups(new Set()); }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'batches' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                        >
+                            <Box className="w-3.5 h-3.5" />
+                            Por Tanda
+                        </button>
+                    </div>
+                </div>
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Buscar producto, ubicación o tanda..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-gray-200 bg-white focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none transition-all"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -2034,7 +2186,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                             </div>
                         )}
                     </div>
-                )) : locationGroups.map((grp) => (
+                )) : viewMode === 'locations' ? locationGroups.map((grp) => (
                     <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
                         <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
                             <div className="flex items-center justify-between">
@@ -2065,6 +2217,46 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                     <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
                                                 </div>
                                             ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )) : batchGroups.map((grp) => (
+                    <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <Box className="w-4 h-4 text-blue-500" />
+                                    <h3 className="font-semibold text-gray-900">{grp.label}</h3>
+                                    {grp.status && <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${grp.status.color}`}>{grp.status.label}</span>}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">{grp.children.length} items · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                        </button>
+                        {expandedGroups.has(grp.key) && (
+                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                {grp.children.map(item => (
+                                    <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="font-medium text-gray-900">{item.productName}</span>
+                                            <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
+                                        </div>
+                                        <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                            <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                            <span>{item.location || 'Sin ubicación'}</span>
+                                            <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                        </div>
+                                        <div className="flex gap-2 mt-2">
+                                            <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                            <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                            {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                            <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
                                         </div>
                                     </div>
                                 ))}
@@ -2187,7 +2379,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                             ))}
                         </tbody>
                     </table>
-                ) : (
+                ) : viewMode === 'locations' ? (
                     <table className="w-full text-left text-sm text-gray-600">
                         <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
                             <tr>
@@ -2239,6 +2431,82 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                             </button>
                                                         </div>
                                                     ))}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                            <tr>
+                                <th className="px-4 py-3 w-8"></th>
+                                <th className="px-4 py-3">Tanda</th>
+                                <th className="px-4 py-3 text-center">Estado</th>
+                                <th className="px-4 py-3 text-center">Productos</th>
+                                <th className="px-4 py-3 text-center">Unidades</th>
+                                <th className="px-4 py-3 text-right">Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {batchGroups.map((grp) => (
+                                <>{/* Fragment */}
+                                    <tr
+                                        key={grp.key}
+                                        onClick={() => toggleGroup(grp.key)}
+                                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                                    >
+                                        <td className="px-4 py-3 text-gray-400">
+                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                                            <Box className="w-4 h-4 text-blue-500" />
+                                            {grp.label}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            {grp.status ? (
+                                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${grp.status.color}`}>{grp.status.label}</span>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-center text-xs font-semibold">{grp.children.length}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">${grp.totalValue.toLocaleString('es-AR')}</td>
+                                    </tr>
+                                    {expandedGroups.has(grp.key) && grp.children.map(item => (
+                                        <tr key={item.id} className="bg-blue-50/30 border-l-2 border-blue-200">
+                                            <td className="px-4 py-2"></td>
+                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs">
+                                                {item.productName}
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-xs text-gray-500">
+                                                {conditionLabelMap[item.condition || 'nuevo']}
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-xs text-gray-500">
+                                                {item.location || '-'}
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-xs font-semibold">{item.quantity}</td>
+                                            <td className="px-4 py-2 text-right">
+                                                <div className="flex justify-end items-center gap-1">
+                                                    <span className="text-xs font-mono mr-2">${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-0.5">
+                                                        <DollarSign className="w-3 h-3" /> Vender
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all" title="Editar">
+                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                                                        className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
