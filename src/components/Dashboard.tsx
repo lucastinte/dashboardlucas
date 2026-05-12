@@ -746,7 +746,7 @@ export default function Dashboard() {
     };
 
     // Metrics Calculations
-    const stockItems = items.filter(i => i.status === 'in_stock' && i.itemType !== 'personal').sort((a, b) => (a.productName || '').localeCompare(b.productName || ''));
+    const stockItems = items.filter(i => i.status === 'in_stock').sort((a, b) => (a.productName || '').localeCompare(b.productName || ''));
     const soldItems = items.filter(i => i.status === 'sold').sort((a, b) => {
         const dateA = new Date(a.saleDate || a.date || 0).getTime();
         const dateB = new Date(b.saleDate || b.date || 0).getTime();
