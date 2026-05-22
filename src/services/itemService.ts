@@ -94,6 +94,13 @@ export const itemService = {
                 .insert(dbItems.map(item => withoutColumns(item, ['item_type'])))
                 .select());
         }
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+            console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(dbItems.map(item => withoutColumns(item, ['withdrawal_reason', 'no_facturar', 'facturado'])))
+                .select());
+        }
 
         if (error) throw error;
         return (data || []).map(mapFromDb);
@@ -136,6 +143,14 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(withoutColumns(dbItem, ['item_type']))
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+            console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['withdrawal_reason', 'no_facturar', 'facturado']))
                 .select()
                 .single());
         }
@@ -185,6 +200,15 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .update(withoutColumns(dbUpdates, ['item_type']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+            console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['withdrawal_reason', 'no_facturar', 'facturado']))
                 .eq('id', id)
                 .select()
                 .single());
