@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabase';
-import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
+import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason } from '../types';
 
 const hasMissingColumn = (error: { message?: string; details?: string; hint?: string } | null, column: string) => {
     if (!error) return false;
@@ -33,7 +33,8 @@ const mapFromDb = (dbItem: any): Item => ({
     category: dbItem.category || undefined,
     itemType: (dbItem.item_type || 'resale') as ItemType,
     facturado: dbItem.facturado === true,
-    noFacturar: dbItem.no_facturar === true
+    noFacturar: dbItem.no_facturar === true,
+    withdrawalReason: (dbItem.withdrawal_reason || undefined) as WithdrawalReason | undefined
 });
 
 // Helper to map application model to DB columns
@@ -56,6 +57,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.itemType !== undefined) dbItem.item_type = item.itemType;
     if (item.facturado !== undefined) dbItem.facturado = item.facturado;
     if (item.noFacturar !== undefined) dbItem.no_facturar = item.noFacturar;
+    if (item.withdrawalReason !== undefined) dbItem.withdrawal_reason = item.withdrawalReason;
     return dbItem;
 };
 

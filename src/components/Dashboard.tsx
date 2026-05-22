@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Item, ItemCondition, ItemStatus, ItemType } from '../types';
+import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason } from '../types';
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -49,6 +49,12 @@ const getBatchLabel = (batchRef?: string) => {
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const withdrawalLabels: Record<string, { label: string; color: string; bgColor: string }> = {
+    regalo: { label: 'REGALO', color: 'text-pink-700', bgColor: 'bg-pink-100' },
+    uso_personal: { label: 'USO PROPIO', color: 'text-violet-700', bgColor: 'bg-violet-100' },
+    perdida: { label: 'PÉRDIDA', color: 'text-red-700', bgColor: 'bg-red-100' }
+};
 
 const reconcileItemBatchMap = (inventoryItems: Item[], history: Array<Partial<BatchRecord>>, currentMap: Record<string, string>) => {
     if (history.length === 0) return null;
@@ -707,6 +713,17 @@ export default function Dashboard() {
 
 
 
+    const handleWithdraw = async (item: Item, reason: WithdrawalReason) => {
+        try {
+            const nowIso = new Date().toISOString().split('T')[0];
+            setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'sold' as ItemStatus, salePrice: 0, saleDate: nowIso, withdrawalReason: reason, noFacturar: true } : i));
+            await itemService.updateItem(item.id, { status: 'sold', salePrice: 0, saleDate: nowIso, withdrawalReason: reason, noFacturar: true });
+        } catch (err) {
+            console.error('Error withdrawing item:', err);
+            loadItems();
+        }
+    };
+
     const startEdit = (item: Item) => {
         const resolvedBatchRef = getItemBatchRef(item);
         setEditingItem({ ...item, batchRef: resolvedBatchRef });
@@ -946,7 +963,7 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onSell={(item) => {
+                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -1639,7 +1656,10 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     )}
                                     <div>
                                         <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
-                                        {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded mt-0.5 inline-block">PROPIO</span>}
+                                        <div className="flex gap-1 flex-wrap mt-0.5">
+                                            {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded inline-block">PROPIO</span>}
+                                            {item.withdrawalReason && (() => { const w = withdrawalLabels[item.withdrawalReason]; return w ? <span className={`text-[10px] font-bold ${w.bgColor} ${w.color} px-1.5 py-0.5 rounded inline-block`}>{w.label}</span> : null; })()}
+                                        </div>
                                     </div>
                                 </div>
                                 <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
@@ -1780,6 +1800,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                         <div className="flex items-center gap-1.5 truncate">
                                             <span className="truncate" title={item.productName}>{item.productName}</span>
                                             {item.itemType === 'personal' && <span className="text-[9px] font-bold bg-violet-100 text-violet-600 px-1 py-0.5 rounded shrink-0">PROPIO</span>}
+                                            {item.withdrawalReason && (() => { const w = withdrawalLabels[item.withdrawalReason]; return w ? <span className={`text-[9px] font-bold ${w.bgColor} ${w.color} px-1 py-0.5 rounded shrink-0`}>{w.label}</span> : null; })()}
                                         </div>
                                     </td>
                                     <td className="px-2 py-2 text-center">
@@ -1877,7 +1898,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     );
 }
 
-function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, batchHistory }: {
+function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, batchHistory }: {
     items: Item[],
     allItems: Item[],
     onEdit: (i: Item) => void,
@@ -1885,12 +1906,14 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     onSell: (i: Item) => void,
     resolveBatchRef: (item: Item) => string | undefined,
     onSplit: (i: Item) => void,
+    onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     batchHistory: BatchRecord[]
 }) {
     type ViewMode = 'products' | 'locations' | 'batches';
     const [viewMode, setViewMode] = useState<ViewMode>('products');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
+    const [withdrawMenuId, setWithdrawMenuId] = useState<string | null>(null);
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => {
@@ -2176,10 +2199,20 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                             <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
                                             <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                         </div>
-                                        <div className="flex gap-2 mt-2">
+                                        <div className="flex gap-2 mt-2 flex-wrap">
                                             <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
                                             <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
                                             {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                            <div className="relative">
+                                                <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
+                                                {withdrawMenuId === item.id && (
+                                                    <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                        <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                        <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                        <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
                                         </div>
                                     </div>
@@ -2253,10 +2286,20 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                             <span>{item.location || 'Sin ubicación'}</span>
                                             <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                         </div>
-                                        <div className="flex gap-2 mt-2">
+                                        <div className="flex gap-2 mt-2 flex-wrap">
                                             <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
                                             <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
                                             {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                            <div className="relative">
+                                                <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
+                                                {withdrawMenuId === item.id && (
+                                                    <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                        <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                        <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                        <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
                                         </div>
                                     </div>
@@ -2368,6 +2411,19 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                             <Split className="w-3.5 h-3.5" />
                                                         </button>
                                                     )}
+                                                    <div className="relative">
+                                                        <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
+                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all" title="Dar de baja">
+                                                            <Ban className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        {withdrawMenuId === item.id && (
+                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
                                                         className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -2504,6 +2560,19 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all" title="Editar">
                                                         <Edit2 className="w-3.5 h-3.5" />
                                                     </button>
+                                                    <div className="relative">
+                                                        <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
+                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all" title="Dar de baja">
+                                                            <Ban className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        {withdrawMenuId === item.id && (
+                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
                                                         className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -4782,6 +4851,7 @@ function BulkPricingBoard({
                                                         {item.category && <span className="ml-1.5 text-[10px] text-gray-400">({item.category})</span>}
                                                         {item.disposition === 'keep' && <span className="ml-1.5 text-[10px] font-bold text-amber-600">RETENIDO</span>}
                                                         {allSold && <span className="ml-1.5 text-[10px] font-bold text-emerald-600">VENDIDO</span>}
+                                                        {(() => { const wItems = actual.matches.filter((m: Item) => m.withdrawalReason); return wItems.map((m: Item) => { const w = withdrawalLabels[m.withdrawalReason!]; return w ? <span key={m.id} className={`ml-1.5 text-[10px] font-bold ${w.color}`}>{w.label}</span> : null; }); })()}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">{item.quantity}</td>
                                                     <td className="px-3 py-2 text-right text-gray-600">${safeMoney(unitCost).toLocaleString('es-AR')}</td>

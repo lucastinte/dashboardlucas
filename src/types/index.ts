@@ -1,6 +1,7 @@
 export type ItemStatus = 'in_stock' | 'sold';
 export type ItemCondition = 'nuevo' | 'semi_uso' | 'usado';
 export type ItemType = 'resale' | 'personal';
+export type WithdrawalReason = 'regalo' | 'uso_personal' | 'perdida';
 
 export interface Item {
     id: string;
@@ -21,6 +22,7 @@ export interface Item {
     category?: string;
     facturado?: boolean;
     noFacturar?: boolean;
+    withdrawalReason?: WithdrawalReason;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
