@@ -23,6 +23,9 @@ export interface Item {
     facturado?: boolean;
     noFacturar?: boolean;
     withdrawalReason?: WithdrawalReason;
+    envioAplica?: boolean;
+    envioCosto?: number;
+    envioMetodo?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

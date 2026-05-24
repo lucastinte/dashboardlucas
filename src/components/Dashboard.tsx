@@ -3,7 +3,7 @@ import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason } from
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -648,6 +648,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleUpdateEnvio = async (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, ...envio } : i));
+            await itemService.updateItem(id, envio);
+        } catch (err) {
+            console.error('Error updating envio:', err);
+            loadItems();
+        }
+    };
+
     const handleSplitItem = async (item: Item) => {
         if (item.quantity <= 1) return;
         if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
@@ -941,7 +951,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} onUpdateEnvio={handleUpdateEnvio} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -999,6 +1009,7 @@ export default function Dashboard() {
                         items={soldItems}
                         onToggleFacturado={handleToggleFacturado}
                         onToggleNoFacturar={handleToggleNoFacturar}
+                        onUpdateEnvio={handleUpdateEnvio}
                     />
                 )}
             </div>
@@ -1053,15 +1064,18 @@ export default function Dashboard() {
 // Subcomponents
 
 // Facturación Tab - Control de facturación ARCA separado del dashboard de ganancias
-function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
+function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio }: {
     items: Item[],
     onToggleFacturado: (id: string, value: boolean) => void,
-    onToggleNoFacturar: (id: string, value: boolean) => void
+    onToggleNoFacturar: (id: string, value: boolean) => void,
+    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void
 }) {
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    const [facturarItem, setFacturarItem] = useState<Item | null>(null);
 
     const fmtMoney = (n: number) => '$' + Math.round(n).toLocaleString('es-AR');
+    const getItemTotal = (i: Item) => ((i.salePrice || 0) * i.quantity) + (i.envioAplica && i.envioCosto ? i.envioCosto : 0);
 
     // Cutoff: solo contar ventas desde 18/04/2026 en adelante
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
@@ -1084,14 +1098,14 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
     });
 
     // Total del mes
-    const totalMes = facturadosMes.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+    const totalMes = facturadosMes.reduce((acc, i) => acc + getItemTotal(i), 0);
 
     // Total del año (based on selYear)
     const facturadosAnio = facturados.filter(i => {
         if (!i.saleDate) return false;
         return new Date(i.saleDate).getFullYear() === selYear;
     });
-    const totalAnio = facturadosAnio.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+    const totalAnio = facturadosAnio.reduce((acc, i) => acc + getItemTotal(i), 0);
 
     // Rolling 12 meses
     const hace12Meses = new Date(now);
@@ -1101,7 +1115,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
         const d = new Date(i.saleDate);
         return d >= hace12Meses && d <= now;
     });
-    const totalRolling = facturadosRolling.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+    const totalRolling = facturadosRolling.reduce((acc, i) => acc + getItemTotal(i), 0);
     const porcentajeRolling = TOPE.anual > 0 ? (totalRolling / TOPE.anual) * 100 : 0;
 
     // Progress bar color & message
@@ -1129,7 +1143,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
         return {
             month: m,
             label: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m],
-            total: monthItems.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0),
+            total: monthItems.reduce((acc, i) => acc + getItemTotal(i), 0),
             count: monthItems.length
         };
     });
@@ -1324,10 +1338,17 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                             <p className="font-semibold text-gray-900">{item.productName}</p>
                                             <p className="text-xs text-gray-500 mt-0.5">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</p>
                                         </div>
-                                        <p className="font-bold text-gray-900">{fmtMoney((item.salePrice || 0) * item.quantity)}</p>
+                                        <p className="font-bold text-gray-900">{fmtMoney(getItemTotal(item))}</p>
                                     </div>
                                     <div className="mt-2 flex justify-between items-center text-sm">
-                                        <span className="text-gray-500">x{item.quantity} a {fmtMoney(item.salePrice || 0)}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-500">x{item.quantity} a {fmtMoney(item.salePrice || 0)}</span>
+                                            {item.envioAplica && item.envioCosto ? (
+                                                <span className="text-xs text-blue-600 flex items-center gap-0.5" title={item.envioMetodo || 'Envío'}>
+                                                    <Truck className="w-3 h-3" /> +{fmtMoney(item.envioCosto)}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                         <button
                                             onClick={() => onToggleFacturado(item.id, false)}
                                             className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
@@ -1347,6 +1368,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                         <th className="px-6 py-3">Producto</th>
                                         <th className="px-6 py-3 text-center">Cant.</th>
                                         <th className="px-6 py-3 text-right">Precio Unit.</th>
+                                        <th className="px-6 py-3 text-right">Envío</th>
                                         <th className="px-6 py-3 text-right">Total</th>
                                         <th className="px-6 py-3 text-center">Fecha</th>
                                         <th className="px-6 py-3 text-center">Estado</th>
@@ -1360,7 +1382,12 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                                 <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold">{item.quantity}</span>
                                             </td>
                                             <td className="px-6 py-4 text-right font-mono">{fmtMoney(item.salePrice || 0)}</td>
-                                            <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">{fmtMoney((item.salePrice || 0) * item.quantity)}</td>
+                                            <td className="px-6 py-4 text-right font-mono text-xs">
+                                                {item.envioAplica && item.envioCosto ? (
+                                                    <span className="text-blue-600 cursor-help" title={item.envioMetodo || 'Envío'}>{fmtMoney(item.envioCosto)}</span>
+                                                ) : <span className="text-gray-300">-</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">{fmtMoney(getItemTotal(item))}</td>
                                             <td className="px-6 py-4 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
                                             <td className="px-6 py-4 text-center">
                                                 <button
@@ -1377,7 +1404,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                 </tbody>
                                 <tfoot>
                                     <tr className="bg-gray-50 font-bold text-gray-900">
-                                        <td className="px-6 py-3" colSpan={3}>Total del mes</td>
+                                        <td className="px-6 py-3" colSpan={4}>Total del mes</td>
                                         <td className="px-6 py-3 text-right font-mono">{fmtMoney(totalMes)}</td>
                                         <td colSpan={2}></td>
                                     </tr>
@@ -1387,6 +1414,8 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                     </>
                 )}
             </div>
+
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} onUpdateEnvio={onUpdateEnvio} />}
 
             {/* Ventas sin facturar */}
             {(() => {
@@ -1407,7 +1436,8 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                     <tr>
                                         <th className="px-6 py-3">Producto</th>
                                         <th className="px-6 py-3 text-center">Cant.</th>
-                                        <th className="px-6 py-3 text-right">Precio Unit.</th>
+                                        <th className="px-6 py-3 text-right">Precio</th>
+                                        <th className="px-6 py-3 text-right">Envío</th>
                                         <th className="px-6 py-3 text-right">Total</th>
                                         <th className="px-6 py-3 text-center">Fecha Venta</th>
                                         <th className="px-6 py-3 text-center">Accion</th>
@@ -1419,16 +1449,21 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                             <td className="px-6 py-3 font-medium text-gray-900">{item.productName}</td>
                                             <td className="px-6 py-3 text-center text-xs">{item.quantity}</td>
                                             <td className="px-6 py-3 text-right font-mono text-xs">{fmtMoney(item.salePrice || 0)}</td>
-                                            <td className="px-6 py-3 text-right font-mono font-medium">{fmtMoney((item.salePrice || 0) * item.quantity)}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-xs">
+                                                {item.envioAplica && item.envioCosto ? (
+                                                    <span className="text-blue-600 cursor-help" title={item.envioMetodo || 'Envío'}>{fmtMoney(item.envioCosto)}</span>
+                                                ) : <span className="text-gray-300">-</span>}
+                                            </td>
+                                            <td className="px-6 py-3 text-right font-mono font-medium">{fmtMoney(getItemTotal(item))}</td>
                                             <td className="px-6 py-3 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
                                             <td className="px-6 py-3 text-center">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <button
-                                                        onClick={() => onToggleFacturado(item.id, true)}
+                                                        onClick={() => setFacturarItem(item)}
                                                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors inline-flex items-center gap-1"
                                                     >
-                                                        <CheckCircle className="w-3 h-3" />
-                                                        Facturada
+                                                        <FileText className="w-3 h-3" />
+                                                        Facturar
                                                     </button>
                                                     <button
                                                         onClick={() => onToggleNoFacturar(item.id, true)}
@@ -1449,11 +1484,15 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar }: {
                                 <div key={item.id} className="flex justify-between items-center rounded-lg border border-gray-200 p-3">
                                     <div>
                                         <p className="font-medium text-gray-900 text-sm">{item.productName}</p>
-                                        <p className="text-xs text-gray-500">{fmtMoney((item.salePrice || 0) * item.quantity)} — {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}</p>
+                                        <p className="text-xs text-gray-500">
+                                            {fmtMoney((item.salePrice || 0) * item.quantity)}
+                                            {item.envioAplica && item.envioCosto ? <span className="text-blue-600"> +envío {fmtMoney(item.envioCosto)}</span> : null}
+                                            {' — '}{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : ''}
+                                        </p>
                                     </div>
                                     <div className="flex gap-1 flex-shrink-0">
                                         <button
-                                            onClick={() => onToggleFacturado(item.id, true)}
+                                            onClick={() => setFacturarItem(item)}
                                             className="bg-blue-600 text-white text-xs px-2 py-1 rounded"
                                         >
                                             Facturar
@@ -1486,7 +1525,7 @@ function formatDateDDMMAAAA(dateStr: string): string {
 }
 
 // Facturar ARCA Modal
-function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void }) {
+function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void }) {
     const [producto, setProducto] = useState(item.productName);
     const [cantidad, setCantidad] = useState(item.quantity);
     const [precio, setPrecio] = useState(item.salePrice || 0);
@@ -1496,6 +1535,10 @@ function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: ()
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     });
     const [formaPago, setFormaPago] = useState('transferencia');
+    const [envioAplica, setEnvioAplica] = useState(item.envioAplica || false);
+    const [envioCosto, setEnvioCosto] = useState(item.envioCosto || 0);
+    const [envioMetodo, setEnvioMetodo] = useState(item.envioMetodo || '');
+    const [showEnvioWarning, setShowEnvioWarning] = useState(false);
 
     const formasPago = [
         { label: 'Contado', value: 'contado' },
@@ -1508,26 +1551,58 @@ function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: ()
         { label: 'Otros medios de pago electrónico', value: 'electronico' },
     ];
 
+    const metodosEnvio = [
+        'Uber Flash',
+        'Mensajería local',
+        'Correo Andreani',
+        'Correo OCA',
+        'Vía Cargo',
+        'Otro',
+    ];
+
+    const totalProducto = cantidad * Math.round(precio);
+    const totalConEnvio = totalProducto + (envioAplica ? Math.round(envioCosto) : 0);
+
     const handleFacturar = () => {
+        if (envioAplica && envioCosto <= 0) {
+            alert('El costo de envío debe ser mayor a $0');
+            return;
+        }
+        if (envioAplica && envioCosto > precio * cantidad) {
+            if (!showEnvioWarning) {
+                setShowEnvioWarning(true);
+                return;
+            }
+        }
+
         const [y, m, d] = fecha.split('-');
         const fechaFormatted = `${d}/${m}/${y}`;
-        const ventaObj = {
+        const ventaObj: any = {
             fecha: fechaFormatted,
             producto,
             cantidad,
             precio: Math.round(precio),
             formaPago,
+            tipo: 'producto',
         };
+        if (envioAplica && envioCosto > 0) {
+            ventaObj.envio = {
+                metodo: envioMetodo || 'Envío',
+                costo: Math.round(envioCosto),
+            };
+        }
         const base64 = btoa(JSON.stringify(ventaObj));
         const url = `https://fe.afip.gob.ar/rcel/jsp/index_bis.jsp?venta=${encodeURIComponent(base64)}`;
         window.open(url, '_blank');
+
+        onUpdateEnvio?.(item.id, { envioAplica, envioCosto: Math.round(envioCosto), envioMetodo });
         onFacturado?.(item.id);
         onClose();
     };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md ring-1 ring-white/10" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md ring-1 ring-white/10 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="p-6 border-b border-gray-700/50 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-blue-600/20 flex items-center justify-center">
@@ -1595,10 +1670,70 @@ function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: ()
                             ))}
                         </select>
                     </div>
-                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50">
-                        <p className="text-xs text-gray-400">
-                            Total: <span className="text-white font-semibold text-sm">${(cantidad * Math.round(precio)).toLocaleString()}</span>
-                        </p>
+
+                    {/* Envío Section */}
+                    <div className="border border-gray-700/50 rounded-xl p-4 space-y-3">
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${envioAplica ? 'bg-blue-600 border-blue-600' : 'border-gray-600 bg-gray-800'}`}
+                                onClick={() => { setEnvioAplica(!envioAplica); setShowEnvioWarning(false); }}>
+                                {envioAplica && <Check className="w-3.5 h-3.5 text-white" />}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Truck className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-300">Incluye envío</span>
+                            </div>
+                        </label>
+                        {envioAplica && (
+                            <div className="space-y-3 pt-1">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-400 mb-1">Método de envío</label>
+                                    <select
+                                        value={envioMetodo}
+                                        onChange={e => setEnvioMetodo(e.target.value)}
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                                    >
+                                        <option value="">Sin especificar</option>
+                                        {metodosEnvio.map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-400 mb-1">Costo del envío</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={envioCosto}
+                                        onChange={e => { setEnvioCosto(Number(e.target.value)); setShowEnvioWarning(false); }}
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        placeholder="$0"
+                                    />
+                                </div>
+                                {showEnvioWarning && (
+                                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-2.5 flex items-start gap-2">
+                                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                                        <p className="text-xs text-amber-300">El envío supera al precio del producto. Hacé click en "Facturar" de nuevo para confirmar.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 space-y-1">
+                        <div className="flex justify-between text-xs text-gray-400">
+                            <span>Producto ({cantidad} x ${Math.round(precio).toLocaleString()})</span>
+                            <span className="text-gray-300">${totalProducto.toLocaleString()}</span>
+                        </div>
+                        {envioAplica && envioCosto > 0 && (
+                            <div className="flex justify-between text-xs text-gray-400">
+                                <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Envío{envioMetodo ? ` (${envioMetodo})` : ''}</span>
+                                <span className="text-gray-300">${Math.round(envioCosto).toLocaleString()}</span>
+                            </div>
+                        )}
+                        <div className="flex justify-between pt-1 border-t border-gray-700/50">
+                            <span className="text-xs text-gray-400">Total a facturar</span>
+                            <span className="text-white font-semibold text-sm">${totalConEnvio.toLocaleString()}</span>
+                        </div>
                     </div>
                 </div>
                 <div className="p-6 border-t border-gray-700/50 flex gap-3">
@@ -1621,13 +1756,14 @@ function FacturarModal({ item, onClose, onFacturado }: { item: Item; onClose: ()
     );
 }
 
-function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar }: {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     resolveBatchRef: (item: Item) => string | undefined,
     onToggleFacturado: (id: string, value: boolean) => void,
-    onToggleNoFacturar: (id: string, value: boolean) => void
+    onToggleNoFacturar: (id: string, value: boolean) => void,
+    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
@@ -1639,7 +1775,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
 
     return (
         <>
-            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} />}
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} onUpdateEnvio={onUpdateEnvio} />}
             <div className="sm:hidden p-3 space-y-3">
                 {items.map((item) => {
                     const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
