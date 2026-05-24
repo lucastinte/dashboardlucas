@@ -1539,6 +1539,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     const [envioCosto, setEnvioCosto] = useState(item.envioCosto || 0);
     const [envioMetodo, setEnvioMetodo] = useState(item.envioMetodo || '');
     const [showEnvioWarning, setShowEnvioWarning] = useState(false);
+    const [step, setStep] = useState<'form' | 'confirm'>('form');
 
     const formasPago = [
         { label: 'Contado', value: 'contado' },
@@ -1596,161 +1597,212 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
         window.open(url, '_blank');
 
         onUpdateEnvio?.(item.id, { envioAplica, envioCosto: Math.round(envioCosto), envioMetodo });
+        setStep('confirm');
+    };
+
+    const handleConfirmFacturado = () => {
         onFacturado?.(item.id);
         onClose();
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={step === 'form' ? onClose : undefined}>
             <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md ring-1 ring-white/10 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-gray-700/50 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-blue-600/20 flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-blue-400" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-bold text-white">Facturar en ARCA</h2>
-                            <p className="text-sm text-gray-400">Verificá los datos antes de facturar</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 flex items-center justify-center transition-colors">
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Producto</label>
-                        <input
-                            type="text"
-                            value={producto}
-                            onChange={e => setProducto(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1.5">Cantidad</label>
-                            <input
-                                type="number"
-                                min={1}
-                                value={cantidad}
-                                onChange={e => setCantidad(Number(e.target.value))}
-                                className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1.5">Precio unitario</label>
-                            <input
-                                type="number"
-                                min={0}
-                                value={precio}
-                                onChange={e => setPrecio(Number(e.target.value))}
-                                className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Fecha</label>
-                        <input
-                            type="date"
-                            value={fecha}
-                            onChange={e => setFecha(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [color-scheme:dark]"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Forma de pago</label>
-                        <select
-                            value={formaPago}
-                            onChange={e => setFormaPago(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                        >
-                            {formasPago.map(fp => (
-                                <option key={fp.value} value={fp.value}>{fp.label}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Envío Section */}
-                    <div className="border border-gray-700/50 rounded-xl p-4 space-y-3">
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${envioAplica ? 'bg-blue-600 border-blue-600' : 'border-gray-600 bg-gray-800'}`}
-                                onClick={() => { setEnvioAplica(!envioAplica); setShowEnvioWarning(false); }}>
-                                {envioAplica && <Check className="w-3.5 h-3.5 text-white" />}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Truck className="w-4 h-4 text-gray-400" />
-                                <span className="text-sm font-medium text-gray-300">Incluye envío</span>
-                            </div>
-                        </label>
-                        {envioAplica && (
-                            <div className="space-y-3 pt-1">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-400 mb-1">Método de envío</label>
-                                    <select
-                                        value={envioMetodo}
-                                        onChange={e => setEnvioMetodo(e.target.value)}
-                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                                    >
-                                        <option value="">Sin especificar</option>
-                                        {metodosEnvio.map(m => (
-                                            <option key={m} value={m}>{m}</option>
-                                        ))}
-                                    </select>
+                {step === 'form' ? (
+                    <>
+                        <div className="p-6 border-b border-gray-700/50 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-xl bg-blue-600/20 flex items-center justify-center">
+                                    <FileText className="w-5 h-5 text-blue-400" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-400 mb-1">Costo del envío</label>
+                                    <h2 className="text-lg font-bold text-white">Facturar en ARCA</h2>
+                                    <p className="text-sm text-gray-400">Verificá los datos antes de facturar</p>
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="h-8 w-8 rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 flex items-center justify-center transition-colors">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1.5">Producto</label>
+                                <input
+                                    type="text"
+                                    value={producto}
+                                    onChange={e => setProducto(e.target.value)}
+                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Cantidad</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={cantidad}
+                                        onChange={e => setCantidad(Number(e.target.value))}
+                                        className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Precio unitario</label>
                                     <input
                                         type="number"
                                         min={0}
-                                        value={envioCosto}
-                                        onChange={e => { setEnvioCosto(Number(e.target.value)); setShowEnvioWarning(false); }}
-                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                        placeholder="$0"
+                                        value={precio}
+                                        onChange={e => setPrecio(Number(e.target.value))}
+                                        className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                 </div>
-                                {showEnvioWarning && (
-                                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-2.5 flex items-start gap-2">
-                                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                                        <p className="text-xs text-amber-300">El envío supera al precio del producto. Hacé click en "Facturar" de nuevo para confirmar.</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1.5">Fecha</label>
+                                <input
+                                    type="date"
+                                    value={fecha}
+                                    onChange={e => setFecha(e.target.value)}
+                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [color-scheme:dark]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1.5">Forma de pago</label>
+                                <select
+                                    value={formaPago}
+                                    onChange={e => setFormaPago(e.target.value)}
+                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                                >
+                                    {formasPago.map(fp => (
+                                        <option key={fp.value} value={fp.value}>{fp.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Envío Section */}
+                            <div className="border border-gray-700/50 rounded-xl p-4 space-y-3">
+                                <label className="flex items-center gap-3 cursor-pointer select-none">
+                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${envioAplica ? 'bg-blue-600 border-blue-600' : 'border-gray-600 bg-gray-800'}`}
+                                        onClick={() => { setEnvioAplica(!envioAplica); setShowEnvioWarning(false); }}>
+                                        {envioAplica && <Check className="w-3.5 h-3.5 text-white" />}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Truck className="w-4 h-4 text-gray-400" />
+                                        <span className="text-sm font-medium text-gray-300">Incluye envío</span>
+                                    </div>
+                                </label>
+                                {envioAplica && (
+                                    <div className="space-y-3 pt-1">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-400 mb-1">Método de envío</label>
+                                            <select
+                                                value={envioMetodo}
+                                                onChange={e => setEnvioMetodo(e.target.value)}
+                                                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                                            >
+                                                <option value="">Sin especificar</option>
+                                                {metodosEnvio.map(m => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-400 mb-1">Costo del envío</label>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={envioCosto}
+                                                onChange={e => { setEnvioCosto(Number(e.target.value)); setShowEnvioWarning(false); }}
+                                                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                placeholder="$0"
+                                            />
+                                        </div>
+                                        {showEnvioWarning && (
+                                            <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-2.5 flex items-start gap-2">
+                                                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                                                <p className="text-xs text-amber-300">El envío supera al precio del producto. Hacé click en "Facturar" de nuevo para confirmar.</p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
 
-                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 space-y-1">
-                        <div className="flex justify-between text-xs text-gray-400">
-                            <span>Producto ({cantidad} x ${Math.round(precio).toLocaleString()})</span>
-                            <span className="text-gray-300">${totalProducto.toLocaleString()}</span>
-                        </div>
-                        {envioAplica && envioCosto > 0 && (
-                            <div className="flex justify-between text-xs text-gray-400">
-                                <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Envío{envioMetodo ? ` (${envioMetodo})` : ''}</span>
-                                <span className="text-gray-300">${Math.round(envioCosto).toLocaleString()}</span>
+                            <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 space-y-1">
+                                <div className="flex justify-between text-xs text-gray-400">
+                                    <span>Producto ({cantidad} x ${Math.round(precio).toLocaleString()})</span>
+                                    <span className="text-gray-300">${totalProducto.toLocaleString()}</span>
+                                </div>
+                                {envioAplica && envioCosto > 0 && (
+                                    <div className="flex justify-between text-xs text-gray-400">
+                                        <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Envío{envioMetodo ? ` (${envioMetodo})` : ''}</span>
+                                        <span className="text-gray-300">${Math.round(envioCosto).toLocaleString()}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between pt-1 border-t border-gray-700/50">
+                                    <span className="text-xs text-gray-400">Total a facturar</span>
+                                    <span className="text-white font-semibold text-sm">${totalConEnvio.toLocaleString()}</span>
+                                </div>
                             </div>
-                        )}
-                        <div className="flex justify-between pt-1 border-t border-gray-700/50">
-                            <span className="text-xs text-gray-400">Total a facturar</span>
-                            <span className="text-white font-semibold text-sm">${totalConEnvio.toLocaleString()}</span>
                         </div>
-                    </div>
-                </div>
-                <div className="p-6 border-t border-gray-700/50 flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 px-4 py-2.5 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700 transition-colors font-medium text-sm"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleFacturar}
-                        className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                    >
-                        <FileText className="w-4 h-4" />
-                        Facturar en ARCA
-                    </button>
-                </div>
+                        <div className="p-6 border-t border-gray-700/50 flex gap-3">
+                            <button
+                                onClick={onClose}
+                                className="flex-1 px-4 py-2.5 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700 transition-colors font-medium text-sm"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleFacturar}
+                                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                            >
+                                <FileText className="w-4 h-4" />
+                                Facturar en ARCA
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="p-6 border-b border-gray-700/50 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-xl bg-amber-600/20 flex items-center justify-center">
+                                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-white">Confirmar facturación</h2>
+                                    <p className="text-sm text-gray-400">¿Se completó correctamente en ARCA?</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                                <p className="text-sm text-gray-300 font-medium">{producto}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {cantidad} x ${Math.round(precio).toLocaleString()}
+                                    {envioAplica && envioCosto > 0 ? ` + envío $${Math.round(envioCosto).toLocaleString()}` : ''}
+                                    {' = '}<span className="text-white font-semibold">${totalConEnvio.toLocaleString()}</span>
+                                </p>
+                            </div>
+                            <p className="text-sm text-gray-400 text-center">
+                                Si la facturación fue exitosa, marcala como facturada. Si hubo algún problema, podés cerrar sin marcar.
+                            </p>
+                        </div>
+                        <div className="p-6 border-t border-gray-700/50 flex gap-3">
+                            <button
+                                onClick={onClose}
+                                className="flex-1 px-4 py-2.5 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                            >
+                                <XCircle className="w-4 h-4" />
+                                No se facturó
+                            </button>
+                            <button
+                                onClick={handleConfirmFacturado}
+                                className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                            >
+                                <CheckCircle className="w-4 h-4" />
+                                Sí, facturada
+                            </button>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );
