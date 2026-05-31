@@ -1419,7 +1419,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
 
             {/* Ventas sin facturar */}
             {(() => {
-                const sinFacturar = items.filter(i => !i.facturado && !i.noFacturar && i.saleDate && afterCutoff(i.saleDate) && i.condition !== 'usado');
+                const sinFacturar = items.filter(i => !i.facturado && !i.noFacturar && i.saleDate && afterCutoff(i.saleDate) && (i.itemType === 'personal' || i.condition !== 'usado'));
                 if (sinFacturar.length === 0) return null;
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
@@ -1821,7 +1821,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
-    const canFacturar = (item: Item) => item.saleDate && new Date(item.saleDate) >= FACTURACION_CUTOFF && item.condition !== 'usado';
+    const canFacturar = (item: Item) => item.saleDate && new Date(item.saleDate) >= FACTURACION_CUTOFF && (item.itemType === 'personal' || item.condition !== 'usado');
 
     if (items.length === 0) {
         return <div className="p-8 sm:p-12 text-center text-gray-400">No hay ventas registradas aún.</div>;
