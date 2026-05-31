@@ -1526,7 +1526,9 @@ function formatDateDDMMAAAA(dateStr: string): string {
 
 // Facturar ARCA Modal
 function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void }) {
-    const [producto, setProducto] = useState(item.productName);
+    const [producto, setProducto] = useState(
+        item.itemType === 'personal' ? `${item.productName} usado` : item.productName
+    );
     const [cantidad, setCantidad] = useState(item.quantity);
     const [precio, setPrecio] = useState(item.salePrice || 0);
     const [fecha, setFecha] = useState(() => {
