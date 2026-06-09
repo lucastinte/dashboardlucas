@@ -965,37 +965,37 @@ export default function Dashboard() {
 
                         {/* Cobros Pendientes */}
                         {cobrosPendientes.length > 0 && (
-                            <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
-                                <div className="p-4 sm:p-6 border-b border-amber-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                            <div className="rounded-2xl shadow-sm border overflow-hidden bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800/50">
+                                <div className="p-4 sm:p-6 border-b border-amber-200 dark:border-amber-800/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                                            <Banknote className="w-5 h-5 text-amber-600" />
+                                        <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                                            <Banknote className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                                         </div>
                                         <div>
-                                            <h2 className="text-lg sm:text-xl font-bold text-gray-800">Cobros Pendientes</h2>
-                                            <p className="text-xs text-amber-700">{cobrosPendientes.length} venta{cobrosPendientes.length > 1 ? 's' : ''} sin cobrar — Total: <span className="font-bold">${totalCobrosPendientes.toLocaleString()}</span></p>
+                                            <h2 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100">Cobros Pendientes</h2>
+                                            <p className="text-xs text-amber-700 dark:text-amber-400">{cobrosPendientes.length} venta{cobrosPendientes.length > 1 ? 's' : ''} sin cobrar — Total: <span className="font-bold">${totalCobrosPendientes.toLocaleString()}</span></p>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="divide-y divide-amber-100">
+                                <div className="divide-y divide-amber-100 dark:divide-amber-800/40">
                                     {cobrosPendientes.map(item => (
                                         <div key={item.id} className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-3 min-w-0">
                                                 {item.imageUrl && (
-                                                    <div className="w-8 h-8 rounded-md overflow-hidden border border-amber-200 flex-shrink-0">
+                                                    <div className="w-8 h-8 rounded-md overflow-hidden border border-amber-200 dark:border-amber-800/50 flex-shrink-0">
                                                         <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                 )}
                                                 <div className="min-w-0">
-                                                    <p className="font-medium text-gray-900 text-sm truncate">{item.productName}</p>
-                                                    <p className="text-xs text-amber-700">
+                                                    <p className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{item.productName}</p>
+                                                    <p className="text-xs text-amber-700 dark:text-amber-400">
                                                         Vendedor: <span className="font-semibold">{item.vendedor}</span>
-                                                        {item.saleDate && <span className="ml-2 text-amber-500">— {new Date(item.saleDate).toLocaleDateString('es-AR')}</span>}
+                                                        {item.saleDate && <span className="ml-2 text-amber-500 dark:text-amber-500/70">— {new Date(item.saleDate).toLocaleDateString('es-AR')}</span>}
                                                     </p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3 shrink-0">
-                                                <span className="font-bold text-gray-900 text-sm">${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
+                                                <span className="font-bold text-gray-900 dark:text-gray-100 text-sm">${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
                                                 <button
                                                     onClick={() => handleToggleCobrado(item.id, true)}
                                                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
@@ -1980,14 +1980,14 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                             {item.cobrado === false ? (
                                                 <button
                                                     onClick={() => onToggleCobrado(item.id, true)}
-                                                    className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+                                                    className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                                                 >
                                                     PENDIENTE
                                                 </button>
                                             ) : (
                                                 <button
                                                     onClick={() => onToggleCobrado(item.id, false)}
-                                                    className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                    className="text-[10px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
                                                 >
                                                     COBRADO
                                                 </button>
@@ -2121,12 +2121,12 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     </td>
                                     <td className="px-2 py-2 text-center whitespace-nowrap">
                                         {item.vendedor ? (
-                                            <div className="flex flex-col items-center gap-0.5">
-                                                <span className="text-[10px] text-gray-500">{item.vendedor}</span>
+                                            <div className="flex flex-col items-center gap-1">
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">{item.vendedor}</span>
                                                 {item.cobrado === false ? (
                                                     <button
                                                         onClick={() => onToggleCobrado(item.id, true)}
-                                                        className="bg-amber-100 hover:bg-emerald-100 text-amber-700 hover:text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                                                        className="bg-amber-500/20 hover:bg-emerald-500/20 text-amber-600 dark:text-amber-400 hover:text-emerald-600 dark:hover:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded transition-colors"
                                                         title="Click para marcar como cobrado"
                                                     >
                                                         PENDIENTE
@@ -2134,7 +2134,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 ) : (
                                                     <button
                                                         onClick={() => onToggleCobrado(item.id, false)}
-                                                        className="bg-emerald-100 hover:bg-amber-100 text-emerald-700 hover:text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                                                        className="bg-emerald-500/20 hover:bg-amber-500/20 text-emerald-600 dark:text-emerald-400 hover:text-amber-600 dark:hover:text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded transition-colors"
                                                         title="Click para marcar como pendiente"
                                                     >
                                                         COBRADO

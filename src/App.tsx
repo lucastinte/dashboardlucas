@@ -1,9 +1,10 @@
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
+import ResetPassword from './components/ResetPassword'
 
 function AppContent() {
-  const { session, loading } = useAuth()
+  const { session, loading, isRecovery } = useAuth()
 
   if (loading) {
     return (
@@ -12,6 +13,8 @@ function AppContent() {
       </div>
     )
   }
+
+  if (isRecovery && session) return <ResetPassword />
 
   return session ? <Dashboard /> : <Login />
 }
