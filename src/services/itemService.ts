@@ -37,7 +37,9 @@ const mapFromDb = (dbItem: any): Item => ({
     withdrawalReason: (dbItem.withdrawal_reason || undefined) as WithdrawalReason | undefined,
     envioAplica: dbItem.envio_aplica === true,
     envioCosto: dbItem.envio_costo ? Number(dbItem.envio_costo) : undefined,
-    envioMetodo: dbItem.envio_metodo || undefined
+    envioMetodo: dbItem.envio_metodo || undefined,
+    cobrado: dbItem.cobrado !== false,
+    vendedor: dbItem.vendedor || undefined
 });
 
 // Helper to map application model to DB columns
@@ -64,6 +66,8 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.envioAplica !== undefined) dbItem.envio_aplica = item.envioAplica;
     if (item.envioCosto !== undefined) dbItem.envio_costo = item.envioCosto;
     if (item.envioMetodo !== undefined) dbItem.envio_metodo = item.envioMetodo;
+    if (item.cobrado !== undefined) dbItem.cobrado = item.cobrado;
+    if (item.vendedor !== undefined) dbItem.vendedor = item.vendedor;
     return dbItem;
 };
 
@@ -112,6 +116,13 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(dbItems.map(item => withoutColumns(item, ['envio_aplica', 'envio_costo', 'envio_metodo'])))
+                .select());
+        }
+        if (hasMissingColumn(error, 'cobrado') || hasMissingColumn(error, 'vendedor')) {
+            console.warn('Supabase: cobrado/vendedor columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(dbItems.map(item => withoutColumns(item, ['cobrado', 'vendedor'])))
                 .select());
         }
 
@@ -172,6 +183,14 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(withoutColumns(dbItem, ['envio_aplica', 'envio_costo', 'envio_metodo']))
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'cobrado') || hasMissingColumn(error, 'vendedor')) {
+            console.warn('Supabase: cobrado/vendedor columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['cobrado', 'vendedor']))
                 .select()
                 .single());
         }
@@ -239,6 +258,15 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .update(withoutColumns(dbUpdates, ['envio_aplica', 'envio_costo', 'envio_metodo']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'cobrado') || hasMissingColumn(error, 'vendedor')) {
+            console.warn('Supabase: cobrado/vendedor columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['cobrado', 'vendedor']))
                 .eq('id', id)
                 .select()
                 .single());

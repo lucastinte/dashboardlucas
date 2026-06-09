@@ -3,7 +3,8 @@ import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason } from
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -126,6 +127,7 @@ const reconcileItemBatchMap = (inventoryItems: Item[], history: Array<Partial<Ba
 };
 
 export default function Dashboard() {
+    const { signOut } = useAuth();
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -479,7 +481,9 @@ export default function Dashboard() {
                     location: formData.location ?? editingItem.location,
                     estimatedSalePrice: formData.estimatedSalePrice ?? editingItem.estimatedSalePrice,
                     publishUrls: formData.publishUrls ?? editingItem.publishUrls,
-                    imageUrl: formData.imageUrl ?? editingItem.imageUrl
+                    imageUrl: formData.imageUrl ?? editingItem.imageUrl,
+                    vendedor: formData.vendedor !== undefined ? (formData.vendedor || undefined) : editingItem.vendedor,
+                    cobrado: formData.cobrado !== undefined ? formData.cobrado : editingItem.cobrado
                 };
 
                 // Optimistic UI update
@@ -590,7 +594,9 @@ export default function Dashboard() {
                     estimatedSalePrice: formData.estimatedSalePrice || 0,
                     publishUrls: formData.publishUrls || '',
                     imageUrl: formData.imageUrl || '',
-                    saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined
+                    saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined,
+                    vendedor: formData.vendedor || undefined,
+                    cobrado: formData.vendedor ? false : true
                 };
 
                 // Optimistic UI update (temporary ID)
@@ -654,6 +660,16 @@ export default function Dashboard() {
             await itemService.updateItem(id, envio);
         } catch (err) {
             console.error('Error updating envio:', err);
+            loadItems();
+        }
+    };
+
+    const handleToggleCobrado = async (id: string, value: boolean) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, cobrado: value } : i));
+            await itemService.updateItem(id, { cobrado: value });
+        } catch (err) {
+            console.error('Error updating cobrado:', err);
             loadItems();
         }
     };
@@ -796,6 +812,10 @@ export default function Dashboard() {
     // Stock value (potential revenue or sunk cost)
     const totalStockValue = stockItems.reduce((acc, item) => acc + (item.purchasePrice * item.quantity), 0);
 
+    // Cobros pendientes
+    const cobrosPendientes = soldItems.filter(i => i.cobrado === false && i.vendedor);
+    const totalCobrosPendientes = cobrosPendientes.reduce((acc, i) => acc + ((i.salePrice || 0) * i.quantity), 0);
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -884,6 +904,16 @@ export default function Dashboard() {
                             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
                             <span className="text-sm font-medium">{theme === 'light' ? 'Oscuro' : 'Claro'}</span>
                         </button>
+
+                        <button
+                            type="button"
+                            onClick={signOut}
+                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            title="Cerrar sesión"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            <span className="text-sm font-medium hidden sm:inline">Salir</span>
+                        </button>
                     </div>
                 </div>
 
@@ -933,6 +963,53 @@ export default function Dashboard() {
                             </div>
                         </div>
 
+                        {/* Cobros Pendientes */}
+                        {cobrosPendientes.length > 0 && (
+                            <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
+                                <div className="p-4 sm:p-6 border-b border-amber-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                                            <Banknote className="w-5 h-5 text-amber-600" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg sm:text-xl font-bold text-gray-800">Cobros Pendientes</h2>
+                                            <p className="text-xs text-amber-700">{cobrosPendientes.length} venta{cobrosPendientes.length > 1 ? 's' : ''} sin cobrar — Total: <span className="font-bold">${totalCobrosPendientes.toLocaleString()}</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="divide-y divide-amber-100">
+                                    {cobrosPendientes.map(item => (
+                                        <div key={item.id} className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                {item.imageUrl && (
+                                                    <div className="w-8 h-8 rounded-md overflow-hidden border border-amber-200 flex-shrink-0">
+                                                        <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                )}
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-gray-900 text-sm truncate">{item.productName}</p>
+                                                    <p className="text-xs text-amber-700">
+                                                        Vendedor: <span className="font-semibold">{item.vendedor}</span>
+                                                        {item.saleDate && <span className="ml-2 text-amber-500">— {new Date(item.saleDate).toLocaleDateString('es-AR')}</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className="font-bold text-gray-900 text-sm">${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
+                                                <button
+                                                    onClick={() => handleToggleCobrado(item.id, true)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    Cobrado
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Recent Sales Table */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-gray-50/30">
@@ -951,7 +1028,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} onUpdateEnvio={handleUpdateEnvio} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} onUpdateEnvio={handleUpdateEnvio} onToggleCobrado={handleToggleCobrado} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -1810,14 +1887,15 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     );
 }
 
-function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio }: {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio, onToggleCobrado }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     resolveBatchRef: (item: Item) => string | undefined,
     onToggleFacturado: (id: string, value: boolean) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
-    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void
+    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void,
+    onToggleCobrado: (id: string, value: boolean) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
@@ -1894,6 +1972,29 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     <p className="text-gray-400 text-xs">Tanda</p>
                                     <p className="font-medium text-gray-700">{resolveBatchRef(item) || 'Venta directa'}</p>
                                 </div>
+                                {item.vendedor && (
+                                    <div className="col-span-2">
+                                        <p className="text-gray-400 text-xs">Vendedor</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium text-gray-700">{item.vendedor}</p>
+                                            {item.cobrado === false ? (
+                                                <button
+                                                    onClick={() => onToggleCobrado(item.id, true)}
+                                                    className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+                                                >
+                                                    PENDIENTE
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => onToggleCobrado(item.id, false)}
+                                                    className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                >
+                                                    COBRADO
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="mt-4 flex gap-2">
                                 <button
@@ -1964,6 +2065,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                             <th className="px-2 py-3 text-center">Estado</th>
                             <th className="px-2 py-3 text-center">Ubic.</th>
                             <th className="px-2 py-3 text-center">Tanda</th>
+                            <th className="px-2 py-3 text-center">Cobro</th>
                             <th className="px-2 py-3 text-center whitespace-nowrap">F. Venta</th>
                             <th className="px-2 py-3 text-center">Facturar</th>
                             <th className="px-2 py-3 text-center w-20">Acción</th>
@@ -2016,6 +2118,32 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     </td>
                                     <td className="px-2 py-2 text-center text-[11px] text-gray-600 font-medium whitespace-nowrap">
                                         {resolveBatchRef(item) || 'Directa'}
+                                    </td>
+                                    <td className="px-2 py-2 text-center whitespace-nowrap">
+                                        {item.vendedor ? (
+                                            <div className="flex flex-col items-center gap-0.5">
+                                                <span className="text-[10px] text-gray-500">{item.vendedor}</span>
+                                                {item.cobrado === false ? (
+                                                    <button
+                                                        onClick={() => onToggleCobrado(item.id, true)}
+                                                        className="bg-amber-100 hover:bg-emerald-100 text-amber-700 hover:text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                                                        title="Click para marcar como cobrado"
+                                                    >
+                                                        PENDIENTE
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => onToggleCobrado(item.id, false)}
+                                                        className="bg-emerald-100 hover:bg-amber-100 text-emerald-700 hover:text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                                                        title="Click para marcar como pendiente"
+                                                    >
+                                                        COBRADO
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-[11px] text-gray-400">—</span>
+                                        )}
                                     </td>
                                     <td className="px-2 py-2 text-center text-gray-400 text-[11px] whitespace-nowrap">
                                         {item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}
@@ -3516,6 +3644,23 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     />
                 </div>
             </div>
+
+            {formData.status === 'sold' && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vendedor (opcional)</label>
+                    <input
+                        type="text"
+                        placeholder="Ej: María, Juan — dejar vacío si cobraste vos"
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                        value={formData.vendedor || ''}
+                        onChange={e => {
+                            const vendedor = e.target.value;
+                            setFormData({ ...formData, vendedor: vendedor || undefined, cobrado: vendedor ? false : true });
+                        }}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Si indicás un vendedor, la venta queda como "cobro pendiente"</p>
+                </div>
+            )}
 
             {isEditing && batchCodes.length > 0 && (
                 <div>

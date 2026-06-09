@@ -26,6 +26,8 @@ export interface Item {
     envioAplica?: boolean;
     envioCosto?: number;
     envioMetodo?: string;
+    cobrado?: boolean;
+    vendedor?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
