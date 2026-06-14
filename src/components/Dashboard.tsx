@@ -654,7 +654,7 @@ export default function Dashboard() {
         }
     };
 
-    const handleUpdateEnvio = async (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => {
+    const handleUpdateEnvio = async (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => {
         try {
             setItems(prev => prev.map(i => i.id === id ? { ...i, ...envio } : i));
             await itemService.updateItem(id, envio);
@@ -1145,7 +1145,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
     items: Item[],
     onToggleFacturado: (id: string, value: boolean) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
-    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void
+    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void
 }) {
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -1602,7 +1602,7 @@ function formatDateDDMMAAAA(dateStr: string): string {
 }
 
 // Facturar ARCA Modal
-function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void }) {
+function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void }) {
     const [producto, setProducto] = useState(
         item.itemType === 'personal' ? `${item.productName} usado` : item.productName
     );
@@ -1613,7 +1613,8 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
         const d = new Date(item.saleDate);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     });
-    const [formaPago, setFormaPago] = useState('transferencia');
+    const [formasPagoSelected, setFormasPagoSelected] = useState<string[]>(item.formasPago || ['transferencia']);
+    const [montos, setMontos] = useState<Record<string, number>>({});
     const [envioAplica, setEnvioAplica] = useState(item.envioAplica || false);
     const [envioCosto, setEnvioCosto] = useState(item.envioCosto || 0);
     const [envioMetodo, setEnvioMetodo] = useState(item.envioMetodo || '');
@@ -1643,6 +1644,34 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     const totalProducto = cantidad * Math.round(precio);
     const totalConEnvio = totalProducto + (envioAplica ? Math.round(envioCosto) : 0);
 
+    const sumaMontos = Object.values(montos).reduce((a, b) => a + b, 0);
+    const multiPago = formasPagoSelected.length > 1;
+
+    const toggleFormaPago = (value: string) => {
+        setFormasPagoSelected(prev => {
+            if (prev.includes(value)) {
+                if (prev.length === 1) return prev;
+                setMontos(m => { const next = { ...m }; delete next[value]; return next; });
+                return prev.filter(v => v !== value);
+            }
+            return [...prev, value];
+        });
+    };
+
+    const mapMontosToDb = () => {
+        let efectivo = 0, transferencia = 0, tarjeta = 0, mercadoPago = 0, otro = 0;
+        for (const [key, val] of Object.entries(montos)) {
+            switch (key) {
+                case 'contado': efectivo += val; break;
+                case 'transferencia': transferencia += val; break;
+                case 'tarjeta_debito': case 'tarjeta_credito': tarjeta += val; break;
+                case 'electronico': mercadoPago += val; break;
+                default: otro += val; break;
+            }
+        }
+        return { montoEfectivo: efectivo, montoTransferencia: transferencia, montoTarjeta: tarjeta, montoMercadoPago: mercadoPago, montoOtro: otro };
+    };
+
     const handleFacturar = () => {
         if (envioAplica && envioCosto <= 0) {
             alert('El costo de envío debe ser mayor a $0');
@@ -1662,7 +1691,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
             producto,
             cantidad,
             precio: Math.round(precio),
-            formaPago,
+            formasPago: formasPagoSelected,
             tipo: 'producto',
         };
         if (envioAplica && envioCosto > 0) {
@@ -1675,7 +1704,8 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
         const url = `https://fe.afip.gob.ar/rcel/jsp/index_bis.jsp?venta=${encodeURIComponent(base64)}`;
         window.open(url, '_blank');
 
-        onUpdateEnvio?.(item.id, { envioAplica, envioCosto: Math.round(envioCosto), envioMetodo });
+        const pagoDb = multiPago ? mapMontosToDb() : {};
+        onUpdateEnvio?.(item.id, { envioAplica, envioCosto: Math.round(envioCosto), envioMetodo, formasPago: formasPagoSelected, ...pagoDb });
         setStep('confirm');
     };
 
@@ -1745,16 +1775,58 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1.5">Forma de pago</label>
-                                <select
-                                    value={formaPago}
-                                    onChange={e => setFormaPago(e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                                >
-                                    {formasPago.map(fp => (
-                                        <option key={fp.value} value={fp.value}>{fp.label}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Forma de pago</label>
+                                <div className="border border-gray-700/50 rounded-xl p-3 space-y-1.5 max-h-52 overflow-y-auto">
+                                    {formasPago.map(fp => {
+                                        const checked = formasPagoSelected.includes(fp.value);
+                                        return (
+                                            <div key={fp.value} className="flex items-center gap-2">
+                                                <div
+                                                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-600 bg-gray-800 hover:border-gray-500'}`}
+                                                    onClick={() => toggleFormaPago(fp.value)}
+                                                >
+                                                    {checked && <Check className="w-3.5 h-3.5 text-white" />}
+                                                </div>
+                                                <span
+                                                    className={`text-sm flex-1 cursor-pointer select-none ${checked ? 'text-white' : 'text-gray-400'}`}
+                                                    onClick={() => toggleFormaPago(fp.value)}
+                                                >
+                                                    {fp.label}
+                                                </span>
+                                                {multiPago && checked && (
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-xs text-gray-500">$</span>
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            value={montos[fp.value] || ''}
+                                                            onChange={e => setMontos(prev => ({ ...prev, [fp.value]: Number(e.target.value) }))}
+                                                            className="w-24 px-2 py-1 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                                            placeholder="0"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {multiPago && (
+                                    <div className={`mt-2 rounded-lg p-2 flex items-center gap-2 text-xs ${
+                                        sumaMontos === totalConEnvio
+                                            ? 'bg-emerald-900/30 border border-emerald-700/50 text-emerald-300'
+                                            : sumaMontos > 0
+                                                ? 'bg-amber-900/30 border border-amber-700/50 text-amber-300'
+                                                : 'bg-gray-800/50 border border-gray-700/50 text-gray-400'
+                                    }`}>
+                                        {sumaMontos === totalConEnvio ? (
+                                            <><CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> Montos verificados: ${sumaMontos.toLocaleString()}</>
+                                        ) : sumaMontos > 0 ? (
+                                            <><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> Suma ${sumaMontos.toLocaleString()} ≠ Total ${totalConEnvio.toLocaleString()}</>
+                                        ) : (
+                                            <span>Ingresá los montos por forma de pago (total: ${totalConEnvio.toLocaleString()})</span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Envío Section */}
@@ -1894,7 +1966,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     resolveBatchRef: (item: Item) => string | undefined,
     onToggleFacturado: (id: string, value: boolean) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
-    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string }) => void,
+    onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void,
     onToggleCobrado: (id: string, value: boolean) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);

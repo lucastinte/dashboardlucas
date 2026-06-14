@@ -39,7 +39,13 @@ const mapFromDb = (dbItem: any): Item => ({
     envioCosto: dbItem.envio_costo ? Number(dbItem.envio_costo) : undefined,
     envioMetodo: dbItem.envio_metodo || undefined,
     cobrado: dbItem.cobrado !== false,
-    vendedor: dbItem.vendedor || undefined
+    vendedor: dbItem.vendedor || undefined,
+    formasPago: dbItem.formas_pago || undefined,
+    montoEfectivo: dbItem.monto_efectivo != null ? Number(dbItem.monto_efectivo) : undefined,
+    montoTransferencia: dbItem.monto_transferencia != null ? Number(dbItem.monto_transferencia) : undefined,
+    montoTarjeta: dbItem.monto_tarjeta != null ? Number(dbItem.monto_tarjeta) : undefined,
+    montoMercadoPago: dbItem.monto_mercado_pago != null ? Number(dbItem.monto_mercado_pago) : undefined,
+    montoOtro: dbItem.monto_otro != null ? Number(dbItem.monto_otro) : undefined,
 });
 
 // Helper to map application model to DB columns
@@ -68,6 +74,12 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.envioMetodo !== undefined) dbItem.envio_metodo = item.envioMetodo;
     if (item.cobrado !== undefined) dbItem.cobrado = item.cobrado;
     if (item.vendedor !== undefined) dbItem.vendedor = item.vendedor;
+    if (item.formasPago !== undefined) dbItem.formas_pago = item.formasPago;
+    if (item.montoEfectivo !== undefined) dbItem.monto_efectivo = item.montoEfectivo;
+    if (item.montoTransferencia !== undefined) dbItem.monto_transferencia = item.montoTransferencia;
+    if (item.montoTarjeta !== undefined) dbItem.monto_tarjeta = item.montoTarjeta;
+    if (item.montoMercadoPago !== undefined) dbItem.monto_mercado_pago = item.montoMercadoPago;
+    if (item.montoOtro !== undefined) dbItem.monto_otro = item.montoOtro;
     return dbItem;
 };
 
@@ -123,6 +135,13 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(dbItems.map(item => withoutColumns(item, ['cobrado', 'vendedor'])))
+                .select());
+        }
+        if (hasMissingColumn(error, 'formas_pago') || hasMissingColumn(error, 'monto_efectivo') || hasMissingColumn(error, 'monto_transferencia') || hasMissingColumn(error, 'monto_tarjeta') || hasMissingColumn(error, 'monto_mercado_pago') || hasMissingColumn(error, 'monto_otro')) {
+            console.warn('Supabase: pago columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(dbItems.map(item => withoutColumns(item, ['formas_pago', 'monto_efectivo', 'monto_transferencia', 'monto_tarjeta', 'monto_mercado_pago', 'monto_otro'])))
                 .select());
         }
 
@@ -191,6 +210,14 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .insert(withoutColumns(dbItem, ['cobrado', 'vendedor']))
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'formas_pago') || hasMissingColumn(error, 'monto_efectivo') || hasMissingColumn(error, 'monto_transferencia') || hasMissingColumn(error, 'monto_tarjeta') || hasMissingColumn(error, 'monto_mercado_pago') || hasMissingColumn(error, 'monto_otro')) {
+            console.warn('Supabase: pago columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .insert(withoutColumns(dbItem, ['formas_pago', 'monto_efectivo', 'monto_transferencia', 'monto_tarjeta', 'monto_mercado_pago', 'monto_otro']))
                 .select()
                 .single());
         }
@@ -267,6 +294,15 @@ export const itemService = {
             ({ data, error } = await supabase
                 .from('items')
                 .update(withoutColumns(dbUpdates, ['cobrado', 'vendedor']))
+                .eq('id', id)
+                .select()
+                .single());
+        }
+        if (hasMissingColumn(error, 'formas_pago') || hasMissingColumn(error, 'monto_efectivo') || hasMissingColumn(error, 'monto_transferencia') || hasMissingColumn(error, 'monto_tarjeta') || hasMissingColumn(error, 'monto_mercado_pago') || hasMissingColumn(error, 'monto_otro')) {
+            console.warn('Supabase: pago columns missing. Falling back without them.');
+            ({ data, error } = await supabase
+                .from('items')
+                .update(withoutColumns(dbUpdates, ['formas_pago', 'monto_efectivo', 'monto_transferencia', 'monto_tarjeta', 'monto_mercado_pago', 'monto_otro']))
                 .eq('id', id)
                 .select()
                 .single());

@@ -28,6 +28,12 @@ export interface Item {
     envioMetodo?: string;
     cobrado?: boolean;
     vendedor?: string;
+    formasPago?: string[];
+    montoEfectivo?: number;
+    montoTransferencia?: number;
+    montoTarjeta?: number;
+    montoMercadoPago?: number;
+    montoOtro?: number;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
