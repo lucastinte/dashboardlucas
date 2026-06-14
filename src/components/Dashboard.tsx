@@ -1673,6 +1673,10 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     };
 
     const handleFacturar = () => {
+        if (formasPagoSelected.length === 0) {
+            alert('Seleccioná al menos una forma de pago');
+            return;
+        }
         if (envioAplica && envioCosto <= 0) {
             alert('El costo de envío debe ser mayor a $0');
             return;
