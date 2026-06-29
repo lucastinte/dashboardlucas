@@ -66,6 +66,17 @@ on batches for all
 using (true)
 with check (true);
 
+-- =====================================================
+-- TIENDA PÚBLICA
+-- =====================================================
+-- Correr esto en el SQL Editor de Supabase:
+alter table items add column if not exists public_in_store boolean not null default false;
+
+-- Cuando apliques RLS auth-only, activar también esta política de lectura pública:
+-- create policy "Lectura pública de tienda"
+--   on items for select
+--   using (public_in_store = true AND status = 'in_stock');
+
 -- New columns for categories and batch status
 alter table items add column if not exists category text;
 alter table batches add column if not exists batch_status text not null default 'completado';

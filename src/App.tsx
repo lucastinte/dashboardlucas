@@ -2,6 +2,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
 import ResetPassword from './components/ResetPassword'
+import Store from './components/Store'
 
 function AppContent() {
   const { session, loading, isRecovery } = useAuth()
@@ -20,6 +21,11 @@ function AppContent() {
 }
 
 function App() {
+  const path = window.location.pathname;
+  if (path === '/tienda' || path.startsWith('/tienda/')) {
+    return <Store />;
+  }
+
   return (
     <AuthProvider>
       <AppContent />

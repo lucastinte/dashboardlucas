@@ -644,6 +644,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleTogglePublicInStore = async (id: string, value: boolean) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, publicInStore: value } : i));
+            await itemService.updateItem(id, { publicInStore: value });
+        } catch (err) {
+            console.error('Error updating publicInStore:', err);
+            loadItems();
+        }
+    };
+
     const handleToggleNoFacturar = async (id: string, value: boolean) => {
         try {
             setItems(prev => prev.map(i => i.id === id ? { ...i, noFacturar: value } : i));
@@ -1050,7 +1060,7 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onSell={(item) => {
+                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onTogglePublicInStore={handleTogglePublicInStore} onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -2292,7 +2302,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     );
 }
 
-function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, batchHistory }: {
+function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, onTogglePublicInStore, batchHistory }: {
     items: Item[],
     allItems: Item[],
     onEdit: (i: Item) => void,
@@ -2301,6 +2311,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     resolveBatchRef: (item: Item) => string | undefined,
     onSplit: (i: Item) => void,
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
+    onTogglePublicInStore: (id: string, value: boolean) => void,
     batchHistory: BatchRecord[]
 }) {
     type ViewMode = 'products' | 'locations' | 'batches';
@@ -2608,6 +2619,13 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                 )}
                                             </div>
                                             <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                            <button
+                                                onClick={() => onTogglePublicInStore(item.id, !item.publicInStore)}
+                                                className={`text-[10px] font-bold px-2 py-1 rounded-md ${item.publicInStore ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}
+                                                title={item.publicInStore ? 'Quitar de tienda' : 'Publicar en tienda'}
+                                            >
+                                                {item.publicInStore ? '🏪 En tienda' : '🏪 Publicar'}
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -2821,6 +2839,13 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                     <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
                                                         className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
                                                         <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
+                                                        className={`p-1.5 rounded transition-all text-sm ${item.publicInStore ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100' : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'}`}
+                                                        title={item.publicInStore ? 'En tienda — clic para quitar' : 'Publicar en tienda'}
+                                                    >
+                                                        🏪
                                                     </button>
                                                 </div>
                                             </td>

@@ -46,6 +46,7 @@ const mapFromDb = (dbItem: any): Item => ({
     montoTarjeta: dbItem.monto_tarjeta != null ? Number(dbItem.monto_tarjeta) : undefined,
     montoMercadoPago: dbItem.monto_mercado_pago != null ? Number(dbItem.monto_mercado_pago) : undefined,
     montoOtro: dbItem.monto_otro != null ? Number(dbItem.monto_otro) : undefined,
+    publicInStore: dbItem.public_in_store === true,
 });
 
 // Helper to map application model to DB columns
@@ -80,6 +81,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.montoTarjeta !== undefined) dbItem.monto_tarjeta = item.montoTarjeta;
     if (item.montoMercadoPago !== undefined) dbItem.monto_mercado_pago = item.montoMercadoPago;
     if (item.montoOtro !== undefined) dbItem.monto_otro = item.montoOtro;
+    if (item.publicInStore !== undefined) dbItem.public_in_store = item.publicInStore;
     return dbItem;
 };
 
@@ -431,5 +433,17 @@ export const itemService = {
             itemsCount: Number(data.items_count),
             items: data.items_json
         };
+    },
+
+    async getPublicItems(): Promise<Item[]> {
+        const { data, error } = await supabase
+            .from('items')
+            .select('*')
+            .eq('status', 'in_stock')
+            .eq('public_in_store', true)
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+        return (data || []).map(mapFromDb);
     }
 };
