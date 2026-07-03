@@ -37,6 +37,7 @@ export interface Item {
     publicInStore?: boolean;
     storeImages?: string[];
     storeVideoUrl?: string;
+    description?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

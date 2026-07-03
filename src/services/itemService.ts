@@ -49,6 +49,7 @@ const mapFromDb = (dbItem: any): Item => ({
     publicInStore: dbItem.public_in_store === true,
     storeImages: Array.isArray(dbItem.store_images) ? dbItem.store_images : [],
     storeVideoUrl: dbItem.store_video_url ?? undefined,
+    description: dbItem.description ?? undefined,
 });
 
 // Helper to map application model to DB columns
@@ -86,6 +87,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.publicInStore !== undefined) dbItem.public_in_store = item.publicInStore;
     if (item.storeImages !== undefined) dbItem.store_images = item.storeImages;
     if (item.storeVideoUrl !== undefined) dbItem.store_video_url = item.storeVideoUrl || null;
+    if (item.description !== undefined) dbItem.description = item.description || null;
     return dbItem;
 };
 

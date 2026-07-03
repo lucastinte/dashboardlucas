@@ -183,6 +183,10 @@ export default function StoreProduct({ id }: { id: string }) {
                                 ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
                             </p>
 
+                            {item.description && (
+                                <p className="text-sm text-gray-600 whitespace-pre-line leading-relaxed">{item.description}</p>
+                            )}
+
                             <div className="space-y-2 text-sm text-gray-600">
                                 {item.location && (
                                     <div className="flex items-center gap-2">

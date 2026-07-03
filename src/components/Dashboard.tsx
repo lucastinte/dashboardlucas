@@ -655,10 +655,11 @@ export default function Dashboard() {
         }
     };
 
-    const handleUpdateStoreImages = async (id: string, storeImages: string[], storeVideoUrl?: string) => {
+    const handleUpdateStoreImages = async (id: string, storeImages: string[], storeVideoUrl?: string, description?: string) => {
         try {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, storeImages, ...(storeVideoUrl !== undefined ? { storeVideoUrl } : {}) } : i));
-            await itemService.updateItem(id, { storeImages, ...(storeVideoUrl !== undefined ? { storeVideoUrl } : {}) });
+            const patch = { storeImages, storeVideoUrl: storeVideoUrl ?? '', description: description ?? '' };
+            setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+            await itemService.updateItem(id, patch);
         } catch (err) {
             console.error('Error updating storeImages:', err);
             loadItems();
@@ -1117,9 +1118,9 @@ export default function Dashboard() {
                 <StoreImagesModal
                     item={storeImagesItem}
                     onClose={() => setStoreImagesItem(null)}
-                    onSave={async (id, images, videoUrl) => {
-                        await handleUpdateStoreImages(id, images, videoUrl);
-                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images, storeVideoUrl: videoUrl } : null);
+                    onSave={async (id, images, videoUrl, description) => {
+                        await handleUpdateStoreImages(id, images, videoUrl, description);
+                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images, storeVideoUrl: videoUrl, description } : null);
                     }}
                 />
             )}
@@ -3058,10 +3059,11 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 function StoreImagesModal({ item, onClose, onSave }: {
     item: Item;
     onClose: () => void;
-    onSave: (id: string, images: string[], videoUrl?: string) => Promise<void>;
+    onSave: (id: string, images: string[], videoUrl?: string, description?: string) => Promise<void>;
 }) {
     const [images, setImages] = useState<string[]>(item.storeImages || []);
     const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
+    const [description, setDescription] = useState<string>(item.description || '');
     const [uploading, setUploading] = useState(false);
     const [uploadingVideo, setUploadingVideo] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -3154,7 +3156,7 @@ function StoreImagesModal({ item, onClose, onSave }: {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await onSave(item.id, images, videoUrl || undefined);
+            await onSave(item.id, images, videoUrl || undefined, description.trim() || undefined);
             onClose();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error al guardar');
@@ -3178,6 +3180,18 @@ function StoreImagesModal({ item, onClose, onSave }: {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                    {/* ── DESCRIPCIÓN ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Descripción</p>
+                        <textarea
+                            value={description}
+                            onChange={e => setDescription(e.target.value)}
+                            placeholder="Detalles del producto: estado, características, qué incluye..."
+                            rows={4}
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 resize-y"
+                        />
+                    </div>
+
                     {/* ── FOTOS ── */}
                     <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Fotos</p>
