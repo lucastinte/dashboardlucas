@@ -3128,9 +3128,9 @@ function StoreImagesModal({ item, onClose, onSave }: {
             const { supabase } = await import('../lib/supabase');
             const ext = file.name.split('.').pop() || 'mp4';
             const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
-            const filePath = `videos/${hash}.${ext}`;
-            const { data: existing } = await supabase.storage.from('product-images').list('videos', { search: `${hash}.${ext}` });
-            if (!existing?.some(f => f.name === `${hash}.${ext}`)) {
+            const filePath = `vid_${hash}.${ext}`;
+            const { data: existing } = await supabase.storage.from('product-images').list('', { search: `vid_${hash}.${ext}` });
+            if (!existing?.some(f => f.name === `vid_${hash}.${ext}`)) {
                 const { error: upErr } = await supabase.storage.from('product-images').upload(filePath, file, { contentType: file.type, upsert: false });
                 if (upErr && !upErr.message?.includes('already exists')) throw upErr;
             }
