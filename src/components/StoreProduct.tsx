@@ -14,6 +14,36 @@ const conditionColor: Record<string, string> = {
     usado: 'bg-gray-100 text-gray-600',
 };
 
+function getYouTubeId(url: string): string | null {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+    return match?.[1] ?? null;
+}
+
+function VideoPlayer({ url }: { url: string }) {
+    const ytId = getYouTubeId(url);
+    if (ytId) {
+        return (
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black shadow-sm">
+                <iframe
+                    src={`https://www.youtube.com/embed/${ytId}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute inset-0 w-full h-full"
+                    title="Video del producto"
+                />
+            </div>
+        );
+    }
+    return (
+        <video
+            src={url}
+            controls
+            className="w-full rounded-xl bg-black shadow-sm"
+            style={{ maxHeight: '420px' }}
+        />
+    );
+}
+
 function ImagePlaceholder() {
     return (
         <div className="w-full h-full flex items-center justify-center bg-gray-50">
@@ -192,6 +222,14 @@ export default function StoreProduct({ id }: { id: string }) {
                         </div>
                     </div>
                 </div>
+
+                {/* Video */}
+                {item.storeVideoUrl && (
+                    <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Video del producto</p>
+                        <VideoPlayer url={item.storeVideoUrl} />
+                    </div>
+                )}
             </main>
         </div>
     );

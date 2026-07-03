@@ -655,10 +655,10 @@ export default function Dashboard() {
         }
     };
 
-    const handleUpdateStoreImages = async (id: string, storeImages: string[]) => {
+    const handleUpdateStoreImages = async (id: string, storeImages: string[], storeVideoUrl?: string) => {
         try {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, storeImages } : i));
-            await itemService.updateItem(id, { storeImages });
+            setItems(prev => prev.map(i => i.id === id ? { ...i, storeImages, ...(storeVideoUrl !== undefined ? { storeVideoUrl } : {}) } : i));
+            await itemService.updateItem(id, { storeImages, ...(storeVideoUrl !== undefined ? { storeVideoUrl } : {}) });
         } catch (err) {
             console.error('Error updating storeImages:', err);
             loadItems();
@@ -1117,9 +1117,9 @@ export default function Dashboard() {
                 <StoreImagesModal
                     item={storeImagesItem}
                     onClose={() => setStoreImagesItem(null)}
-                    onSave={async (id, images) => {
-                        await handleUpdateStoreImages(id, images);
-                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images } : null);
+                    onSave={async (id, images, videoUrl) => {
+                        await handleUpdateStoreImages(id, images, videoUrl);
+                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images, storeVideoUrl: videoUrl } : null);
                     }}
                 />
             )}
@@ -3058,13 +3058,17 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 function StoreImagesModal({ item, onClose, onSave }: {
     item: Item;
     onClose: () => void;
-    onSave: (id: string, images: string[]) => Promise<void>;
+    onSave: (id: string, images: string[], videoUrl?: string) => Promise<void>;
 }) {
     const [images, setImages] = useState<string[]>(item.storeImages || []);
+    const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
     const [uploading, setUploading] = useState(false);
+    const [uploadingVideo, setUploadingVideo] = useState(false);
     const [saving, setSaving] = useState(false);
     const [urlInput, setUrlInput] = useState('');
     const [showUrlInput, setShowUrlInput] = useState(false);
+    const [videoUrlInput, setVideoUrlInput] = useState('');
+    const [showVideoUrlInput, setShowVideoUrlInput] = useState(false);
     const [dragOver, setDragOver] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -3087,7 +3091,16 @@ function StoreImagesModal({ item, onClose, onSave }: {
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
-        handleFiles(e.dataTransfer.files);
+        // Separate images and videos
+        const files = e.dataTransfer.files;
+        const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+        const videoFiles = Array.from(files).filter(f => f.type.startsWith('video/'));
+        if (imageFiles.length) {
+            const dt = new DataTransfer();
+            imageFiles.forEach(f => dt.items.add(f));
+            handleFiles(dt.files);
+        }
+        if (videoFiles.length) handleVideoFile(videoFiles[0]);
     };
 
     const handleUrlAdd = async () => {
@@ -3108,10 +3121,40 @@ function StoreImagesModal({ item, onClose, onSave }: {
         }
     };
 
+    const handleVideoFile = async (file: File) => {
+        setUploadingVideo(true);
+        setError(null);
+        try {
+            const { supabase } = await import('../lib/supabase');
+            const ext = file.name.split('.').pop() || 'mp4';
+            const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
+            const filePath = `videos/${hash}.${ext}`;
+            const { data: existing } = await supabase.storage.from('product-images').list('videos', { search: `${hash}.${ext}` });
+            if (!existing?.some(f => f.name === `${hash}.${ext}`)) {
+                const { error: upErr } = await supabase.storage.from('product-images').upload(filePath, file, { contentType: file.type, upsert: false });
+                if (upErr && !upErr.message?.includes('already exists')) throw upErr;
+            }
+            const { data } = supabase.storage.from('product-images').getPublicUrl(filePath);
+            setVideoUrl(data.publicUrl);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error al subir video');
+        } finally {
+            setUploadingVideo(false);
+        }
+    };
+
+    const handleVideoUrlSave = () => {
+        const trimmed = videoUrlInput.trim();
+        if (!trimmed) return;
+        setVideoUrl(trimmed);
+        setVideoUrlInput('');
+        setShowVideoUrlInput(false);
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
-            await onSave(item.id, images);
+            await onSave(item.id, images, videoUrl || undefined);
             onClose();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error al guardar');
@@ -3126,7 +3169,7 @@ function StoreImagesModal({ item, onClose, onSave }: {
                 {/* Header */}
                 <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl">
                     <div>
-                        <h2 className="text-base font-bold text-gray-800">Fotos de tienda</h2>
+                        <h2 className="text-base font-bold text-gray-800">Fotos y video de tienda</h2>
                         <p className="text-xs text-gray-500 truncate max-w-[260px]">{item.productName}</p>
                     </div>
                     <button onClick={onClose} className="h-8 w-8 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
@@ -3134,70 +3177,100 @@ function StoreImagesModal({ item, onClose, onSave }: {
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Current images grid */}
-                    {images.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-2">
-                            {images.map((url, i) => (
-                                <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
-                                    <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
-                                    <button
-                                        onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
-                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                    {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/50 text-white px-1 py-0.5 rounded">Principal</span>}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="text-xs text-center text-gray-400 py-2">Sin fotos adicionales — la foto principal del producto se muestra igual.</p>
-                    )}
+                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                    {/* ── FOTOS ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Fotos</p>
 
-                    {/* Drop zone */}
-                    <div
-                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={handleDrop}
-                        className={`relative flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed transition-all ${dragOver ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}
-                    >
-                        {uploading ? (
-                            <><Loader2 className="w-5 h-5 text-violet-500 animate-spin" /><span className="text-sm text-violet-600">Subiendo...</span></>
+                        {images.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {images.map((url, i) => (
+                                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
+                                        <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
+                                        <button
+                                            onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
+                                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                        {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/50 text-white px-1 py-0.5 rounded">Principal</span>}
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
-                            <><Upload className="w-5 h-5 text-gray-400" /><span className="text-sm text-gray-500">Arrastrar fotos aquí o</span></>
+                            <p className="text-xs text-gray-400 mb-2">Sin fotos adicionales — se muestra la foto principal del producto.</p>
                         )}
-                        <label className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-400 cursor-pointer transition-all">
-                            Seleccionar archivos
-                            <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
-                        </label>
+
+                        {/* Drop zone */}
+                        <div
+                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onDrop={handleDrop}
+                            className={`flex flex-col items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 border-dashed transition-all ${dragOver ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}
+                        >
+                            {uploading ? (
+                                <><Loader2 className="w-5 h-5 text-violet-500 animate-spin" /><span className="text-sm text-violet-600">Subiendo...</span></>
+                            ) : (
+                                <><Upload className="w-5 h-5 text-gray-400" /><span className="text-sm text-gray-500">Arrastrar fotos aquí o</span></>
+                            )}
+                            <label className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-400 cursor-pointer transition-all">
+                                Seleccionar fotos
+                                <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+                            </label>
+                        </div>
+
+                        <div className="mt-2">
+                            {showUrlInput ? (
+                                <div className="flex gap-2">
+                                    <input type="url" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUrlAdd()} placeholder="https://..." className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400" autoFocus />
+                                    <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">Agregar</button>
+                                    <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
+                                </div>
+                            ) : (
+                                <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
+                                    <ImageIcon className="w-4 h-4" />Pegar link de foto
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {/* URL input */}
+                    {/* ── VIDEO ── */}
                     <div>
-                        {showUrlInput ? (
-                            <div className="flex gap-2">
-                                <input
-                                    type="url"
-                                    value={urlInput}
-                                    onChange={e => setUrlInput(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && handleUrlAdd()}
-                                    placeholder="https://..."
-                                    className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
-                                    autoFocus
-                                />
-                                <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">
-                                    Agregar
-                                </button>
-                                <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500">
-                                    <X className="w-4 h-4" />
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Video</p>
+
+                        {videoUrl ? (
+                            <div className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50">
+                                <span className="text-lg">🎬</span>
+                                <p className="text-xs text-gray-600 flex-1 truncate">{videoUrl}</p>
+                                <button onClick={() => setVideoUrl('')} className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Quitar video">
+                                    <X className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                         ) : (
-                            <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
-                                <ImageIcon className="w-4 h-4" />
-                                Pegar link de imagen
-                            </button>
+                            <div className="space-y-2">
+                                {/* Upload video file */}
+                                <label className={`flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 border-dashed transition-all cursor-pointer ${uploadingVideo ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
+                                    {uploadingVideo ? (
+                                        <><Loader2 className="w-5 h-5 text-amber-500 animate-spin" /><span className="text-sm text-amber-600">Subiendo video...</span></>
+                                    ) : (
+                                        <><span className="text-xl">🎬</span><span className="text-sm text-gray-500">Subir video (MP4, MOV…)</span></>
+                                    )}
+                                    <input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoFile(f); e.target.value = ''; }} disabled={uploadingVideo} />
+                                </label>
+
+                                {/* Video URL */}
+                                {showVideoUrlInput ? (
+                                    <div className="flex gap-2">
+                                        <input type="url" value={videoUrlInput} onChange={e => setVideoUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVideoUrlSave()} placeholder="https://youtube.com/watch?v=... o link directo" className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" autoFocus />
+                                        <button onClick={handleVideoUrlSave} disabled={!videoUrlInput.trim()} className="px-3 py-2 rounded-xl bg-amber-500 text-white text-sm font-medium disabled:opacity-50">OK</button>
+                                        <button onClick={() => { setShowVideoUrlInput(false); setVideoUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setShowVideoUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
+                                        <span>🔗</span>Pegar link de YouTube / video
+                                    </button>
+                                )}
+                            </div>
                         )}
                     </div>
 
@@ -3214,7 +3287,7 @@ function StoreImagesModal({ item, onClose, onSave }: {
                         disabled={saving}
                         className="flex-1 px-4 py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                     >
-                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando...</> : `Guardar ${images.length > 0 ? `(${images.length} foto${images.length !== 1 ? 's' : ''})` : ''}`}
+                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando...</> : `Guardar${images.length > 0 ? ` (${images.length} foto${images.length !== 1 ? 's' : ''})` : ''}${videoUrl ? ' + video' : ''}`}
                     </button>
                 </div>
             </div>

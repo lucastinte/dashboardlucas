@@ -36,6 +36,7 @@ export interface Item {
     montoOtro?: number;
     publicInStore?: boolean;
     storeImages?: string[];
+    storeVideoUrl?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
