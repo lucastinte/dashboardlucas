@@ -35,6 +35,7 @@ export interface Item {
     montoMercadoPago?: number;
     montoOtro?: number;
     publicInStore?: boolean;
+    storeImages?: string[];
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

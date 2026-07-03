@@ -16,14 +16,23 @@ const conditionColor: Record<string, string> = {
 
 function ProductCard({ item }: { item: Item }) {
     const [imgError, setImgError] = useState(false);
+    const firstImage = [item.imageUrl, ...(item.storeImages || [])].find(u => !!u) ?? null;
 
     return (
-        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex flex-col">
+        <a
+            href={`/tienda/producto/${item.id}`}
+            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+        >
             {/* Imagen */}
-            <div className="aspect-square bg-gray-50 overflow-hidden">
-                {item.imageUrl && !imgError ? (
+            <div className="aspect-square bg-gray-50 overflow-hidden relative">
+                {item.storeImages && item.storeImages.length > 0 && (
+                    <span className="absolute top-2 right-2 z-10 bg-black/50 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                        +{item.storeImages.length + (item.imageUrl ? 1 : 0) - 1} fotos
+                    </span>
+                )}
+                {firstImage && !imgError ? (
                     <img
-                        src={item.imageUrl}
+                        src={firstImage}
                         alt={item.productName}
                         className="w-full h-full object-cover"
                         onError={() => setImgError(true)}
@@ -66,7 +75,7 @@ function ProductCard({ item }: { item: Item }) {
                     </p>
                 </div>
             </div>
-        </div>
+        </a>
     );
 }
 

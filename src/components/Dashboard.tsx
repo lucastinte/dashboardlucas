@@ -139,6 +139,7 @@ export default function Dashboard() {
     });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
+    const [storeImagesItem, setStoreImagesItem] = useState<Item | null>(null);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
@@ -654,6 +655,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleUpdateStoreImages = async (id: string, storeImages: string[]) => {
+        try {
+            setItems(prev => prev.map(i => i.id === id ? { ...i, storeImages } : i));
+            await itemService.updateItem(id, { storeImages });
+        } catch (err) {
+            console.error('Error updating storeImages:', err);
+            loadItems();
+        }
+    };
+
     const handleToggleNoFacturar = async (id: string, value: boolean) => {
         try {
             setItems(prev => prev.map(i => i.id === id ? { ...i, noFacturar: value } : i));
@@ -1060,7 +1071,7 @@ export default function Dashboard() {
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onTogglePublicInStore={handleTogglePublicInStore} onSell={(item) => {
+                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onTogglePublicInStore={handleTogglePublicInStore} onManageImages={setStoreImagesItem} onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -1100,6 +1111,18 @@ export default function Dashboard() {
                     />
                 )}
             </div>
+
+            {/* Store Images Modal */}
+            {storeImagesItem && (
+                <StoreImagesModal
+                    item={storeImagesItem}
+                    onClose={() => setStoreImagesItem(null)}
+                    onSave={async (id, images) => {
+                        await handleUpdateStoreImages(id, images);
+                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images } : null);
+                    }}
+                />
+            )}
 
             {/* Modal Overlay */}
             {isModalOpen && (
@@ -2302,7 +2325,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     );
 }
 
-function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, onTogglePublicInStore, batchHistory }: {
+function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, onTogglePublicInStore, onManageImages, batchHistory }: {
     items: Item[],
     allItems: Item[],
     onEdit: (i: Item) => void,
@@ -2312,6 +2335,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     onSplit: (i: Item) => void,
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     onTogglePublicInStore: (id: string, value: boolean) => void,
+    onManageImages: (item: Item) => void,
     batchHistory: BatchRecord[]
 }) {
     type ViewMode = 'products' | 'locations' | 'batches';
@@ -2626,6 +2650,15 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                             >
                                                 {item.publicInStore ? '🏪 En tienda' : '🏪 Publicar'}
                                             </button>
+                                            {item.publicInStore && (
+                                                <button
+                                                    onClick={() => onManageImages(item)}
+                                                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-violet-50 text-violet-700"
+                                                    title="Gestionar fotos de tienda"
+                                                >
+                                                    📷 {(item.storeImages?.length || 0) > 0 ? `Fotos (${item.storeImages!.length})` : 'Fotos'}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -2847,6 +2880,18 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                                     >
                                                         🏪
                                                     </button>
+                                                    {item.publicInStore && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
+                                                            className="p-1.5 rounded transition-all text-violet-500 hover:text-violet-700 hover:bg-violet-50 text-sm relative"
+                                                            title="Gestionar fotos de tienda"
+                                                        >
+                                                            📷
+                                                            {(item.storeImages?.length || 0) > 0 && (
+                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
+                                                            )}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -3007,6 +3052,173 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                 )}
             </div>
         </>
+    );
+}
+
+function StoreImagesModal({ item, onClose, onSave }: {
+    item: Item;
+    onClose: () => void;
+    onSave: (id: string, images: string[]) => Promise<void>;
+}) {
+    const [images, setImages] = useState<string[]>(item.storeImages || []);
+    const [uploading, setUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [urlInput, setUrlInput] = useState('');
+    const [showUrlInput, setShowUrlInput] = useState(false);
+    const [dragOver, setDragOver] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const addImages = (urls: string[]) => setImages(prev => [...prev, ...urls.filter(u => u && !prev.includes(u))]);
+
+    const handleFiles = async (files: FileList | null) => {
+        if (!files || !files.length) return;
+        setUploading(true);
+        setError(null);
+        try {
+            const urls = await Promise.all(Array.from(files).map(f => imageService.upload(f)));
+            addImages(urls);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error al subir imagen');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        handleFiles(e.dataTransfer.files);
+    };
+
+    const handleUrlAdd = async () => {
+        const trimmed = urlInput.trim();
+        if (!trimmed) return;
+        setUploading(true);
+        setError(null);
+        addImages([trimmed]);
+        try {
+            const uploaded = await imageService.upload(trimmed);
+            setImages(prev => prev.map(u => u === trimmed ? uploaded : u));
+        } catch {
+            // keep external URL as-is
+        } finally {
+            setUploading(false);
+            setUrlInput('');
+            setShowUrlInput(false);
+        }
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await onSave(item.id, images);
+            onClose();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col ring-1 ring-black/5">
+                {/* Header */}
+                <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-800">Fotos de tienda</h2>
+                        <p className="text-xs text-gray-500 truncate max-w-[260px]">{item.productName}</p>
+                    </div>
+                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Current images grid */}
+                    {images.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                            {images.map((url, i) => (
+                                <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
+                                    <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
+                                    <button
+                                        onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
+                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                    {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/50 text-white px-1 py-0.5 rounded">Principal</span>}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-xs text-center text-gray-400 py-2">Sin fotos adicionales — la foto principal del producto se muestra igual.</p>
+                    )}
+
+                    {/* Drop zone */}
+                    <div
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={handleDrop}
+                        className={`relative flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed transition-all ${dragOver ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}
+                    >
+                        {uploading ? (
+                            <><Loader2 className="w-5 h-5 text-violet-500 animate-spin" /><span className="text-sm text-violet-600">Subiendo...</span></>
+                        ) : (
+                            <><Upload className="w-5 h-5 text-gray-400" /><span className="text-sm text-gray-500">Arrastrar fotos aquí o</span></>
+                        )}
+                        <label className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-400 cursor-pointer transition-all">
+                            Seleccionar archivos
+                            <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+                        </label>
+                    </div>
+
+                    {/* URL input */}
+                    <div>
+                        {showUrlInput ? (
+                            <div className="flex gap-2">
+                                <input
+                                    type="url"
+                                    value={urlInput}
+                                    onChange={e => setUrlInput(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleUrlAdd()}
+                                    placeholder="https://..."
+                                    className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                                    autoFocus
+                                />
+                                <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">
+                                    Agregar
+                                </button>
+                                <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ) : (
+                            <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
+                                <ImageIcon className="w-4 h-4" />
+                                Pegar link de imagen
+                            </button>
+                        )}
+                    </div>
+
+                    {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-gray-100 flex gap-2">
+                    <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex-1 px-4 py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                    >
+                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando...</> : `Guardar ${images.length > 0 ? `(${images.length} foto${images.length !== 1 ? 's' : ''})` : ''}`}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
