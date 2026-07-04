@@ -14,10 +14,44 @@ const conditionColor: Record<string, string> = {
     usado: 'bg-gray-500 text-white',
 };
 
-function ProductCard({ item }: { item: Item }) {
+// Un "producto" en la tienda puede ser un grupo de variantes (mismo storeGroup)
+export interface StoreEntry {
+    rep: Item;          // item representativo (el que tiene título/desc/fotos)
+    variants: Item[];   // todas las variantes (incluye al rep)
+}
+
+/** Agrupa items publicados por storeGroup; sin grupo → entrada individual */
+export function groupPublicItems(items: Item[]): StoreEntry[] {
+    const byGroup = new Map<string, Item[]>();
+    const singles: Item[] = [];
+    for (const it of items) {
+        const g = (it.storeGroup || '').trim();
+        if (g) {
+            if (!byGroup.has(g)) byGroup.set(g, []);
+            byGroup.get(g)!.push(it);
+        } else {
+            singles.push(it);
+        }
+    }
+    const score = (i: Item) => (i.storeTitle ? 4 : 0) + (i.description ? 2 : 0) + (i.storeImages?.length ? 1 : 0) + (i.imageUrl ? 1 : 0);
+    const entries: StoreEntry[] = [];
+    for (const variants of byGroup.values()) {
+        const rep = [...variants].sort((a, b) => score(b) - score(a))[0];
+        entries.push({ rep, variants });
+    }
+    for (const it of singles) entries.push({ rep: it, variants: [it] });
+    return entries;
+}
+
+function ProductCard({ entry }: { entry: StoreEntry }) {
+    const { rep: item, variants } = entry;
     const [imgError, setImgError] = useState(false);
     const extraCount = (item.storeImages?.length || 0);
-    const firstImage = [item.imageUrl, ...(item.storeImages || [])].find(u => !!u) ?? null;
+    const firstImage = [item.imageUrl, ...(item.storeImages || []), ...variants.map(v => v.imageUrl)].find(u => !!u) ?? null;
+    const prices = variants.map(v => v.salePrice || v.estimatedSalePrice || 0);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const totalStock = variants.reduce((acc, v) => acc + v.quantity, 0);
 
     return (
         <a
@@ -60,7 +94,11 @@ function ProductCard({ item }: { item: Item }) {
 
             {/* Info */}
             <div className="p-4 flex flex-col gap-1.5 flex-1">
-                <h3 className="font-semibold text-gray-900 leading-snug text-sm line-clamp-2">{item.productName}</h3>
+                <h3 className="font-semibold text-gray-900 leading-snug text-sm line-clamp-2">{item.storeTitle || item.productName}</h3>
+
+                {variants.length > 1 && (
+                    <p className="text-[11px] font-medium text-indigo-600">{variants.length} variantes disponibles</p>
+                )}
 
                 {item.description && (
                     <p className="text-xs text-gray-400 line-clamp-2">{item.description}</p>
@@ -79,10 +117,11 @@ function ProductCard({ item }: { item: Item }) {
                 <div className="mt-auto pt-2 flex items-end justify-between gap-2">
                     <div>
                         <p className="text-xl font-bold text-gray-900 leading-none">
-                            ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                            {minPrice !== maxPrice && <span className="text-xs font-medium text-gray-400 mr-1">desde</span>}
+                            ${minPrice.toLocaleString('es-AR')}
                         </p>
-                        {item.quantity > 1 && (
-                            <p className="text-[11px] text-gray-400 mt-1">{item.quantity} disponibles</p>
+                        {totalStock > 1 && (
+                            <p className="text-[11px] text-gray-400 mt-1">{totalStock} disponibles</p>
                         )}
                     </div>
                     <span className="shrink-0 text-xs font-medium text-indigo-600 group-hover:translate-x-0.5 transition-transform">
@@ -111,11 +150,14 @@ export default function Store() {
     const filtered = items.filter(item => {
         const q = search.toLowerCase();
         const matchSearch = item.productName.toLowerCase().includes(q) ||
+            (item.storeTitle || '').toLowerCase().includes(q) ||
             (item.location || '').toLowerCase().includes(q) ||
             (item.description || '').toLowerCase().includes(q);
         const matchCond = condFilter === 'todos' || item.condition === condFilter;
         return matchSearch && matchCond;
     });
+
+    const entries = groupPublicItems(filtered);
 
     const conditions = ['todos', ...Array.from(new Set(items.map(i => i.condition)))];
 
@@ -204,10 +246,10 @@ export default function Store() {
                     </div>
                 )}
 
-                {!loading && !error && filtered.length > 0 && (
+                {!loading && !error && entries.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-                        {filtered.map(item => (
-                            <ProductCard key={item.id} item={item} />
+                        {entries.map(entry => (
+                            <ProductCard key={entry.rep.id} entry={entry} />
                         ))}
                     </div>
                 )}

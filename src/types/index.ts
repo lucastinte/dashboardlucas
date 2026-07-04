@@ -38,6 +38,8 @@ export interface Item {
     storeImages?: string[];
     storeVideoUrl?: string;
     description?: string;
+    storeTitle?: string;
+    storeGroup?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 

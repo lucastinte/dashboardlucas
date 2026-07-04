@@ -50,6 +50,8 @@ const mapFromDb = (dbItem: any): Item => ({
     storeImages: Array.isArray(dbItem.store_images) ? dbItem.store_images : [],
     storeVideoUrl: dbItem.store_video_url ?? undefined,
     description: dbItem.description ?? undefined,
+    storeTitle: dbItem.store_title ?? undefined,
+    storeGroup: dbItem.store_group ?? undefined,
 });
 
 // Helper to map application model to DB columns
@@ -88,6 +90,8 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.storeImages !== undefined) dbItem.store_images = item.storeImages;
     if (item.storeVideoUrl !== undefined) dbItem.store_video_url = item.storeVideoUrl || null;
     if (item.description !== undefined) dbItem.description = item.description || null;
+    if (item.storeTitle !== undefined) dbItem.store_title = item.storeTitle || null;
+    if (item.storeGroup !== undefined) dbItem.store_group = item.storeGroup || null;
     return dbItem;
 };
 
@@ -461,6 +465,19 @@ export const itemService = {
             .order('date', { ascending: false });
 
         if (error) throw error;
+        return (data || []).map(mapFromDb);
+    },
+
+    async getPublicItemsByGroup(group: string): Promise<Item[]> {
+        const { data, error } = await supabase
+            .from('items')
+            .select('*')
+            .eq('status', 'in_stock')
+            .eq('public_in_store', true)
+            .eq('store_group', group)
+            .order('product_name', { ascending: true });
+
+        if (error) return [];
         return (data || []).map(mapFromDb);
     }
 };

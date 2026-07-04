@@ -56,6 +56,7 @@ function ImagePlaceholder() {
 
 export default function StoreProduct({ id }: { id: string }) {
     const [item, setItem] = useState<Item | null>(null);
+    const [variants, setVariants] = useState<Item[]>([]);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
     const [activeIdx, setActiveIdx] = useState(0);
@@ -64,16 +65,25 @@ export default function StoreProduct({ id }: { id: string }) {
 
     useEffect(() => {
         itemService.getPublicItemById(id)
-            .then(data => {
-                if (!data) setNotFound(true);
-                else setItem(data);
+            .then(async data => {
+                if (!data) { setNotFound(true); return; }
+                setItem(data);
+                if (data.storeGroup) {
+                    const group = await itemService.getPublicItemsByGroup(data.storeGroup);
+                    if (group.length > 1) setVariants(group);
+                }
             })
             .catch(() => setNotFound(true))
             .finally(() => setLoading(false));
     }, [id]);
 
+    // Imágenes del producto + las de sus variantes (sin duplicados)
     const allImages = item
-        ? [item.imageUrl, ...(item.storeImages || [])].filter((u): u is string => !!u)
+        ? Array.from(new Set([
+            item.imageUrl,
+            ...(item.storeImages || []),
+            ...variants.flatMap(v => [v.imageUrl, ...(v.storeImages || [])]),
+        ].filter((u): u is string => !!u)))
         : [];
 
     const activeUrl = allImages[activeIdx] ?? null;
@@ -173,18 +183,48 @@ export default function StoreProduct({ id }: { id: string }) {
                         {/* Info */}
                         <div className="p-6 flex flex-col gap-4">
                             <div className="flex items-start justify-between gap-3">
-                                <h1 className="text-xl font-bold text-gray-900 leading-tight">{item.productName}</h1>
-                                <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${conditionColor[item.condition] || conditionColor.nuevo}`}>
-                                    {conditionLabel[item.condition] || item.condition}
-                                </span>
+                                <h1 className="text-xl font-bold text-gray-900 leading-tight">{item.storeTitle || item.productName}</h1>
+                                {variants.length === 0 && (
+                                    <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${conditionColor[item.condition] || conditionColor.nuevo}`}>
+                                        {conditionLabel[item.condition] || item.condition}
+                                    </span>
+                                )}
                             </div>
 
-                            <p className="text-3xl font-bold text-gray-900">
-                                ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
-                            </p>
+                            {variants.length === 0 && (
+                                <p className="text-3xl font-bold text-gray-900">
+                                    ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                                </p>
+                            )}
 
                             {item.description && (
                                 <p className="text-sm text-gray-600 whitespace-pre-line leading-relaxed">{item.description}</p>
+                            )}
+
+                            {/* Variantes disponibles */}
+                            {variants.length > 1 && (
+                                <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Opciones disponibles</p>
+                                    <div className="space-y-2">
+                                        {variants.map(v => (
+                                            <div
+                                                key={v.id}
+                                                className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 ${v.id === item.id ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-200 bg-gray-50'}`}
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{v.productName}</p>
+                                                    <p className="text-[11px] text-gray-400">
+                                                        {conditionLabel[v.condition] || v.condition}
+                                                        {v.quantity > 1 ? ` · ${v.quantity} disponibles` : ' · 1 disponible'}
+                                                    </p>
+                                                </div>
+                                                <p className="shrink-0 text-sm font-bold text-gray-900">
+                                                    ${(v.salePrice || v.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
 
                             <div className="space-y-2 text-sm text-gray-600">

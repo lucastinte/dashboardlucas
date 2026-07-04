@@ -663,9 +663,8 @@ export default function Dashboard() {
         }
     };
 
-    const handleUpdateStoreImages = async (id: string, storeImages: string[], storeVideoUrl?: string, description?: string) => {
+    const handleUpdateStoreImages = async (id: string, patch: Partial<Item>) => {
         try {
-            const patch = { storeImages, storeVideoUrl: storeVideoUrl ?? '', description: description ?? '' };
             setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
             await itemService.updateItem(id, patch);
         } catch (err) {
@@ -1130,9 +1129,9 @@ export default function Dashboard() {
                 <StoreImagesModal
                     item={storeImagesItem}
                     onClose={() => setStoreImagesItem(null)}
-                    onSave={async (id, images, videoUrl, description) => {
-                        await handleUpdateStoreImages(id, images, videoUrl, description);
-                        setStoreImagesItem(prev => prev ? { ...prev, storeImages: images, storeVideoUrl: videoUrl, description } : null);
+                    onSave={async (id, patch) => {
+                        await handleUpdateStoreImages(id, patch);
+                        setStoreImagesItem(prev => prev ? { ...prev, ...patch } : null);
                     }}
                 />
             )}
@@ -3072,11 +3071,13 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 function StoreImagesModal({ item, onClose, onSave }: {
     item: Item;
     onClose: () => void;
-    onSave: (id: string, images: string[], videoUrl?: string, description?: string) => Promise<void>;
+    onSave: (id: string, patch: Partial<Item>) => Promise<void>;
 }) {
     const [images, setImages] = useState<string[]>(item.storeImages || []);
     const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
     const [description, setDescription] = useState<string>(item.description || '');
+    const [storeTitle, setStoreTitle] = useState<string>(item.storeTitle || '');
+    const [storeGroup, setStoreGroup] = useState<string>(item.storeGroup || '');
     const [uploading, setUploading] = useState(false);
     const [uploadingVideo, setUploadingVideo] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -3170,7 +3171,13 @@ function StoreImagesModal({ item, onClose, onSave }: {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await onSave(item.id, images, videoUrl || undefined, description.trim() || undefined);
+            await onSave(item.id, {
+                storeImages: images,
+                storeVideoUrl: videoUrl || '',
+                description: description.trim() || '',
+                storeTitle: storeTitle.trim() || '',
+                storeGroup: storeGroup.trim().toLowerCase().replace(/\s+/g, '-') || '',
+            });
             onClose();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error al guardar');
@@ -3194,6 +3201,32 @@ function StoreImagesModal({ item, onClose, onSave }: {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                    {/* ── TÍTULO DE PUBLICACIÓN ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Título de publicación</p>
+                        <input
+                            type="text"
+                            value={storeTitle}
+                            onChange={e => setStoreTitle(e.target.value)}
+                            placeholder={item.productName}
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                        />
+                        <p className="text-[11px] text-gray-400 mt-1">El título que generás con Gemini para Facebook. Se muestra en la tienda en lugar del nombre interno.</p>
+                    </div>
+
+                    {/* ── GRUPO (variantes) ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Agrupar variantes</p>
+                        <input
+                            type="text"
+                            value={storeGroup}
+                            onChange={e => setStoreGroup(e.target.value)}
+                            placeholder="ej: cable-tipo-c"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                        />
+                        <p className="text-[11px] text-gray-400 mt-1">Poné el mismo código en los productos similares (ej. cable de 2m y de 3m) y en la tienda aparecen como una sola publicación con sus variantes.</p>
+                    </div>
+
                     {/* ── DESCRIPCIÓN ── */}
                     <div>
                         <div className="flex items-center justify-between mb-2">
@@ -3203,7 +3236,7 @@ function StoreImagesModal({ item, onClose, onSave }: {
                                     onClick={() => {
                                         const price = item.salePrice || item.estimatedSalePrice || 0;
                                         const post = [
-                                            item.productName,
+                                            storeTitle.trim() || item.productName,
                                             '',
                                             description.trim(),
                                             '',
