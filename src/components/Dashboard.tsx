@@ -140,6 +140,8 @@ export default function Dashboard() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
     const [storeImagesItem, setStoreImagesItem] = useState<Item | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const savingRef = useRef(false);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
@@ -350,6 +352,9 @@ export default function Dashboard() {
 
     const handleSaveItem = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (savingRef.current) return; // guard against double-submit
+        savingRef.current = true;
+        setIsSaving(true);
 
         const getISODate = (dateStr: string) => {
             if (!dateStr) return new Date().toISOString();
@@ -618,6 +623,9 @@ export default function Dashboard() {
             alert('Error al guardar. Intenta nuevamente.');
             // Revert optimistic update ideally
             loadItems();
+        } finally {
+            savingRef.current = false;
+            setIsSaving(false);
         }
     };
 
@@ -698,7 +706,9 @@ export default function Dashboard() {
 
     const handleSplitItem = async (item: Item) => {
         if (item.quantity <= 1) return;
+        if (savingRef.current) return;
         if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
+            savingRef.current = true;
             try {
                 // Optimistic UI updates
                 const tempId = crypto.randomUUID();
@@ -755,6 +765,8 @@ export default function Dashboard() {
                 console.error('Error splitting:', err);
                 alert('Error al separar la unidad.');
                 loadItems();
+            } finally {
+                savingRef.current = false;
             }
         }
     };
@@ -1164,6 +1176,7 @@ export default function Dashboard() {
                             suggestedLocations={Array.from(new Set(items.map(i => i.location))).filter(Boolean).sort() as string[]}
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             existingImages={Array.from(new Map(items.filter(i => i.imageUrl).map(i => [i.imageUrl!, { url: i.imageUrl!, name: i.productName }])).values())}
+                            isSaving={isSaving}
                         />
                     </div>
                 </div>
@@ -3518,7 +3531,7 @@ function ComboboxInput({ value, onChange, suggestions, placeholder, className, r
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [], existingImages = [] }: {
+function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [], existingImages = [], isSaving = false }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
@@ -3528,7 +3541,8 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
     suggestedNames?: string[],
     suggestedLocations?: string[],
     batchCodes?: string[],
-    existingImages?: { url: string; name: string }[]
+    existingImages?: { url: string; name: string }[],
+    isSaving?: boolean
 }) {
     const [url, setUrl] = useState('');
     const [isDetectingFromUrl, setIsDetectingFromUrl] = useState(false);
@@ -4092,10 +4106,11 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 </button>
                 <button
                     type="submit"
-                    className={`flex-1 px-4 py-3 rounded-xl text-white font-medium shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 ${formData.status === 'sold' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-black hover:bg-gray-800 shadow-gray-200'}`}
+                    disabled={isSaving}
+                    className={`flex-1 px-4 py-3 rounded-xl text-white font-medium shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 disabled:opacity-60 disabled:pointer-events-none ${formData.status === 'sold' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-black hover:bg-gray-800 shadow-gray-200'}`}
                 >
-                    <Save className="w-4 h-4" />
-                    {getSubmitLabel()}
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {isSaving ? 'Guardando...' : getSubmitLabel()}
                 </button>
             </div>
         </form>
