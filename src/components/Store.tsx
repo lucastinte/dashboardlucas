@@ -9,32 +9,44 @@ const conditionLabel: Record<string, string> = {
 };
 
 const conditionColor: Record<string, string> = {
-    nuevo: 'bg-emerald-100 text-emerald-700',
-    semi_uso: 'bg-amber-100 text-amber-700',
-    usado: 'bg-gray-100 text-gray-600',
+    nuevo: 'bg-emerald-500 text-white',
+    semi_uso: 'bg-amber-500 text-white',
+    usado: 'bg-gray-500 text-white',
 };
 
 function ProductCard({ item }: { item: Item }) {
     const [imgError, setImgError] = useState(false);
+    const extraCount = (item.storeImages?.length || 0);
     const firstImage = [item.imageUrl, ...(item.storeImages || [])].find(u => !!u) ?? null;
 
     return (
         <a
             href={`/tienda/producto/${item.id}`}
-            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+            className="group bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex flex-col hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
         >
             {/* Imagen */}
-            <div className="aspect-square bg-gray-50 overflow-hidden relative">
-                {item.storeImages && item.storeImages.length > 0 && (
-                    <span className="absolute top-2 right-2 z-10 bg-black/50 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-                        +{item.storeImages.length + (item.imageUrl ? 1 : 0) - 1} fotos
+            <div className="aspect-square bg-gray-100 overflow-hidden relative">
+                <span className={`absolute top-2.5 left-2.5 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shadow-sm ${conditionColor[item.condition] || conditionColor.nuevo}`}>
+                    {conditionLabel[item.condition] || item.condition}
+                </span>
+                {extraCount > 0 && (
+                    <span className="absolute top-2.5 right-2.5 z-10 bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        {extraCount + (item.imageUrl ? 1 : 0)}
+                    </span>
+                )}
+                {item.storeVideoUrl && (
+                    <span className="absolute bottom-2.5 right-2.5 z-10 bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        Video
                     </span>
                 )}
                 {firstImage && !imgError ? (
                     <img
                         src={firstImage}
                         alt={item.productName}
-                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={() => setImgError(true)}
                     />
                 ) : (
@@ -47,17 +59,16 @@ function ProductCard({ item }: { item: Item }) {
             </div>
 
             {/* Info */}
-            <div className="p-4 flex flex-col gap-2 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-gray-900 leading-tight text-sm">{item.productName}</h3>
-                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${conditionColor[item.condition] || conditionColor.nuevo}`}>
-                        {conditionLabel[item.condition] || item.condition}
-                    </span>
-                </div>
+            <div className="p-4 flex flex-col gap-1.5 flex-1">
+                <h3 className="font-semibold text-gray-900 leading-snug text-sm line-clamp-2">{item.productName}</h3>
+
+                {item.description && (
+                    <p className="text-xs text-gray-400 line-clamp-2">{item.description}</p>
+                )}
 
                 {item.location && (
-                    <p className="text-xs text-gray-400 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
@@ -65,14 +76,18 @@ function ProductCard({ item }: { item: Item }) {
                     </p>
                 )}
 
-                {item.quantity > 1 && (
-                    <p className="text-xs text-gray-400">{item.quantity} disponibles</p>
-                )}
-
-                <div className="mt-auto pt-2">
-                    <p className="text-lg font-bold text-gray-900">
-                        ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
-                    </p>
+                <div className="mt-auto pt-2 flex items-end justify-between gap-2">
+                    <div>
+                        <p className="text-xl font-bold text-gray-900 leading-none">
+                            ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                        </p>
+                        {item.quantity > 1 && (
+                            <p className="text-[11px] text-gray-400 mt-1">{item.quantity} disponibles</p>
+                        )}
+                    </div>
+                    <span className="shrink-0 text-xs font-medium text-indigo-600 group-hover:translate-x-0.5 transition-transform">
+                        Ver →
+                    </span>
                 </div>
             </div>
         </a>
@@ -84,6 +99,7 @@ export default function Store() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [search, setSearch] = useState('');
+    const [condFilter, setCondFilter] = useState<string>('todos');
 
     useEffect(() => {
         itemService.getPublicItems()
@@ -92,36 +108,78 @@ export default function Store() {
             .finally(() => setLoading(false));
     }, []);
 
-    const filtered = items.filter(item =>
-        item.productName.toLowerCase().includes(search.toLowerCase()) ||
-        (item.location || '').toLowerCase().includes(search.toLowerCase())
-    );
+    const filtered = items.filter(item => {
+        const q = search.toLowerCase();
+        const matchSearch = item.productName.toLowerCase().includes(q) ||
+            (item.location || '').toLowerCase().includes(q) ||
+            (item.description || '').toLowerCase().includes(q);
+        const matchCond = condFilter === 'todos' || item.condition === condFilter;
+        return matchSearch && matchCond;
+    });
+
+    const conditions = ['todos', ...Array.from(new Set(items.map(i => i.condition)))];
 
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-                <div className="max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div className="flex-1">
-                        <h1 className="text-xl font-bold text-gray-900">Tienda</h1>
-                        {!loading && !error && (
-                            <p className="text-xs text-gray-400">{filtered.length} producto{filtered.length !== 1 ? 's' : ''} disponible{filtered.length !== 1 ? 's' : ''}</p>
-                        )}
-                    </div>
-                    <input
-                        type="search"
-                        placeholder="Buscar producto o ubicación..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="w-full sm:w-64 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-gray-400 focus:bg-white transition-all"
-                    />
+            {/* Hero header */}
+            <header className="bg-gray-900 text-white">
+                <div className="max-w-5xl mx-auto px-4 pt-10 pb-8 text-center">
+                    <p className="text-3xl mb-2">🛍️</p>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Tienda</h1>
+                    {!loading && !error && (
+                        <p className="text-sm text-gray-400 mt-1.5">
+                            {items.length} producto{items.length !== 1 ? 's' : ''} disponible{items.length !== 1 ? 's' : ''}
+                        </p>
+                    )}
                 </div>
             </header>
 
-            <main className="max-w-5xl mx-auto px-4 py-6">
+            {/* Search & filters (sticky) */}
+            <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
+                <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row gap-2.5 sm:items-center">
+                    <div className="relative flex-1">
+                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                            type="search"
+                            placeholder="Buscar producto..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-sm outline-none focus:border-gray-400 focus:bg-white transition-all"
+                        />
+                    </div>
+                    {conditions.length > 2 && (
+                        <div className="flex gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+                            {conditions.map(c => (
+                                <button
+                                    key={c}
+                                    onClick={() => setCondFilter(c)}
+                                    className={`shrink-0 text-xs font-medium px-3.5 py-2 rounded-full transition-all ${condFilter === c
+                                        ? 'bg-gray-900 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                                >
+                                    {c === 'todos' ? 'Todos' : conditionLabel[c] || c}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <main className="max-w-5xl mx-auto px-4 py-6 pb-16">
                 {loading && (
-                    <div className="flex items-center justify-center py-24">
-                        <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                            <div key={i} className="bg-white rounded-2xl overflow-hidden border border-gray-100 animate-pulse">
+                                <div className="aspect-square bg-gray-100" />
+                                <div className="p-4 space-y-2">
+                                    <div className="h-3.5 bg-gray-100 rounded-full w-4/5" />
+                                    <div className="h-3 bg-gray-100 rounded-full w-3/5" />
+                                    <div className="h-5 bg-gray-100 rounded-full w-2/5 mt-3" />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 
@@ -137,7 +195,12 @@ export default function Store() {
                         <svg className="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
-                        <p className="font-medium">{search ? 'Sin resultados' : 'Sin productos disponibles'}</p>
+                        <p className="font-medium">{search || condFilter !== 'todos' ? 'Sin resultados' : 'Sin productos disponibles'}</p>
+                        {(search || condFilter !== 'todos') && (
+                            <button onClick={() => { setSearch(''); setCondFilter('todos'); }} className="text-sm text-indigo-600 underline mt-2">
+                                Limpiar filtros
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -149,6 +212,10 @@ export default function Store() {
                     </div>
                 )}
             </main>
+
+            <footer className="border-t border-gray-100 bg-white py-6 text-center text-xs text-gray-400">
+                Los precios y el stock se actualizan en tiempo real.
+            </footer>
         </div>
     );
 }
