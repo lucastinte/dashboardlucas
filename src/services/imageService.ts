@@ -89,5 +89,18 @@ export const imageService = {
         }
 
         return getPublicUrl(filePath);
+    },
+
+    /**
+     * Delete a file from the bucket given its public URL.
+     * External URLs (not from this bucket) are ignored.
+     */
+    async remove(url: string): Promise<void> {
+        const marker = `/object/public/${BUCKET}/`;
+        const idx = url.indexOf(marker);
+        if (idx === -1) return; // URL externa, no hay nada que borrar
+        const path = decodeURIComponent(url.slice(idx + marker.length).split('?')[0]);
+        if (!path) return;
+        await supabase.storage.from(BUCKET).remove([path]);
     }
 };

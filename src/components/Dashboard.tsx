@@ -382,6 +382,7 @@ export default function Dashboard() {
 
                     const unitSalePrice = Number(formData.salePrice) || Number(editingItem.salePrice) || editingItem.purchasePrice;
 
+                    const isLastUnits = editingItem.quantity - quantity <= 0;
                     await itemService.createItem({
                         productName: editingItem.productName,
                         purchasePrice: editingItem.purchasePrice,
@@ -395,7 +396,16 @@ export default function Dashboard() {
                         location: formData.location || editingItem.location,
                         estimatedSalePrice: editingItem.estimatedSalePrice,
                         imageUrl: formData.imageUrl || editingItem.imageUrl,
-                        saleDate: formDateISO
+                        saleDate: formDateISO,
+                        // Al vender las últimas unidades el registro de stock se borra:
+                        // conservar los datos de tienda en la venta (ocultos) para no perderlos
+                        ...(isLastUnits ? {
+                            description: editingItem.description,
+                            storeTitle: editingItem.storeTitle,
+                            storeGroup: editingItem.storeGroup,
+                            storeImages: editingItem.storeImages,
+                            storeVideoUrl: editingItem.storeVideoUrl,
+                        } : {})
                     });
 
                     const remaining = editingItem.quantity - quantity;
@@ -669,6 +679,35 @@ export default function Dashboard() {
             await itemService.updateItem(id, patch);
         } catch (err) {
             console.error('Error updating storeImages:', err);
+            loadItems();
+        }
+    };
+
+    const handleClearStoreData = async (target: Item) => {
+        if (!confirm(`¿Eliminar todos los datos de tienda de "${target.productName}"?\n\nSe borran: título, descripción, grupo, fotos adicionales y video. Los archivos que ningún otro producto use también se eliminan del servidor para liberar espacio.\n\nLa foto principal y el producto en sí NO se tocan.`)) return;
+        try {
+            // Archivos candidatos a borrar del Storage (fotos de tienda + video)
+            const candidates = [...(target.storeImages || []), target.storeVideoUrl].filter((u): u is string => !!u);
+            // Solo borrar los que ningún otro item referencia (las imágenes se dedupican por hash y pueden compartirse)
+            const usedElsewhere = (url: string) => items.some(i =>
+                i.id !== target.id && (
+                    i.imageUrl === url ||
+                    (i.storeImages || []).includes(url) ||
+                    i.storeVideoUrl === url
+                )
+            );
+            for (const url of candidates) {
+                if (!usedElsewhere(url)) {
+                    try { await imageService.remove(url); } catch { /* archivo externo o ya borrado */ }
+                }
+            }
+            const patch: Partial<Item> = { storeImages: [], storeVideoUrl: '', description: '', storeTitle: '', storeGroup: '', publicInStore: false };
+            setItems(prev => prev.map(i => i.id === target.id ? { ...i, ...patch } : i));
+            await itemService.updateItem(target.id, patch);
+            setStoreImagesItem(null);
+        } catch (err) {
+            console.error('Error clearing store data:', err);
+            alert('Error al eliminar los datos de tienda.');
             loadItems();
         }
     };
@@ -1133,6 +1172,7 @@ export default function Dashboard() {
                         await handleUpdateStoreImages(id, patch);
                         setStoreImagesItem(prev => prev ? { ...prev, ...patch } : null);
                     }}
+                    onClearAll={() => handleClearStoreData(storeImagesItem)}
                 />
             )}
 
@@ -3068,10 +3108,11 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     );
 }
 
-function StoreImagesModal({ item, onClose, onSave }: {
+function StoreImagesModal({ item, onClose, onSave, onClearAll }: {
     item: Item;
     onClose: () => void;
     onSave: (id: string, patch: Partial<Item>) => Promise<void>;
+    onClearAll: () => void;
 }) {
     const [images, setImages] = useState<string[]>(item.storeImages || []);
     const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
@@ -3361,6 +3402,17 @@ function StoreImagesModal({ item, onClose, onSave }: {
                     </div>
 
                     {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+
+                    {/* Eliminar datos de tienda */}
+                    {(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup) ? (
+                        <button
+                            onClick={onClearAll}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-100 text-xs font-medium text-red-500 hover:bg-red-50 transition-all"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Eliminar datos de tienda (libera espacio)
+                        </button>
+                    ) : null}
                 </div>
 
                 {/* Footer */}
