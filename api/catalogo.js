@@ -101,7 +101,7 @@ export default async function handler(req, res) {
             } else {
                 lines.push('  Opciones:');
                 for (const v of p.variantes) {
-                    lines.push(`    - ${v.nombre}: ${fmt(v.precio)} — ${v.condicion} — ${v.cantidad} disponible${v.cantidad !== 1 ? 's' : ''}`);
+                    lines.push(`    - ${v.nombre}: ${fmt(v.precio)} — ${v.condicion} — ${v.cantidad} disponible${v.cantidad !== 1 ? 's' : ''}${v.ubicacion ? ` — Ubicación: ${v.ubicacion}` : ''}`);
                 }
             }
             lines.push(`  Link: ${p.link}`);

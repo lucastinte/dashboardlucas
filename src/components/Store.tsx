@@ -52,6 +52,7 @@ function ProductCard({ entry }: { entry: StoreEntry }) {
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const totalStock = variants.reduce((acc, v) => acc + v.quantity, 0);
+    const locations = Array.from(new Set(variants.map(v => v.location).filter(Boolean))).join(' · ');
 
     return (
         <a
@@ -104,13 +105,13 @@ function ProductCard({ entry }: { entry: StoreEntry }) {
                     <p className="text-xs text-gray-400 line-clamp-2">{item.description}</p>
                 )}
 
-                {item.location && (
+                {locations && (
                     <p className="text-[11px] text-gray-400 flex items-center gap-1">
                         <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        {item.location}
+                        {locations}
                     </p>
                 )}
 

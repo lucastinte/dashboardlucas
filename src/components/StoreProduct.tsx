@@ -216,6 +216,7 @@ export default function StoreProduct({ id }: { id: string }) {
                                                     <p className="text-[11px] text-gray-400">
                                                         {conditionLabel[v.condition] || v.condition}
                                                         {v.quantity > 1 ? ` · ${v.quantity} disponibles` : ' · 1 disponible'}
+                                                        {v.location ? ` · 📍 ${v.location}` : ''}
                                                     </p>
                                                 </div>
                                                 <p className="shrink-0 text-sm font-bold text-gray-900">
