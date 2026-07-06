@@ -81,6 +81,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
     const [waIcon, setWaIcon] = useState<HTMLImageElement | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const blobRef = useRef<Blob | null>(null);
 
     // Fotos disponibles del producto para elegir la base
     const productImages = Array.from(new Set([item.imageUrl, ...(item.storeImages || [])].filter((u): u is string => !!u)));
@@ -244,8 +245,10 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         // Exportar a imagen arrastrable (falla si la foto externa no permite CORS)
         try {
             setPreviewUrl(cv.toDataURL('image/png'));
+            cv.toBlob(b => { blobRef.current = b; }, 'image/png');
         } catch {
             setPreviewUrl(null);
+            blobRef.current = null;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [title, price, wa, store, qrMode, fmt, baseImg, waIcon, loadingImg]);
@@ -273,6 +276,20 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         a.download = `placa-${t}.png`;
         a.href = previewUrl;
         a.click();
+    };
+
+    // Adjuntar un archivo PNG real al arrastre: así Facebook lo recibe como
+    // si viniera del explorador de archivos (la URL de imagen sola no le sirve)
+    const handleDragStart = (e: React.DragEvent) => {
+        const t = (title.trim() || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
+        if (blobRef.current) {
+            const file = new File([blobRef.current], `placa-${t}.png`, { type: 'image/png' });
+            e.dataTransfer.items.add(file);
+        }
+        if (previewUrl) {
+            e.dataTransfer.setData('DownloadURL', `image/png:placa-${t}.png:${previewUrl}`);
+        }
+        e.dataTransfer.effectAllowed = 'copy';
     };
 
     const copyImage = async () => {
@@ -391,6 +408,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                         src={previewUrl}
                                         alt="Placa"
                                         draggable
+                                        onDragStart={handleDragStart}
                                         className="w-full h-auto block cursor-grab active:cursor-grabbing"
                                         title="Arrastrá esta imagen directo a Facebook Marketplace"
                                     />
@@ -404,7 +422,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                             {previewUrl && (
                                 <div className="flex items-center justify-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
                                     <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
-                                    <span><b>Arrastrá la imagen de arriba</b> directo a "Agregar fotos" de Marketplace</span>
+                                    <span><b>Arrastrá la imagen</b> hasta la pestaña de Facebook (esperá que cambie sin soltar) y soltala en "Agregar fotos"</span>
                                 </div>
                             )}
 
