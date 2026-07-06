@@ -66,11 +66,9 @@ function drawCover(c: CanvasRenderingContext2D, img: HTMLImageElement, x: number
 export default function PlacaModal({ item, onClose }: { item: Item; onClose: () => void }) {
     const initialConfig = useRef(loadConfig());
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [title, setTitle] = useState((item.storeTitle || item.productName).slice(0, 42));
-    const [price, setPrice] = useState(() => {
-        const p = item.salePrice || item.estimatedSalePrice || 0;
-        return p > 0 ? `$ ${p.toLocaleString('es-AR')}` : '';
-    });
+    // Título y precio arrancan vacíos: solo aparecen en la placa si se completan
+    const [title, setTitle] = useState('');
+    const [price, setPrice] = useState('');
     const [wa, setWa] = useState(initialConfig.current.wa);
     const [store, setStore] = useState(initialConfig.current.store);
     const [qrMode, setQrMode] = useState<'wa' | 'store'>('wa');
@@ -360,14 +358,30 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                             )}
 
                             <div>
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Título (corto)</p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Título (opcional)</p>
+                                    {!title && (
+                                        <button onClick={() => setTitle((item.storeTitle || item.productName).slice(0, 42))} className="text-[11px] text-amber-600 hover:text-amber-700 font-medium">
+                                            usar el del producto
+                                        </button>
+                                    )}
+                                </div>
                                 <input type="text" maxLength={42} value={title} onChange={e => setTitle(e.target.value)}
+                                    placeholder="Sin título en la placa"
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
                             </div>
 
                             <div>
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Precio</p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Precio (opcional)</p>
+                                    {!price && (item.salePrice || item.estimatedSalePrice || 0) > 0 && (
+                                        <button onClick={() => setPrice(`$ ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}`)} className="text-[11px] text-amber-600 hover:text-amber-700 font-medium">
+                                            usar el del producto
+                                        </button>
+                                    )}
+                                </div>
                                 <input type="text" maxLength={18} value={price} onChange={e => setPrice(e.target.value)}
+                                    placeholder="Sin precio en la placa"
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
                             </div>
 
