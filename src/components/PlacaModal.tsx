@@ -420,9 +420,8 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                             </div>
 
                             {previewUrl && (
-                                <div className="flex items-center justify-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-                                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
-                                    <span><b>Arrastrá la imagen</b> hasta la pestaña de Facebook (esperá que cambie sin soltar) y soltala en "Agregar fotos"</span>
+                                <div className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 leading-relaxed">
+                                    <b>Como una captura de pantalla:</b> tocá <b>Copiar</b> (queda en el portapapeles igual que ⌘⇧⌃4) y en Facebook pegala con <b>⌘V</b>. Si Facebook no acepta pegar, usá Descargar y arrastrala desde la barra de descargas de Chrome.
                                 </div>
                             )}
 
@@ -430,17 +429,16 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                 <button
                                     onClick={copyImage}
                                     disabled={!previewUrl}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold disabled:opacity-40 transition-all"
+                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold disabled:opacity-40 transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}
                                 >
-                                    {copied ? <><Check className="w-4 h-4 text-emerald-500" /><span className="text-emerald-600">Copiada</span></> : <><Copy className="w-4 h-4" />Copiar</>}
+                                    {copied ? <><Check className="w-4 h-4" />Copiada — pegala con ⌘V</> : <><Copy className="w-4 h-4" />Copiar imagen</>}
                                 </button>
                                 <button
                                     onClick={download}
                                     disabled={!baseImg}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-40 transition-all"
+                                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold disabled:opacity-40 transition-all"
                                 >
                                     <Download className="w-4 h-4" />
-                                    Descargar
                                 </button>
                             </div>
                             <p className="text-[11px] text-gray-400 text-center">La imagen se genera en tu dispositivo — nada se sube a ningún lado.</p>
