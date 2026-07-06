@@ -6,6 +6,7 @@ import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
 import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import PlacaModal from './PlacaModal';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
@@ -140,6 +141,7 @@ export default function Dashboard() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
     const [storeImagesItem, setStoreImagesItem] = useState<Item | null>(null);
+    const [placaItem, setPlacaItem] = useState<Item | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const savingRef = useRef(false);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
@@ -1173,7 +1175,13 @@ export default function Dashboard() {
                         setStoreImagesItem(prev => prev ? { ...prev, ...patch } : null);
                     }}
                     onClearAll={() => handleClearStoreData(storeImagesItem)}
+                    onGeneratePlaca={() => setPlacaItem(storeImagesItem)}
                 />
+            )}
+
+            {/* Placa Marketplace Modal */}
+            {placaItem && (
+                <PlacaModal item={placaItem} onClose={() => setPlacaItem(null)} />
             )}
 
             {/* Modal Overlay */}
@@ -3108,11 +3116,12 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     );
 }
 
-function StoreImagesModal({ item, onClose, onSave, onClearAll }: {
+function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }: {
     item: Item;
     onClose: () => void;
     onSave: (id: string, patch: Partial<Item>) => Promise<void>;
     onClearAll: () => void;
+    onGeneratePlaca: () => void;
 }) {
     const [images, setImages] = useState<string[]>(item.storeImages || []);
     const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
@@ -3402,6 +3411,14 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll }: {
                     </div>
 
                     {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+
+                    {/* Generar placa para Marketplace */}
+                    <button
+                        onClick={onGeneratePlaca}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-all"
+                    >
+                        🪧 Generar placa para Marketplace
+                    </button>
 
                     {/* Eliminar datos de tienda */}
                     {(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup) ? (
