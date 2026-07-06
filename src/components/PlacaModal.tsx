@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import qrcode from 'qrcode-generator';
-import { X, Download, Upload, Loader2 } from 'lucide-react';
+import { X, Download, Upload, Loader2, Copy, Check } from 'lucide-react';
 import type { Item } from '../types';
 
 // Icono de WhatsApp (SVG → imagen) para dibujar nítido en canvas
@@ -79,6 +79,8 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
     const [tainted, setTainted] = useState(false);
     const [loadingImg, setLoadingImg] = useState(false);
     const [waIcon, setWaIcon] = useState<HTMLImageElement | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
 
     // Fotos disponibles del producto para elegir la base
     const productImages = Array.from(new Set([item.imageUrl, ...(item.storeImages || [])].filter((u): u is string => !!u)));
@@ -238,6 +240,13 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             ctx.textAlign = 'center';
             ctx.fillText(p, bx + bw / 2, by + bh / 2 + 12 * s);
         }
+
+        // Exportar a imagen arrastrable (falla si la foto externa no permite CORS)
+        try {
+            setPreviewUrl(cv.toDataURL('image/png'));
+        } catch {
+            setPreviewUrl(null);
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [title, price, wa, store, qrMode, fmt, baseImg, waIcon, loadingImg]);
 
@@ -255,16 +264,29 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
     };
 
     const download = () => {
+        if (!previewUrl) {
+            alert('Esta foto viene de un sitio externo que no permite exportarla. Subí el archivo de la foto manualmente y volvé a intentar.');
+            return;
+        }
+        const a = document.createElement('a');
+        const t = (title.trim() || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
+        a.download = `placa-${t}.png`;
+        a.href = previewUrl;
+        a.click();
+    };
+
+    const copyImage = async () => {
         const cv = canvasRef.current;
-        if (!cv) return;
+        if (!cv || !previewUrl) return;
         try {
-            const a = document.createElement('a');
-            const t = (title.trim() || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
-            a.download = `placa-${t}.png`;
-            a.href = cv.toDataURL('image/png');
-            a.click();
+            const blob: Blob = await new Promise((res, rej) =>
+                cv.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png')
+            );
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
         } catch {
-            alert('Esta foto viene de un sitio externo que no permite exportarla. Subí el archivo de la foto manualmente (botón "Subir otra foto") y volvé a intentar.');
+            alert('Tu navegador no permite copiar imágenes al portapapeles. Usá arrastrar o descargar.');
         }
     };
 
@@ -356,22 +378,53 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                         {/* Preview */}
                         <div className="flex flex-col gap-3">
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vista previa</p>
+                            {/* Canvas oculto: solo genera la imagen */}
+                            <canvas ref={canvasRef} className="hidden" />
                             <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-900 relative">
                                 {loadingImg && (
                                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30">
                                         <Loader2 className="w-6 h-6 text-white animate-spin" />
                                     </div>
                                 )}
-                                <canvas ref={canvasRef} className="w-full h-auto block" />
+                                {previewUrl ? (
+                                    <img
+                                        src={previewUrl}
+                                        alt="Placa"
+                                        draggable
+                                        className="w-full h-auto block cursor-grab active:cursor-grabbing"
+                                        title="Arrastrá esta imagen directo a Facebook Marketplace"
+                                    />
+                                ) : (
+                                    <div className="aspect-square flex items-center justify-center text-gray-500 text-sm px-6 text-center">
+                                        {baseImg ? 'Esta foto externa no permite exportar — subí el archivo manualmente' : 'Elegí o subí una foto'}
+                                    </div>
+                                )}
                             </div>
-                            <button
-                                onClick={download}
-                                disabled={!baseImg}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-40 transition-all"
-                            >
-                                <Download className="w-4 h-4" />
-                                Descargar placa PNG
-                            </button>
+
+                            {previewUrl && (
+                                <div className="flex items-center justify-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
+                                    <span><b>Arrastrá la imagen de arriba</b> directo a "Agregar fotos" de Marketplace</span>
+                                </div>
+                            )}
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={copyImage}
+                                    disabled={!previewUrl}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold disabled:opacity-40 transition-all"
+                                >
+                                    {copied ? <><Check className="w-4 h-4 text-emerald-500" /><span className="text-emerald-600">Copiada</span></> : <><Copy className="w-4 h-4" />Copiar</>}
+                                </button>
+                                <button
+                                    onClick={download}
+                                    disabled={!baseImg}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-40 transition-all"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Descargar
+                                </button>
+                            </div>
                             <p className="text-[11px] text-gray-400 text-center">La imagen se genera en tu dispositivo — nada se sube a ningún lado.</p>
                         </div>
                     </div>
