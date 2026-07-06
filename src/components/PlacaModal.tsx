@@ -81,7 +81,16 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
     const [waIcon, setWaIcon] = useState<HTMLImageElement | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const [zoomed, setZoomed] = useState(false);
     const blobRef = useRef<Blob | null>(null);
+
+    // Cerrar el zoom con Escape
+    useEffect(() => {
+        if (!zoomed) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomed(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [zoomed]);
 
     // Fotos disponibles del producto para elegir la base
     const productImages = Array.from(new Set([item.imageUrl, ...(item.storeImages || [])].filter((u): u is string => !!u)));
@@ -409,8 +418,9 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                         alt="Placa"
                                         draggable
                                         onDragStart={handleDragStart}
-                                        className="w-full h-auto block cursor-grab active:cursor-grabbing"
-                                        title="Arrastrá esta imagen directo a Facebook Marketplace"
+                                        onClick={() => setZoomed(true)}
+                                        className="w-full h-auto block cursor-zoom-in"
+                                        title="Clic para agrandar y sacar captura"
                                     />
                                 ) : (
                                     <div className="aspect-square flex items-center justify-center text-gray-500 text-sm px-6 text-center">
@@ -421,7 +431,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
 
                             {previewUrl && (
                                 <div className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 leading-relaxed">
-                                    <b>Como una captura de pantalla:</b> tocá <b>Copiar</b> (queda en el portapapeles igual que ⌘⇧⌃4) y en Facebook pegala con <b>⌘V</b>. Si Facebook no acepta pegar, usá Descargar y arrastrala desde la barra de descargas de Chrome.
+                                    <b>Clic en la imagen para agrandarla</b> → sacá la captura (⌘⇧4) → arrastrá la captura a Facebook. O usá <b>Copiar</b> + ⌘V.
                                 </div>
                             )}
 
@@ -446,6 +456,23 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                     </div>
                 </div>
             </div>
+
+            {/* Zoom fullscreen para sacar captura */}
+            {zoomed && previewUrl && (
+                <div
+                    className="fixed inset-0 z-[80] bg-black flex items-center justify-center cursor-zoom-out"
+                    onClick={() => setZoomed(false)}
+                >
+                    <img
+                        src={previewUrl}
+                        alt="Placa"
+                        className="max-w-full max-h-full object-contain"
+                    />
+                    <p className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-white/40 pointer-events-none select-none">
+                        ⌘⇧4 para capturar · clic o Esc para cerrar
+                    </p>
+                </div>
+            )}
         </div>
     );
 }
