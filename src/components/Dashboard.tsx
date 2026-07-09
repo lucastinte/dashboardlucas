@@ -3128,6 +3128,7 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
     const [description, setDescription] = useState<string>(item.description || '');
     const [storeTitle, setStoreTitle] = useState<string>(item.storeTitle || '');
     const [storeGroup, setStoreGroup] = useState<string>(item.storeGroup || '');
+    const [storeVariantName, setStoreVariantName] = useState<string>(item.storeVariantName || '');
     const [uploading, setUploading] = useState(false);
     const [uploadingVideo, setUploadingVideo] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -3227,6 +3228,7 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
                 description: description.trim() || '',
                 storeTitle: storeTitle.trim() || '',
                 storeGroup: storeGroup.trim().toLowerCase().replace(/\s+/g, '-') || '',
+                storeVariantName: storeVariantName.trim() || '',
             });
             onClose();
         } catch (err) {
@@ -3267,14 +3269,28 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
                     {/* ── GRUPO (variantes) ── */}
                     <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Agrupar variantes</p>
-                        <input
-                            type="text"
-                            value={storeGroup}
-                            onChange={e => setStoreGroup(e.target.value)}
-                            placeholder="ej: cable-tipo-c"
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
-                        />
-                        <p className="text-[11px] text-gray-400 mt-1">Poné el mismo código en los productos similares (ej. cable de 2m y de 3m) y en la tienda aparecen como una sola publicación con sus variantes.</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <input
+                                    type="text"
+                                    value={storeGroup}
+                                    onChange={e => setStoreGroup(e.target.value)}
+                                    placeholder="ej: cable-tipo-c"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                                />
+                                <p className="text-[11px] text-gray-400 mt-1">Código de grupo: el mismo en todos los productos similares.</p>
+                            </div>
+                            <div>
+                                <input
+                                    type="text"
+                                    value={storeVariantName}
+                                    onChange={e => setStoreVariantName(e.target.value)}
+                                    placeholder="ej: 2 metros"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                                />
+                                <p className="text-[11px] text-gray-400 mt-1">Nombre de esta variante: cómo se muestra en la lista de opciones.</p>
+                            </div>
+                        </div>
                     </div>
 
                     {/* ── DESCRIPCIÓN ── */}

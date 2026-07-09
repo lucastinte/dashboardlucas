@@ -87,6 +87,7 @@ alter table items add column if not exists store_video_url text;
 alter table items add column if not exists description text;
 alter table items add column if not exists store_title text;
 alter table items add column if not exists store_group text;
+alter table items add column if not exists store_variant_name text;
 
 -- New columns for categories and batch status
 alter table items add column if not exists category text;

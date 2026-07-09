@@ -52,6 +52,7 @@ const mapFromDb = (dbItem: any): Item => ({
     description: dbItem.description ?? undefined,
     storeTitle: dbItem.store_title ?? undefined,
     storeGroup: dbItem.store_group ?? undefined,
+    storeVariantName: dbItem.store_variant_name ?? undefined,
 });
 
 // Helper to map application model to DB columns
@@ -92,6 +93,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.description !== undefined) dbItem.description = item.description || null;
     if (item.storeTitle !== undefined) dbItem.store_title = item.storeTitle || null;
     if (item.storeGroup !== undefined) dbItem.store_group = item.storeGroup || null;
+    if (item.storeVariantName !== undefined) dbItem.store_variant_name = item.storeVariantName || null;
     return dbItem;
 };
 

@@ -40,6 +40,7 @@ export interface Item {
     description?: string;
     storeTitle?: string;
     storeGroup?: string;
+    storeVariantName?: string;
 }
 
 // Deprecated but kept for temporary compatibility if needed during migration, 
