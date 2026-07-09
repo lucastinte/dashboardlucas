@@ -77,25 +77,32 @@ export default function StoreProduct({ id }: { id: string }) {
             .finally(() => setLoading(false));
     }, [id]);
 
-    // Fusionar variantes con el mismo nombre: suma cantidades, precio más alto
+    // Solo el nombre de variante (y la ubicación) definen una variante.
+    // Sin nombre y misma ubicación → se suma como cantidad del mismo producto.
+    // Precios distintos dentro del mismo grupo → se muestra el más alto.
     const mergedVariants = (() => {
-        const map = new Map<string, { ids: string[]; name: string; condition: string; quantity: number; price: number; locations: string[] }>();
+        const map = new Map<string, { ids: string[]; variantName: string; condition: string; quantity: number; price: number; location: string }>();
         for (const v of variants) {
-            const name = (v.storeVariantName || v.productName).trim();
-            const key = name.toLowerCase();
+            const variantName = (v.storeVariantName || '').trim();
+            const location = (v.location || '').trim();
+            const key = `${variantName.toLowerCase()}|${location.toLowerCase()}`;
             const price = v.salePrice || v.estimatedSalePrice || 0;
             const ex = map.get(key);
             if (ex) {
                 ex.quantity += v.quantity;
                 ex.price = Math.max(ex.price, price);
-                if (v.location && !ex.locations.includes(v.location)) ex.locations.push(v.location);
                 ex.ids.push(v.id);
             } else {
-                map.set(key, { ids: [v.id], name, condition: v.condition, quantity: v.quantity, price, locations: v.location ? [v.location] : [] });
+                map.set(key, { ids: [v.id], variantName, condition: v.condition, quantity: v.quantity, price, location });
             }
         }
         return Array.from(map.values());
     })();
+
+    const hasOptions = mergedVariants.length > 1;
+    // Precio y stock a mostrar cuando el grupo se fusiona en una sola opción
+    const displayPrice = mergedVariants.length === 1 ? mergedVariants[0].price : (item ? (item.salePrice || item.estimatedSalePrice || 0) : 0);
+    const displayStock = mergedVariants.length === 1 ? mergedVariants[0].quantity : (item?.quantity ?? 0);
 
     // Imágenes del producto + las de sus variantes (sin duplicados)
     const allImages = item
@@ -211,16 +218,16 @@ export default function StoreProduct({ id }: { id: string }) {
                         <div className="p-6 flex flex-col gap-4">
                             <div className="flex items-start justify-between gap-3">
                                 <h1 className="text-xl font-bold text-gray-900 leading-tight">{item.storeTitle || item.productName}</h1>
-                                {variants.length === 0 && (
+                                {!hasOptions && (
                                     <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${conditionColor[item.condition] || conditionColor.nuevo}`}>
                                         {conditionLabel[item.condition] || item.condition}
                                     </span>
                                 )}
                             </div>
 
-                            {variants.length === 0 && (
+                            {!hasOptions && (
                                 <p className="text-3xl font-bold text-gray-900">
-                                    ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                                    ${displayPrice.toLocaleString('es-AR')}
                                 </p>
                             )}
 
@@ -229,7 +236,7 @@ export default function StoreProduct({ id }: { id: string }) {
                             )}
 
                             {/* Variantes disponibles */}
-                            {variants.length > 1 && (
+                            {hasOptions && (
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Opciones disponibles</p>
@@ -244,10 +251,12 @@ export default function StoreProduct({ id }: { id: string }) {
                                                 className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 ${v.ids.includes(item.id) ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-200 bg-gray-50'}`}
                                             >
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-gray-900 truncate">{v.name}</p>
+                                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                                        {v.variantName || (v.location ? `📍 ${v.location}` : 'Disponible')}
+                                                    </p>
                                                     <p className="text-[11px] text-gray-400">
                                                         {conditionLabel[v.condition] || v.condition}
-                                                        {v.locations.length > 0 ? ` · 📍 ${v.locations.join(' · ')}` : ''}
+                                                        {v.variantName && v.location ? ` · 📍 ${v.location}` : ''}
                                                     </p>
                                                 </div>
                                                 <div className="shrink-0 flex items-center gap-2">
@@ -264,10 +273,10 @@ export default function StoreProduct({ id }: { id: string }) {
                                 </div>
                             )}
 
-                            {/* Stock del producto sin variantes */}
-                            {variants.length === 0 && item.quantity > 0 && (
+                            {/* Stock cuando no hay opciones (producto único o grupo fusionado) */}
+                            {!hasOptions && displayStock > 0 && (
                                 <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 self-start px-2.5 py-1 rounded-full">
-                                    {item.quantity} en stock
+                                    {displayStock} en stock
                                 </p>
                             )}
 

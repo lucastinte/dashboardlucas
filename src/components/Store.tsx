@@ -48,13 +48,20 @@ function ProductCard({ entry }: { entry: StoreEntry }) {
     const [imgError, setImgError] = useState(false);
     const extraCount = (item.storeImages?.length || 0);
     const firstImage = [item.imageUrl, ...(item.storeImages || []), ...variants.map(v => v.imageUrl)].find(u => !!u) ?? null;
-    const prices = variants.map(v => v.salePrice || v.estimatedSalePrice || 0);
+    // Variante = nombre de variante + ubicación; sin nombre y misma ubicación se fusionan
+    // (precio del fusionado = el más alto)
+    const maxByKey = new Map<string, number>();
+    for (const v of variants) {
+        const key = `${(v.storeVariantName || '').trim().toLowerCase()}|${(v.location || '').trim().toLowerCase()}`;
+        const p = v.salePrice || v.estimatedSalePrice || 0;
+        maxByKey.set(key, Math.max(maxByKey.get(key) || 0, p));
+    }
+    const prices = Array.from(maxByKey.values());
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const totalStock = variants.reduce((acc, v) => acc + v.quantity, 0);
     const locations = Array.from(new Set(variants.map(v => v.location).filter(Boolean))).join(' · ');
-    // Variantes con el mismo nombre cuentan como una sola
-    const variantCount = new Set(variants.map(v => (v.storeVariantName || v.productName).trim().toLowerCase())).size;
+    const variantCount = maxByKey.size;
 
     return (
         <a

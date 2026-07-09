@@ -41,19 +41,23 @@ export default async function handler(req, res) {
         link: `${baseUrl}/tienda/producto/${it.id}`,
     });
 
-    // Variantes con el mismo nombre se fusionan: suma cantidades, precio más alto
-    const mergeVariants = (list) => {
+    // Variante = nombre de variante + ubicación. Sin nombre y misma ubicación
+    // se fusionan: suma cantidades, precio más alto.
+    const mergeItems = (group) => {
         const map = new Map();
-        for (const v of list) {
-            const key = v.nombre.trim().toLowerCase();
+        for (const it of group) {
+            const key = `${(it.store_variant_name || '').trim().toLowerCase()}|${(it.location || '').trim().toLowerCase()}`;
             const ex = map.get(key);
             if (ex) {
-                ex.cantidad += v.cantidad;
-                ex.precio = Math.max(ex.precio, v.precio);
-                if (v.ubicacion && ex.ubicacion && !ex.ubicacion.includes(v.ubicacion)) ex.ubicacion += ' / ' + v.ubicacion;
-                else ex.ubicacion = ex.ubicacion || v.ubicacion;
+                ex.quantity = (ex.quantity || 0) + (it.quantity || 0);
+                const exPrice = Number(ex.sale_price || ex.estimated_sale_price || 0);
+                const price = Number(it.sale_price || it.estimated_sale_price || 0);
+                if (price > exPrice) {
+                    ex.sale_price = it.sale_price;
+                    ex.estimated_sale_price = it.estimated_sale_price;
+                }
             } else {
-                map.set(key, { ...v });
+                map.set(key, { ...it });
             }
         }
         return [...map.values()];
@@ -84,7 +88,7 @@ export default async function handler(req, res) {
             video: rep.store_video_url || null,
             link: `${baseUrl}/tienda/producto/${rep.id}`,
             stockTotal: group.reduce((acc, it) => acc + (it.quantity || 0), 0),
-            variantes: mergeVariants(group.map(toVariant)),
+            variantes: mergeItems(group).map(toVariant),
         });
     }
     for (const it of singles) {
