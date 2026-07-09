@@ -38,12 +38,20 @@ add column if not exists publish_urls text;
 -- Enable Row Level Security (RLS)
 alter table items enable row level security;
 
--- Policy to allow anonymous access (since we are using anon key for simplicity in this demo)
--- Ideally you would authenticate users, but for now:
-create policy "Allow public access" 
-on items for all 
-using (true)
-with check (true);
+-- Políticas seguras: usuarios autenticados acceso total,
+-- anónimos solo lectura de productos publicados en la tienda
+drop policy if exists "Allow public access" on items;
+
+create policy "Authenticated full access" on items
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "Public store read" on items
+  for select
+  to anon
+  using (public_in_store = true and status = 'in_stock');
 -- Create the batches table for history
 create table if not exists batches (
   id uuid default gen_random_uuid() primary key,
@@ -61,22 +69,40 @@ create table if not exists batches (
 -- Enable RLS for batches
 alter table batches enable row level security;
 
-create policy "Allow public access for batches"
-on batches for all
-using (true)
-with check (true);
+-- Batches: solo usuarios autenticados (la tienda pública no la usa)
+drop policy if exists "Allow public access for batches" on batches;
+
+create policy "Authenticated full access batches" on batches
+  for all
+  to authenticated
+  using (true)
+  with check (true);
 
 -- =====================================================
 -- TIENDA PÚBLICA
 -- =====================================================
--- Correr esto en el SQL Editor de Supabase:
 alter table items add column if not exists public_in_store boolean not null default false;
-
--- Cuando apliques RLS auth-only, activar también esta política de lectura pública:
--- create policy "Lectura pública de tienda"
---   on items for select
---   using (public_in_store = true AND status = 'in_stock');
+alter table items add column if not exists store_images jsonb default '[]';
+alter table items add column if not exists store_video_url text;
+alter table items add column if not exists description text;
+alter table items add column if not exists store_title text;
+alter table items add column if not exists store_group text;
 
 -- New columns for categories and batch status
 alter table items add column if not exists category text;
 alter table batches add column if not exists batch_status text not null default 'completado';
+
+-- =====================================================
+-- STORAGE (bucket product-images)
+-- =====================================================
+-- Subida de videos (además de la política de imágenes creada desde el panel):
+-- create policy "Permitir subir videos"
+-- on storage.objects for insert
+-- to authenticated
+-- with check (bucket_id = 'product-images' and (metadata->>'mimetype') like 'video/%');
+
+-- Borrado de archivos (para "Eliminar datos de tienda"):
+-- create policy "Permitir borrar archivos"
+-- on storage.objects for delete
+-- to authenticated
+-- using (bucket_id = 'product-images');
