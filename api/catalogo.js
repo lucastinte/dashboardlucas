@@ -41,6 +41,24 @@ export default async function handler(req, res) {
         link: `${baseUrl}/tienda/producto/${it.id}`,
     });
 
+    // Variantes con el mismo nombre se fusionan: suma cantidades, precio más alto
+    const mergeVariants = (list) => {
+        const map = new Map();
+        for (const v of list) {
+            const key = v.nombre.trim().toLowerCase();
+            const ex = map.get(key);
+            if (ex) {
+                ex.cantidad += v.cantidad;
+                ex.precio = Math.max(ex.precio, v.precio);
+                if (v.ubicacion && ex.ubicacion && !ex.ubicacion.includes(v.ubicacion)) ex.ubicacion += ' / ' + v.ubicacion;
+                else ex.ubicacion = ex.ubicacion || v.ubicacion;
+            } else {
+                map.set(key, { ...v });
+            }
+        }
+        return [...map.values()];
+    };
+
     // Agrupar variantes por store_group; sin grupo → publicación individual
     const byGroup = new Map();
     const singles = [];
@@ -66,7 +84,7 @@ export default async function handler(req, res) {
             video: rep.store_video_url || null,
             link: `${baseUrl}/tienda/producto/${rep.id}`,
             stockTotal: group.reduce((acc, it) => acc + (it.quantity || 0), 0),
-            variantes: group.map(toVariant),
+            variantes: mergeVariants(group.map(toVariant)),
         });
     }
     for (const it of singles) {

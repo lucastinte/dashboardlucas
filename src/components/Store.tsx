@@ -53,6 +53,8 @@ function ProductCard({ entry }: { entry: StoreEntry }) {
     const maxPrice = Math.max(...prices);
     const totalStock = variants.reduce((acc, v) => acc + v.quantity, 0);
     const locations = Array.from(new Set(variants.map(v => v.location).filter(Boolean))).join(' · ');
+    // Variantes con el mismo nombre cuentan como una sola
+    const variantCount = new Set(variants.map(v => (v.storeVariantName || v.productName).trim().toLowerCase())).size;
 
     return (
         <a
@@ -97,8 +99,8 @@ function ProductCard({ entry }: { entry: StoreEntry }) {
             <div className="p-4 flex flex-col gap-1.5 flex-1">
                 <h3 className="font-semibold text-gray-900 leading-snug text-sm line-clamp-2">{item.storeTitle || item.productName}</h3>
 
-                {variants.length > 1 && (
-                    <p className="text-[11px] font-medium text-indigo-600">{variants.length} variantes disponibles</p>
+                {variantCount > 1 && (
+                    <p className="text-[11px] font-medium text-indigo-600">{variantCount} variantes disponibles</p>
                 )}
 
                 {item.description && (

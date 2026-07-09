@@ -77,6 +77,26 @@ export default function StoreProduct({ id }: { id: string }) {
             .finally(() => setLoading(false));
     }, [id]);
 
+    // Fusionar variantes con el mismo nombre: suma cantidades, precio más alto
+    const mergedVariants = (() => {
+        const map = new Map<string, { ids: string[]; name: string; condition: string; quantity: number; price: number; locations: string[] }>();
+        for (const v of variants) {
+            const name = (v.storeVariantName || v.productName).trim();
+            const key = name.toLowerCase();
+            const price = v.salePrice || v.estimatedSalePrice || 0;
+            const ex = map.get(key);
+            if (ex) {
+                ex.quantity += v.quantity;
+                ex.price = Math.max(ex.price, price);
+                if (v.location && !ex.locations.includes(v.location)) ex.locations.push(v.location);
+                ex.ids.push(v.id);
+            } else {
+                map.set(key, { ids: [v.id], name, condition: v.condition, quantity: v.quantity, price, locations: v.location ? [v.location] : [] });
+            }
+        }
+        return Array.from(map.values());
+    })();
+
     // Imágenes del producto + las de sus variantes (sin duplicados)
     const allImages = item
         ? Array.from(new Set([
@@ -218,16 +238,16 @@ export default function StoreProduct({ id }: { id: string }) {
                                         </span>
                                     </div>
                                     <div className="space-y-2">
-                                        {variants.map(v => (
+                                        {mergedVariants.map(v => (
                                             <div
-                                                key={v.id}
-                                                className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 ${v.id === item.id ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-200 bg-gray-50'}`}
+                                                key={v.ids[0]}
+                                                className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 ${v.ids.includes(item.id) ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-200 bg-gray-50'}`}
                                             >
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-gray-900 truncate">{v.storeVariantName || v.productName}</p>
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{v.name}</p>
                                                     <p className="text-[11px] text-gray-400">
                                                         {conditionLabel[v.condition] || v.condition}
-                                                        {v.location ? ` · 📍 ${v.location}` : ''}
+                                                        {v.locations.length > 0 ? ` · 📍 ${v.locations.join(' · ')}` : ''}
                                                     </p>
                                                 </div>
                                                 <div className="shrink-0 flex items-center gap-2">
@@ -235,7 +255,7 @@ export default function StoreProduct({ id }: { id: string }) {
                                                         ×{v.quantity}
                                                     </span>
                                                     <p className="text-sm font-bold text-gray-900">
-                                                        ${(v.salePrice || v.estimatedSalePrice || 0).toLocaleString('es-AR')}
+                                                        ${v.price.toLocaleString('es-AR')}
                                                     </p>
                                                 </div>
                                             </div>
