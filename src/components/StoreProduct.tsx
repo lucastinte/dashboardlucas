@@ -178,6 +178,13 @@ export default function StoreProduct({ id }: { id: string }) {
                                     ))}
                                 </div>
                             )}
+
+                            {/* Video debajo de la galería */}
+                            {item.storeVideoUrl && (
+                                <div className="mt-1">
+                                    <VideoPlayer url={item.storeVideoUrl} />
+                                </div>
+                            )}
                         </div>
 
                         {/* Info */}
@@ -267,14 +274,6 @@ export default function StoreProduct({ id }: { id: string }) {
                         </div>
                     </div>
                 </div>
-
-                {/* Video */}
-                {item.storeVideoUrl && (
-                    <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Video del producto</p>
-                        <VideoPlayer url={item.storeVideoUrl} />
-                    </div>
-                )}
             </main>
         </div>
     );
