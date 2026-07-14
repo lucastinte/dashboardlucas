@@ -93,17 +93,33 @@ alter table items add column if not exists store_variant_name text;
 alter table items add column if not exists category text;
 alter table batches add column if not exists batch_status text not null default 'completado';
 
--- =====================================================
--- STORAGE (bucket product-images)
--- =====================================================
--- Subida de videos (además de la política de imágenes creada desde el panel):
--- create policy "Permitir subir videos"
--- on storage.objects for insert
--- to authenticated
--- with check (bucket_id = 'product-images' and (metadata->>'mimetype') like 'video/%');
+-- =========================================================================
+-- SUPABASE STORAGE SETUP FOR PRODUCT IMAGES & VIDEOS
+-- =========================================================================
 
--- Borrado de archivos (para "Eliminar datos de tienda"):
--- create policy "Permitir borrar archivos"
--- on storage.objects for delete
--- to authenticated
--- using (bucket_id = 'product-images');
+-- 1. Create the bucket for product images (if it doesn't exist)
+insert into storage.buckets (id, name, public)
+values ('product-images', 'product-images', true)
+on conflict (id) do nothing;
+
+-- 2. Create policy to allow public select (read/list)
+-- Anyone can view product images/videos in the store or dashboard
+create policy "Allow public read of product-images"
+on storage.objects for select
+to public
+using (bucket_id = 'product-images');
+
+-- 3. Create policy to allow inserts (uploads)
+-- Covers both images and videos uploaded to this bucket
+create policy "Allow public uploads to product-images"
+on storage.objects for insert
+to public
+with check (bucket_id = 'product-images');
+
+-- 4. Create policy to allow deletes (for cleaning up unused store files)
+-- Restricted to authenticated users since it's a dashboard operation
+create policy "Allow authenticated delete from product-images"
+on storage.objects for delete
+to authenticated
+using (bucket_id = 'product-images');
+
