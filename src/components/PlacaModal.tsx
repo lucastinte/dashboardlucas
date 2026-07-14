@@ -482,9 +482,6 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                         alt="Placa"
                         className="max-w-full max-h-full object-contain"
                     />
-                    <p className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-white/40 pointer-events-none select-none">
-                        ⌘⇧4 para capturar · clic o Esc para cerrar
-                    </p>
                 </div>
             )}
         </div>
