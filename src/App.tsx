@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { CartProvider } from './contexts/CartContext'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
 import ResetPassword from './components/ResetPassword'
@@ -23,10 +24,20 @@ function AppContent() {
 
 function App() {
   const path = window.location.pathname;
-  if (path === '/tienda' || path === '/tienda/') return <Store />;
+  if (path === '/tienda' || path === '/tienda/') {
+    return (
+      <CartProvider>
+        <Store />
+      </CartProvider>
+    );
+  }
   if (path.startsWith('/tienda/producto/')) {
     const id = path.replace('/tienda/producto/', '').replace(/\/$/, '');
-    return <StoreProduct id={id} />;
+    return (
+      <CartProvider>
+        <StoreProduct id={id} />
+      </CartProvider>
+    );
   }
 
   return (

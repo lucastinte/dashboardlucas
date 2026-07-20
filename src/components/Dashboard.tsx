@@ -4060,47 +4060,7 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                 {formData.itemType === 'personal' ? 'Producto propio (solo ingreso, sin costo)' : 'Marcar como producto propio'}
             </button>
 
-            {!isEditing && (
-                <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-1 sm:mb-2 space-y-3">
-                    <div>
-                        <label className="block text-[10px] font-bold text-blue-700 mb-1 uppercase tracking-wider">Auto-completar desde link</label>
-                        <input
-                            type="url"
-                            placeholder="Pega link de compra (ej: MercadoLibre)"
-                            className="w-full px-3 py-2 text-sm rounded-lg border border-blue-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all bg-white"
-                            value={url}
-                            onChange={e => setUrl(e.target.value)}
-                            onBlur={handleUrlBlur}
-                        />
-                    </div>
 
-                    <div>
-                        <label className="block text-[10px] font-bold text-blue-700 mb-1 uppercase tracking-wider">O subir captura de compra</label>
-                        <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handleImageUpload}
-                            className="w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-medium hover:file:bg-blue-700"
-                        />
-                    </div>
-
-                    {(isDetectingFromUrl || isDetectingFromImage) && (
-                        <p className="text-xs text-blue-700 font-medium">Analizando información...</p>
-                    )}
-
-                    {autoFillMessage && (
-                        <p className="text-xs text-blue-900">{autoFillMessage}</p>
-                    )}
-                    {detectedSummary && (
-                        <p className="text-xs font-semibold text-blue-900">{detectedSummary}</p>
-                    )}
-
-                    <p className="text-[11px] text-blue-700/80">
-                        El precio de venta lo defines tú manualmente.
-                    </p>
-                </div>
-            )}
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Producto</label>
