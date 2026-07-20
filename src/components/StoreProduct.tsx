@@ -17,8 +17,7 @@ import {
     Minus,
     Sun,
     Moon,
-    Trash2,
-    Eye
+    Trash2
 } from 'lucide-react';
 
 const conditionLabel: Record<string, string> = {
@@ -297,9 +296,7 @@ export default function StoreProduct({ id }: { id: string }) {
         setIsCartOpen(false);
     };
 
-    const STORE_CONFIG = {
-        storeName: 'Lucas Shop',
-    };
+
 
     if (loading) {
         return (

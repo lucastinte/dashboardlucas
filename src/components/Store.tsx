@@ -14,7 +14,6 @@ import {
     Moon, 
     ShoppingBag, 
     Eye, 
-    Filter,
     SlidersHorizontal,
     ArrowUpDown
 } from 'lucide-react';
@@ -260,7 +259,7 @@ export default function Store() {
 
     // Obtener listas únicas para filtros
     const conditions = ['todos', ...Array.from(new Set(items.map(i => i.condition)))];
-    const categories = ['todos', ...Array.from(new Set(items.map(i => i.category).filter(Boolean)))];
+    const categories = ['todos', ...Array.from(new Set(items.map(i => i.category).filter((c): c is string => !!c)))];
 
     // Enviar pedido por WhatsApp
     const handleCheckout = () => {
