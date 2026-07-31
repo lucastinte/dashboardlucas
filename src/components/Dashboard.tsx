@@ -1000,29 +1000,29 @@ export default function Dashboard() {
                             <MetricCard
                                 title="Ganancia Reventa"
                                 value={`$${totalProfit.toLocaleString()}`}
-                                icon={<TrendingUp className="w-6 h-6 text-emerald-600" />}
+                                icon={<TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />}
                                 trend={profitMargin > 0 ? `+${profitMargin.toFixed(1)}% margen` : '0% margen'}
-                                trendColor="text-emerald-600"
+                                trendColor="emerald"
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Ingresos Totales"
                                 value={`$${totalSales.toLocaleString()}`}
-                                icon={<DollarSign className="w-6 h-6 text-blue-600" />}
+                                icon={<DollarSign className="w-6 h-6 text-blue-600 dark:text-blue-400" />}
                                 trend={personalIncome > 0 ? `$${personalIncome.toLocaleString()} propios` : undefined}
-                                trendColor="text-violet-600"
+                                trendColor="violet"
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Unidades Vendidas"
                                 value={totalUnitsSold.toString()}
-                                icon={<Package className="w-6 h-6 text-violet-600" />}
+                                icon={<Package className="w-6 h-6 text-violet-600 dark:text-violet-400" />}
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Valor en Stock"
                                 value={`$${totalStockValue.toLocaleString()}`}
-                                icon={<Box className="w-6 h-6 text-orange-600" />}
+                                icon={<Box className="w-6 h-6 text-orange-600 dark:text-orange-400" />}
                                 bgColor="bg-white"
                             />
                         </div>
@@ -1703,10 +1703,49 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     const [cantidad, setCantidad] = useState(item.quantity);
     const [precio, setPrecio] = useState(item.salePrice || 0);
     const [fecha, setFecha] = useState(() => {
-        if (!item.saleDate) return '';
-        const d = new Date(item.saleDate);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const maxPastDate = new Date(today);
+        maxPastDate.setDate(today.getDate() - 3);
+
+        let saleDate = today;
+        if (item.saleDate) {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(item.saleDate)) {
+                const [y, m, d] = item.saleDate.split('-').map(Number);
+                saleDate = new Date(y, m - 1, d);
+            } else {
+                const parsed = new Date(item.saleDate);
+                if (!isNaN(parsed.getTime())) {
+                    saleDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+                }
+            }
+        }
+
+        // ARCA limit: Max 3 days in the past from today
+        const targetDate = saleDate < maxPastDate ? maxPastDate : saleDate;
+
+        const yyyy = targetDate.getFullYear();
+        const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(targetDate.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
     });
+
+    const isDateAdjusted = (() => {
+        if (!item.saleDate) return false;
+        let origStr = '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(item.saleDate)) {
+            origStr = item.saleDate;
+        } else {
+            const parsed = new Date(item.saleDate);
+            if (!isNaN(parsed.getTime())) {
+                const yyyy = parsed.getFullYear();
+                const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                const dd = String(parsed.getDate()).padStart(2, '0');
+                origStr = `${yyyy}-${mm}-${dd}`;
+            }
+        }
+        return origStr !== '' && origStr < fecha;
+    })();
     const [formasPagoSelected, setFormasPagoSelected] = useState<string[]>(item.formasPago || ['transferencia']);
     const [montos, setMontos] = useState<Record<string, number>>({});
     const [envioAplica, setEnvioAplica] = useState(item.envioAplica || false);
@@ -1871,6 +1910,12 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
                                     onChange={e => setFecha(e.target.value)}
                                     className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [color-scheme:dark]"
                                 />
+                                {isDateAdjusted && (
+                                    <p className="text-xs text-amber-400 mt-1.5 flex items-center gap-1.5 bg-amber-950/40 border border-amber-800/40 p-2 rounded-lg">
+                                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                                        <span>Fecha ajustada automáticamente a 3 días atrás (máximo permitido por ARCA para ventas anteriores).</span>
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">Forma de pago</label>
@@ -5558,6 +5603,26 @@ function BulkPricingBoard({
 }
 
 function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title: string, value: string, icon: React.ReactNode, trend?: string, trendColor?: string, bgColor: string }) {
+    const getBadgeStyle = () => {
+        if (!trendColor) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+        if (trendColor.includes('emerald') || trendColor.includes('green')) {
+            return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40';
+        }
+        if (trendColor.includes('violet') || trendColor.includes('purple')) {
+            return 'bg-violet-100 text-violet-700 dark:bg-violet-950/70 dark:text-violet-300 border border-violet-200/50 dark:border-violet-800/40';
+        }
+        if (trendColor.includes('blue')) {
+            return 'bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800/40';
+        }
+        if (trendColor.includes('amber') || trendColor.includes('orange')) {
+            return 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200/50 dark:border-amber-800/40';
+        }
+        if (trendColor.includes('red') || trendColor.includes('rose')) {
+            return 'bg-red-100 text-red-700 dark:bg-red-950/70 dark:text-red-300 border border-red-200/50 dark:border-red-800/40';
+        }
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    };
+
     return (
         <div className={`${bgColor} p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100 transition-all hover:shadow-md`}>
             <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
@@ -5565,7 +5630,7 @@ function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title:
                     {icon}
                 </div>
                 {trend && (
-                    <span className={`text-xs font-semibold px-2 py-1 rounded-lg bg-opacity-10 ${trendColor?.replace('text-', 'bg-')} ${trendColor}`}>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${getBadgeStyle()}`}>
                         {trend}
                     </span>
                 )}
