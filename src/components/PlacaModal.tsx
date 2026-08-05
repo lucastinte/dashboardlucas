@@ -15,13 +15,13 @@ function loadConfig(): { wa: string; store: string } {
             const cfg = JSON.parse(raw);
             // Auto-migrar URLs viejas que apuntan a /tienda
             if (cfg.store && cfg.store.includes('/tienda')) {
-                cfg.store = 'lucas-shop.vercel.app';
+                cfg.store = 'lepzito.vercel.app';
                 localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
             }
             return cfg;
         }
     } catch { /* ignore */ }
-    return { wa: '3885925942', store: 'lucas-shop.vercel.app' };
+    return { wa: '3885925942', store: 'lepzito.vercel.app' };
 }
 
 /** Carga una imagen intentando CORS anónimo (necesario para exportar el canvas). */
