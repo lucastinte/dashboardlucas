@@ -11,9 +11,17 @@ const CONFIG_KEY = 'placa_config_v1';
 function loadConfig(): { wa: string; store: string } {
     try {
         const raw = localStorage.getItem(CONFIG_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+            const cfg = JSON.parse(raw);
+            // Auto-migrar URLs viejas que apuntan a /tienda
+            if (cfg.store && cfg.store.includes('/tienda')) {
+                cfg.store = 'lucas-shop.vercel.app';
+                localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+            }
+            return cfg;
+        }
     } catch { /* ignore */ }
-    return { wa: '3885925942', store: `${window.location.host}/tienda` };
+    return { wa: '3885925942', store: 'lucas-shop.vercel.app' };
 }
 
 /** Carga una imagen intentando CORS anónimo (necesario para exportar el canvas). */
@@ -55,12 +63,36 @@ function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number,
     c.closePath();
 }
 
-function drawCover(c: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+/** Dibuja la imagen completa (contain) con fondo blurred para rellenar bordes. */
+function drawContain(c: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
     const ir = img.width / img.height, r = w / h;
+
+    // Primero: dibujar una versión borrosa como fondo (cover) para rellenar
+    c.save();
+    c.filter = 'blur(40px) brightness(0.5)';
     let sw, sh, sx, sy;
     if (ir > r) { sh = img.height; sw = sh * r; sx = (img.width - sw) / 2; sy = 0; }
     else { sw = img.width; sh = sw / r; sx = 0; sy = (img.height - sh) / 2; }
-    c.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+    // Dibujar más grande para que el blur no deje bordes transparentes
+    c.drawImage(img, sx, sy, sw, sh, x - 40, y - 40, w + 80, h + 80);
+    c.restore();
+
+    // Después: dibujar la imagen completa centrada (contain)
+    let dw, dh, dx, dy;
+    if (ir > r) {
+        // Imagen más ancha que el canvas: ajustar por ancho
+        dw = w;
+        dh = w / ir;
+        dx = x;
+        dy = y + (h - dh) / 2;
+    } else {
+        // Imagen más alta que el canvas: ajustar por alto
+        dh = h;
+        dw = h * ir;
+        dx = x + (w - dw) / 2;
+        dy = y;
+    }
+    c.drawImage(img, dx, dy, dw, dh);
 }
 
 export default function PlacaModal({ item, onClose }: { item: Item; onClose: () => void }) {
@@ -143,7 +175,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         ctx.fillRect(0, 0, W, H);
 
         if (baseImg) {
-            drawCover(ctx, baseImg, 0, 0, W, H);
+            drawContain(ctx, baseImg, 0, 0, W, H);
         } else {
             ctx.fillStyle = '#141b2e';
             ctx.fillRect(0, 0, W, H);
