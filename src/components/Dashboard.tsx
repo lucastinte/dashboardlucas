@@ -3345,24 +3345,10 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
                             {description.trim() && (
                                 <button
                                     onClick={() => {
-                                        const price = item.salePrice || item.estimatedSalePrice || 0;
-                                        
-                                        // Determinar store url según ubicación
-                                        const loc = (item.location || '').toLowerCase();
-                                        let storeDomain = 'lepzito.vercel.app'; // Default (Abra Pampa)
-                                        if (loc.includes('san salvador') || (loc.includes('jujuy') && !loc.includes('abra'))) {
-                                            storeDomain = 'TODO_JUJUY.vercel.app'; // Reemplazar con el link de la tienda de Jujuy
-                                        }
-
                                         const post = [
-                                            `*${storeTitle.trim() || item.productName}*`,
+                                            storeTitle.trim() || item.productName,
                                             '',
                                             description.trim(),
-                                            '',
-                                            `💰 *$${price.toLocaleString('es-AR')}*`,
-                                            ...(item.location ? [`📍 *${item.location}*`] : []),
-                                            '',
-                                            `🛒 *Comprar aquí:* https://${storeDomain}/producto/${item.id}`,
                                         ].join('\n');
                                         navigator.clipboard.writeText(post).then(() => {
                                             setFbCopied(true);
