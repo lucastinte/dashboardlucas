@@ -2751,20 +2751,29 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                             <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
                                             <button
                                                 onClick={() => onTogglePublicInStore(item.id, !item.publicInStore)}
-                                                className={`text-[10px] font-bold px-2 py-1 rounded-md ${item.publicInStore ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}
-                                                title={item.publicInStore ? 'Quitar de tienda' : 'Publicar en tienda'}
+                                                className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all ${
+                                                    item.publicInStore
+                                                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                                                        : item.description || item.storeTitle
+                                                            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                }`}
+                                                title={item.publicInStore ? 'Pausar publicación' : 'Publicar en tienda'}
                                             >
-                                                {item.publicInStore ? '🏪 En tienda' : '🏪 Publicar'}
+                                                {item.publicInStore
+                                                    ? '🏪 En tienda'
+                                                    : item.description || item.storeTitle
+                                                        ? '⏸ Pausada'
+                                                        : '🏪 Publicar'
+                                                }
                                             </button>
-                                            {item.publicInStore && (
-                                                <button
-                                                    onClick={() => onManageImages(item)}
-                                                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-violet-50 text-violet-700"
-                                                    title="Gestionar fotos de tienda"
-                                                >
-                                                    📷 {(item.storeImages?.length || 0) > 0 ? `Fotos (${item.storeImages!.length})` : 'Fotos'}
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => onManageImages(item)}
+                                                className="text-[10px] font-bold px-2 py-1 rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100"
+                                                title="Gestionar fotos de tienda"
+                                            >
+                                                📷 {(item.storeImages?.length || 0) > 0 ? `Fotos (${item.storeImages!.length})` : 'Fotos'}
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -3184,6 +3193,7 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
     const [dragOver, setDragOver] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [fbCopied, setFbCopied] = useState(false);
+    const [titleCopied, setTitleCopied] = useState(false);
 
     const addImages = (urls: string[]) => setImages(prev => [...prev, ...urls.filter(u => u && !prev.includes(u))]);
 
@@ -3300,7 +3310,23 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
                 <div className="flex-1 overflow-y-auto p-4 space-y-5">
                     {/* ── TÍTULO DE PUBLICACIÓN ── */}
                     <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Título de publicación</p>
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Título de publicación</p>
+                            {(storeTitle.trim() || item.productName) && (
+                                <button
+                                    onClick={() => {
+                                        const t = storeTitle.trim() || item.productName;
+                                        navigator.clipboard.writeText(t).then(() => {
+                                            setTitleCopied(true);
+                                            setTimeout(() => setTitleCopied(false), 2000);
+                                        });
+                                    }}
+                                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${titleCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                >
+                                    {titleCopied ? '✓ Copiado' : '📋 Copiar título'}
+                                </button>
+                            )}
+                        </div>
                         <input
                             type="text"
                             value={storeTitle}
