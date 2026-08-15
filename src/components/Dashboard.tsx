@@ -2892,121 +2892,170 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                     <tr
                                         key={grp.key}
                                         onClick={() => toggleGroup(grp.key)}
-                                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer group ${grp.isPersonal ? 'bg-violet-50/40' : ''}`}
+                                        className={`transition-colors cursor-pointer group border-l-4 ${
+                                            grp.isPersonal
+                                                ? 'border-violet-400 bg-violet-50/50 hover:bg-violet-50'
+                                                : 'border-blue-400 bg-white hover:bg-blue-50/30'
+                                        }`}
                                     >
-                                        <td className="px-4 py-3 text-gray-400">
-                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                        <td className="px-3 py-3 text-gray-400 w-8">
+                                            {expandedGroups.has(grp.key)
+                                                ? <ChevronDown className="w-4 h-4 text-blue-400" />
+                                                : <ChevronRight className="w-4 h-4" />}
                                         </td>
-                                        <td className="px-4 py-3">
+                                        <td className="px-3 py-3">
                                             {grp.imageUrl ? (
-                                                <div className="w-9 h-9 rounded-lg overflow-hidden border border-gray-100">
+                                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
                                                     <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
-                                                <div className={`w-9 h-9 rounded-lg border border-dashed flex items-center justify-center ${grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
-                                                    {grp.isPersonal && <User className="w-3.5 h-3.5 text-violet-400" />}
+                                                <div className={`w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center ${
+                                                    grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'
+                                                }`}>
+                                                    {grp.isPersonal && <User className="w-4 h-4 text-violet-400" />}
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 font-medium text-gray-900">
+                                        <td className="px-3 py-3">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                {grp.name}
-                                                {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
+                                                <span className="font-semibold text-gray-900 text-sm leading-snug">{grp.name}</span>
+                                                {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">PROPIO</span>}
                                                 {(() => {
                                                     const status = getBatchStatus(grp.batches);
                                                     if (!status) return null;
                                                     return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
                                                 })()}
                                             </div>
+                                            <p className="text-[11px] text-gray-400 mt-0.5">
+                                                {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
+                                            </p>
                                         </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <span className={`px-2 py-1 rounded-md text-xs font-semibold text-white ${grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'}`}>{grp.totalQty}</span>
+                                        <td className="px-3 py-3 text-center">
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold text-white ${
+                                                grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'
+                                            }`}>{grp.totalQty}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono">{grp.isPersonal ? <span className="text-violet-400 text-xs">-</span> : `$${grp.avgCost.toLocaleString('es-AR')}`}</td>
-                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">{grp.isPersonal ? <span className="text-violet-400 text-xs">-</span> : `$${grp.totalValue.toLocaleString('es-AR')}`}</td>
-                                        <td className="px-4 py-3 text-center">
+                                        <td className="px-3 py-3 text-right font-mono text-sm">
+                                            {grp.isPersonal
+                                                ? <span className="text-violet-300">—</span>
+                                                : <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>}
+                                        </td>
+                                        <td className="px-3 py-3 text-right font-mono">
+                                            {grp.isPersonal
+                                                ? <span className="text-violet-300">—</span>
+                                                : <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>}
+                                        </td>
+                                        <td className="px-3 py-3 text-center">
                                             <div className="flex flex-wrap justify-center gap-1">
                                                 {grp.locations.map(l => (
-                                                    <span key={l.loc} className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                                        {l.loc} ({l.qty})
+                                                    <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                                        {l.loc} ×{l.qty}
                                                     </span>
                                                 ))}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center text-xs text-gray-500">
-                                            {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
-                                        </td>
+                                        <td></td>
                                     </tr>
                                     {expandedGroups.has(grp.key) && grp.children.map(item => (
-                                        <tr key={item.id} className="bg-blue-50/30 border-l-2 border-blue-200">
-                                            <td className="px-4 py-2"></td>
-                                            <td className="px-4 py-2"></td>
-                                            <td className="px-4 py-2 text-gray-600 text-xs">
-                                                <span className="font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
-                                                <span className="text-gray-400 mx-1">·</span>
-                                                <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
-                                                <span className="text-gray-400 mx-1">·</span>
-                                                <span>{new Date(item.date).toLocaleDateString('es-AR')}</span>
+                                        <tr key={item.id} className="bg-slate-50 border-l-4 border-blue-200">
+                                            <td className="pl-8 py-3" colSpan={2}>
+                                                {/* Chips de metadatos */}
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                                        {getBatchLabel(resolveBatchRef(item))}
+                                                    </span>
+                                                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                                        {conditionLabelMap[item.condition || 'nuevo']}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400">
+                                                        {new Date(item.date).toLocaleDateString('es-AR')}
+                                                    </span>
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-2 text-center text-xs font-semibold">{item.quantity}</td>
-                                            <td className="px-4 py-2 text-right font-mono text-xs">${item.purchasePrice.toLocaleString('es-AR')}</td>
-                                            <td className="px-4 py-2 text-right font-mono text-xs">
-                                                ${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}
-                                                {item.salePrice ? <span className="block text-emerald-600">Venta: ${item.salePrice.toLocaleString('es-AR')}/u</span> : null}
+                                            <td className="px-3 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    {item.location && (
+                                                        <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                                            📍 {item.location}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-2 text-center text-xs">{item.location || '-'}</td>
-                                            <td className="px-4 py-2 text-center">
-                                                <div className="flex justify-center items-center gap-1">
+                                            <td className="px-3 py-3 text-center">
+                                                <span className="text-sm font-bold text-gray-700">×{item.quantity}</span>
+                                            </td>
+                                            <td className="px-3 py-3 text-right font-mono text-xs text-gray-600">
+                                                ${item.purchasePrice.toLocaleString('es-AR')}
+                                            </td>
+                                            <td className="px-3 py-3 text-right font-mono text-xs">
+                                                <span className="font-semibold text-gray-800">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</span>
+                                                {item.salePrice && <span className="block text-emerald-600 text-[10px]">→ ${item.salePrice.toLocaleString('es-AR')}/u</span>}
+                                            </td>
+                                            <td className="px-3 py-3" colSpan={2}>
+                                                {/* Acciones organizadas */}
+                                                <div className="flex items-center gap-1">
+                                                    {/* Primaria */}
                                                     <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-0.5">
+                                                        className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
                                                         <DollarSign className="w-3 h-3" /> Vender
                                                     </button>
+
+                                                    {/* Separador */}
+                                                    <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                    {/* Secundarias */}
                                                     <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all" title="Editar">
+                                                        className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
                                                         <Edit2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
+                                                        className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
+                                                        📷
+                                                        {(item.storeImages?.length || 0) > 0 && (
+                                                            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
+                                                        className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
+                                                            item.publicInStore
+                                                                ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                                                                : item.description || item.storeTitle
+                                                                    ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                                                                    : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
+                                                        }`}
+                                                        title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
+                                                        {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
                                                     </button>
                                                     {item.quantity > 1 && (
                                                         <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
-                                                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-all" title="Separar">
+                                                            className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
                                                             <Split className="w-3.5 h-3.5" />
                                                         </button>
                                                     )}
+
+                                                    {/* Separador */}
+                                                    <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                    {/* Peligrosas */}
                                                     <div className="relative">
                                                         <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
-                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all" title="Dar de baja">
+                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
                                                             <Ban className="w-3.5 h-3.5" />
                                                         </button>
                                                         {withdrawMenuId === item.id && (
-                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3.5 h-3.5" />Regalo</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3.5 h-3.5" />Uso personal</button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3.5 h-3.5" />Pérdida</button>
                                                             </div>
                                                         )}
                                                     </div>
                                                     <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                                                        className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
+                                                        className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
-                                                        className={`p-1.5 rounded transition-all text-sm ${item.publicInStore ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100' : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'}`}
-                                                        title={item.publicInStore ? 'En tienda — clic para quitar' : 'Publicar en tienda'}
-                                                    >
-                                                        🏪
-                                                    </button>
-                                                    {item.publicInStore && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
-                                                            className="p-1.5 rounded transition-all text-violet-500 hover:text-violet-700 hover:bg-violet-50 text-sm relative"
-                                                            title="Gestionar fotos de tienda"
-                                                        >
-                                                            📷
-                                                            {(item.storeImages?.length || 0) > 0 && (
-                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
-                                                            )}
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
