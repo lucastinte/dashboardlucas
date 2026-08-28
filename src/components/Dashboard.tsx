@@ -2670,7 +2670,6 @@ function InventoryTable({
         })
         : items;
 
-    const filteredResaleItems = filteredItems.filter(i => i.itemType !== 'personal');
     const filteredPersonalItems = filteredItems.filter(i => i.itemType === 'personal');
 
     const getLocationInfo = (locName: string) => {
@@ -3436,6 +3435,8 @@ function InventoryTable({
                                                 </td>
                                             </tr>
                                         ))}
+                                            </>
+                                        )}
                                     </>
                                 ))}
                             </tbody>
