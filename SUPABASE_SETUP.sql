@@ -123,3 +123,29 @@ on storage.objects for delete
 to authenticated
 using (bucket_id = 'product-images');
 
+-- =========================================================================
+-- LOCATIONS TABLE (Puntos de Venta / Retiro con WhatsApp)
+-- =========================================================================
+create table if not exists locations (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default now(),
+  name text not null unique,
+  whatsapp text,
+  phone text,
+  address text,
+  is_default boolean default false
+);
+
+alter table locations enable row level security;
+
+create policy "Authenticated full access locations" on locations
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create policy "Public read locations" on locations
+  for select
+  to anon
+  using (true);
+

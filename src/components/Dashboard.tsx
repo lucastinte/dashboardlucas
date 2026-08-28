@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason } from '../types';
+import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, LocationItem } from '../types';
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
+import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
+import { LocationsModal } from './LocationsModal';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
@@ -144,6 +146,8 @@ export default function Dashboard() {
     const [placaItem, setPlacaItem] = useState<Item | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const savingRef = useRef(false);
+    const [locations, setLocations] = useState<LocationItem[]>([]);
+    const [isLocationsModalOpen, setIsLocationsModalOpen] = useState(false);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
@@ -164,6 +168,25 @@ export default function Dashboard() {
         estimatedSalePrice: 0,
         imageUrl: ''
     });
+
+    const loadLocations = async (currentItems: Item[] = items) => {
+        try {
+            const locs = await locationService.getLocations(currentItems);
+            setLocations(locs);
+        } catch (e) {
+            console.error('Error loading locations', e);
+        }
+    };
+
+    const handleSaveLocation = async (locData: { id?: string; name: string; whatsapp?: string; phone?: string; address?: string; isDefault?: boolean }) => {
+        await locationService.saveLocation(locData);
+        await loadLocations();
+    };
+
+    const handleDeleteLocation = async (id: string) => {
+        await locationService.deleteLocation(id);
+        await loadLocations();
+    };
 
     useEffect(() => {
         loadItems();
@@ -344,6 +367,7 @@ export default function Dashboard() {
             }
 
             setItems(finalItems);
+            loadLocations(finalItems);
         } catch (err: any) {
             console.error('Error loading items:', err);
             setError('Error al cargar datos. Verifica tu conexión o configuración.');
@@ -839,6 +863,7 @@ export default function Dashboard() {
     };
 
     const resetForm = () => {
+        const defaultLoc = locations.find(l => l.isDefault)?.name || (locations[0]?.name || '');
         setFormData({
             productName: '',
             purchasePrice: 0,
@@ -848,7 +873,7 @@ export default function Dashboard() {
             condition: 'nuevo',
             itemType: 'resale',
             date: new Date().toISOString().split('T')[0],
-            location: '',
+            location: defaultLoc,
             estimatedSalePrice: 0,
             publishUrls: '',
             imageUrl: ''
@@ -1111,20 +1136,43 @@ export default function Dashboard() {
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
                             <div>
                                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Inventario Actual</h2>
-                                <p className="text-gray-500 text-sm">Productos disponibles para la venta.</p>
+                                <p className="text-gray-500 text-sm">Productos disponibles para la venta y control de stock.</p>
                             </div>
-                            <button
-                                onClick={() => openNewModal('in_stock')}
-                                className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-5 py-3 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium"
-                            >
-                                <Plus className="w-5 h-5 mr-2" />
-                                Agregar Producto
-                            </button>
+                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsLocationsModalOpen(true)}
+                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
+                                >
+                                    <MapPin className="w-4 h-4 text-blue-600" />
+                                    <span>Ubicaciones ({locations.length})</span>
+                                </button>
+                                <button
+                                    onClick={() => openNewModal('in_stock')}
+                                    className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-5 py-2.5 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium text-sm"
+                                >
+                                    <Plus className="w-5 h-5 mr-2" />
+                                    Agregar Producto
+                                </button>
+                            </div>
                         </div>
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <InventoryTable items={stockItems} allItems={items} batchHistory={batchHistory} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onSplit={handleSplitItem} onWithdraw={handleWithdraw} onTogglePublicInStore={handleTogglePublicInStore} onManageImages={setStoreImagesItem} onSell={(item) => {
+                            <InventoryTable 
+                                items={stockItems} 
+                                allItems={items} 
+                                batchHistory={batchHistory} 
+                                locations={locations}
+                                onOpenLocationsModal={() => setIsLocationsModalOpen(true)}
+                                onEdit={startEdit} 
+                                onDelete={handleDeleteItem} 
+                                resolveBatchRef={getItemBatchRef} 
+                                onSplit={handleSplitItem} 
+                                onWithdraw={handleWithdraw} 
+                                onTogglePublicInStore={handleTogglePublicInStore} 
+                                onManageImages={setStoreImagesItem} 
+                                onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
                                 setFormData({
@@ -1164,6 +1212,16 @@ export default function Dashboard() {
                     />
                 )}
             </div>
+
+            {/* Locations Management Modal */}
+            <LocationsModal
+                isOpen={isLocationsModalOpen}
+                onClose={() => setIsLocationsModalOpen(false)}
+                locations={locations}
+                onSaveLocation={handleSaveLocation}
+                onDeleteLocation={handleDeleteLocation}
+                items={items}
+            />
 
             {/* Store Images Modal */}
             {storeImagesItem && (
@@ -1220,7 +1278,8 @@ export default function Dashboard() {
                             isEditing={!!editingItem}
                             editingItemStatus={editingItem?.status}
                             suggestedNames={Array.from(new Set(items.map(i => i.productName))).filter(Boolean).sort()}
-                            suggestedLocations={Array.from(new Set(items.map(i => i.location))).filter(Boolean).sort() as string[]}
+                            locations={locations}
+                            onOpenLocationsModal={() => setIsLocationsModalOpen(true)}
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             existingImages={Array.from(new Map(items.filter(i => i.imageUrl).map(i => [i.imageUrl!, { url: i.imageUrl!, name: i.productName }])).values())}
                             isSaving={isSaving}
@@ -2431,7 +2490,21 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     );
 }
 
-function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatchRef, onSplit, onWithdraw, onTogglePublicInStore, onManageImages, batchHistory }: {
+function InventoryTable({ 
+    items, 
+    allItems, 
+    onEdit, 
+    onDelete, 
+    onSell, 
+    resolveBatchRef, 
+    onSplit, 
+    onWithdraw, 
+    onTogglePublicInStore, 
+    onManageImages, 
+    batchHistory,
+    locations = [],
+    onOpenLocationsModal
+}: {
     items: Item[],
     allItems: Item[],
     onEdit: (i: Item) => void,
@@ -2442,9 +2515,11 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     onTogglePublicInStore: (id: string, value: boolean) => void,
     onManageImages: (item: Item) => void,
-    batchHistory: BatchRecord[]
+    batchHistory: BatchRecord[],
+    locations?: LocationItem[],
+    onOpenLocationsModal?: () => void
 }) {
-    type ViewMode = 'products' | 'locations' | 'batches';
+    type ViewMode = 'products' | 'locations' | 'batches' | 'personal';
     const [viewMode, setViewMode] = useState<ViewMode>('products');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
@@ -2458,14 +2533,11 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         });
     };
 
-    // Compute effective batch status for a set of batch codes
     const getBatchStatus = (batchCodes: string[]): { label: string; color: string } | null => {
         if (batchCodes.length === 0) return null;
-        // Check each batch and pick the most relevant status
         const statuses = batchCodes.map(code => {
             const batch = batchHistory.find(b => b.batchCode === code);
             if (!batch) return null;
-            // Check if ALL sell-disposition items from this batch are sold
             const batchItems = allItems.filter(i => (i.batchRef || '') === code || resolveBatchRef(i) === code);
             const sellItems = batchItems.filter(i => i.itemType !== 'personal');
             const allSold = sellItems.length > 0 && sellItems.every(i => i.status === 'sold');
@@ -2473,7 +2545,6 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
             return batch.batchStatus;
         }).filter(Boolean) as BatchStatus[];
         if (statuses.length === 0) return null;
-        // Priority: en_camino > recibido > completado (show most urgent)
         if (statuses.includes('en_camino')) return { label: 'En camino', color: 'bg-yellow-100 text-yellow-700' };
         if (statuses.includes('recibido')) return { label: 'Retirado', color: 'bg-blue-100 text-blue-700' };
         if (statuses.every(s => s === 'completado')) return { label: 'Completado', color: 'bg-emerald-100 text-emerald-700' };
@@ -2484,7 +2555,6 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         return <div className="p-8 sm:p-12 text-center text-gray-400">Tu inventario está vacío. Agrega productos para comenzar.</div>;
     }
 
-    // Filter by search query
     const filteredItems = searchQuery.trim()
         ? items.filter(item => {
             const q = normalizeText(searchQuery);
@@ -2494,7 +2564,14 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         })
         : items;
 
-    // --- Product groups: group by normalized name ---
+    const filteredResaleItems = filteredItems.filter(i => i.itemType !== 'personal');
+    const filteredPersonalItems = filteredItems.filter(i => i.itemType === 'personal');
+
+    const getLocationInfo = (locName: string) => {
+        const norm = locName.trim().toLowerCase();
+        return locations.find(l => l.name.trim().toLowerCase() === norm);
+    };
+
     type ProductGroup = {
         key: string;
         name: string;
@@ -2505,16 +2582,15 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         locations: { loc: string; qty: number }[];
         batches: string[];
         children: Item[];
-        isPersonal: boolean;
     };
 
     const productGroups: ProductGroup[] = (() => {
         const map = new Map<string, ProductGroup>();
-        filteredItems.forEach(item => {
+        filteredResaleItems.forEach(item => {
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
-                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, avgCost: 0, totalValue: 0, locations: [], batches: [], children: [], isPersonal: false };
+                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, avgCost: 0, totalValue: 0, locations: [], batches: [], children: [] };
                 map.set(normName, grp);
             }
             grp.children.push(item);
@@ -2530,9 +2606,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         });
         for (const grp of map.values()) {
             grp.avgCost = grp.totalQty > 0 ? Math.round(grp.totalValue / grp.totalQty) : 0;
-            grp.isPersonal = grp.children.every(c => c.itemType === 'personal');
         }
-        // Sort by newest item date first
         return Array.from(map.values()).sort((a, b) => {
             const newestA = Math.max(...a.children.map(c => new Date(c.date).getTime()));
             const newestB = Math.max(...b.children.map(c => new Date(c.date).getTime()));
@@ -2540,10 +2614,11 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         });
     })();
 
-    // --- Location groups ---
     type LocationGroup = {
         key: string;
         location: string;
+        whatsapp?: string;
+        phone?: string;
         totalQty: number;
         totalValue: number;
         products: { name: string; qty: number; avgCost: number; items: Item[] }[];
@@ -2551,12 +2626,21 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 
     const locationGroups: LocationGroup[] = (() => {
         const map = new Map<string, LocationGroup>();
-        filteredItems.forEach(item => {
+        filteredResaleItems.forEach(item => {
             const loc = item.location || 'Sin ubicación';
             const locKey = normalizeText(loc);
             let grp = map.get(locKey);
             if (!grp) {
-                grp = { key: locKey, location: loc, totalQty: 0, totalValue: 0, products: [] };
+                const locInfo = getLocationInfo(loc);
+                grp = { 
+                    key: locKey, 
+                    location: loc, 
+                    whatsapp: locInfo?.whatsapp,
+                    phone: locInfo?.phone,
+                    totalQty: 0, 
+                    totalValue: 0, 
+                    products: [] 
+                };
                 map.set(locKey, grp);
             }
             grp.totalQty += item.quantity;
@@ -2580,7 +2664,6 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         return Array.from(map.values()).sort((a, b) => a.location.localeCompare(b.location));
     })();
 
-    // --- Batch groups: group by batch ---
     type BatchGroup = {
         key: string;
         batchCode: string;
@@ -2593,7 +2676,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 
     const batchGroups: BatchGroup[] = (() => {
         const map = new Map<string, BatchGroup>();
-        filteredItems.forEach(item => {
+        filteredResaleItems.forEach(item => {
             const bRef = resolveBatchRef(item) || '';
             const bKey = bRef || '__direct__';
             let grp = map.get(bKey);
@@ -2613,7 +2696,6 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
             grp.totalQty += item.quantity;
             grp.totalValue += item.purchasePrice * item.quantity;
         });
-        // Sort by batch number descending (newest first)
         return Array.from(map.values()).sort((a, b) => {
             if (a.key === '__direct__') return 1;
             if (b.key === '__direct__') return -1;
@@ -2623,15 +2705,66 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
         });
     })();
 
+    type PersonalGroup = {
+        key: string;
+        name: string;
+        imageUrl?: string;
+        totalQty: number;
+        locations: { loc: string; qty: number }[];
+        children: Item[];
+    };
+
+    const personalGroups: PersonalGroup[] = (() => {
+        const map = new Map<string, PersonalGroup>();
+        filteredPersonalItems.forEach(item => {
+            const normName = normalizeText(item.productName);
+            let grp = map.get(normName);
+            if (!grp) {
+                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, locations: [], children: [] };
+                map.set(normName, grp);
+            }
+            grp.children.push(item);
+            grp.totalQty += item.quantity;
+            if (!grp.imageUrl && item.imageUrl) grp.imageUrl = item.imageUrl;
+            const loc = item.location || 'Sin ubicación';
+            const existingLoc = grp.locations.find(l => normalizeText(l.loc) === normalizeText(loc));
+            if (existingLoc) existingLoc.qty += item.quantity;
+            else grp.locations.push({ loc, qty: item.quantity });
+        });
+        return Array.from(map.values()).sort((a, b) => {
+            const newestA = Math.max(...a.children.map(c => new Date(c.date).getTime()));
+            const newestB = Math.max(...b.children.map(c => new Date(c.date).getTime()));
+            return newestB - newestA;
+        });
+    })();
+
+    const personalTotalQty = filteredPersonalItems.reduce((a, i) => a + i.quantity, 0);
+
     return (
         <>
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-gray-500">
-                        {productGroups.length} productos · {filteredItems.reduce((a, i) => a + i.quantity, 0)} unidades · ${filteredItems.filter(i => i.itemType !== 'personal').reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
-                        {filteredItems.some(i => i.itemType === 'personal') && <span className="text-violet-500 ml-1">· {filteredItems.filter(i => i.itemType === 'personal').reduce((a, i) => a + i.quantity, 0)} propios</span>}
+                        {viewMode === 'personal' ? (
+                            <span className="text-violet-700 font-medium">
+                                {personalGroups.length} productos propios · {personalTotalQty} unidad{personalTotalQty !== 1 ? 'es' : ''} en total · Solo ingreso (sin costo asignado)
+                            </span>
+                        ) : (
+                            <>
+                                {productGroups.length} productos comerciales · {filteredResaleItems.reduce((a, i) => a + i.quantity, 0)} unidades · ${filteredResaleItems.reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
+                                {personalTotalQty > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setViewMode('personal'); setExpandedGroups(new Set()); }}
+                                        className="text-violet-600 hover:text-violet-800 ml-1.5 font-medium underline underline-offset-2"
+                                    >
+                                        · {personalTotalQty} propios en pestaña aparte
+                                    </button>
+                                )}
+                            </>
+                        )}
                     </p>
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 flex-wrap">
                         <button
                             onClick={() => { setViewMode('products'); setExpandedGroups(new Set()); }}
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'products' ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
@@ -2653,6 +2786,23 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                             <Box className="w-3.5 h-3.5" />
                             Por Tanda
                         </button>
+                        <button
+                            onClick={() => { setViewMode('personal'); setExpandedGroups(new Set()); }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${viewMode === 'personal' ? 'bg-violet-600 border-violet-600 text-white shadow-sm ring-2 ring-violet-200' : 'bg-white border-violet-200 text-violet-700 hover:bg-violet-50'}`}
+                        >
+                            <User className="w-3.5 h-3.5" />
+                            Propios ({items.filter(i => i.itemType === 'personal').reduce((a, i) => a + i.quantity, 0)})
+                        </button>
+                        {viewMode === 'locations' && onOpenLocationsModal && (
+                            <button
+                                type="button"
+                                onClick={onOpenLocationsModal}
+                                className="text-xs text-blue-700 hover:bg-blue-100 font-bold flex items-center gap-1 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                            >
+                                <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                                Configurar
+                            </button>
+                        )}
                     </div>
                 </div>
                 <div className="relative">
@@ -2677,399 +2827,450 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
 
             {/* ===== MOBILE VIEW ===== */}
             <div className="sm:hidden p-3 space-y-3">
-                {viewMode === 'products' ? productGroups.map((grp) => (
-                    <div key={grp.key} className={`rounded-2xl border shadow-sm overflow-hidden ${grp.isPersonal ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
-                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                    {grp.imageUrl ? (
-                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                            <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
-                                        </div>
-                                    ) : (
-                                        <div className={`w-10 h-10 rounded-lg border border-dashed flex-shrink-0 flex items-center justify-center ${grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
-                                            {grp.isPersonal && <User className="w-4 h-4 text-violet-400" />}
-                                        </div>
-                                    )}
-                                    <div>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
-                                            {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">PROPIO</span>}
-                                            {(() => {
-                                                const status = getBatchStatus(grp.batches);
-                                                if (!status) return null;
-                                                return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
-                                            })()}
-                                        </div>
-                                        <p className="text-xs text-gray-400 mt-0.5">
-                                            {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <span className={`px-2 py-1 rounded-md text-xs font-semibold text-white ${grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'}`}>{grp.totalQty}</span>
-                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                </div>
-                            </div>
-                            <div className="mt-2 flex gap-4 text-xs text-gray-500">
-                                {!grp.isPersonal && <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>}
-                                {!grp.isPersonal && <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>}
-                                {grp.isPersonal && <span className="text-violet-500">Solo ingreso (sin costo)</span>}
-                                <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
-                            </div>
-                        </button>
-                        {expandedGroups.has(grp.key) && (
-                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
-                                {grp.children.map(item => (
-                                    <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
-                                        <div className="flex justify-between items-center text-sm">
+                {viewMode === 'products' ? (
+                    productGroups.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400 text-sm">No hay productos comerciales en stock.</div>
+                    ) : (
+                        productGroups.map((grp) => (
+                            <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                                <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            {grp.imageUrl ? (
+                                                <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                                    <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                </div>
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-lg border border-dashed flex-shrink-0 flex items-center justify-center bg-gray-50 border-gray-200">
+                                                    <Package className="w-4 h-4 text-gray-400" />
+                                                </div>
+                                            )}
                                             <div>
-                                                <span className="text-gray-700 font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
-                                                <span className="text-gray-400 mx-2">·</span>
-                                                <span className="text-gray-500">{item.location || 'Sin ubicación'}</span>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
+                                                    {(() => {
+                                                        const status = getBatchStatus(grp.batches);
+                                                        if (!status) return null;
+                                                        return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                                    })()}
+                                                </div>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
+                                                </p>
                                             </div>
-                                            <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
                                         </div>
-                                        <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                                            <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
-                                            <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
-                                        </div>
-                                        <div className="flex gap-2 mt-2 flex-wrap">
-                                            <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
-                                            <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                            {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
-                                            <div className="relative">
-                                                <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
-                                                {withdrawMenuId === item.id && (
-                                                    <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                        <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                        <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                        <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
-                                            <button
-                                                onClick={() => onTogglePublicInStore(item.id, !item.publicInStore)}
-                                                className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all ${
-                                                    item.publicInStore
-                                                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-                                                        : item.description || item.storeTitle
-                                                            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                                }`}
-                                                title={item.publicInStore ? 'Pausar publicación' : 'Publicar en tienda'}
-                                            >
-                                                {item.publicInStore
-                                                    ? '🏪 En tienda'
-                                                    : item.description || item.storeTitle
-                                                        ? '⏸ Pausada'
-                                                        : '🏪 Publicar'
-                                                }
-                                            </button>
-                                            <button
-                                                onClick={() => onManageImages(item)}
-                                                className="text-[10px] font-bold px-2 py-1 rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100"
-                                                title="Gestionar fotos de tienda"
-                                            >
-                                                📷 {(item.storeImages?.length || 0) > 0 ? `Fotos (${item.storeImages!.length})` : 'Fotos'}
-                                            </button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="px-2 py-1 rounded-md text-xs font-semibold text-white bg-blue-600">{grp.totalQty}</span>
+                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )) : viewMode === 'locations' ? locationGroups.map((grp) => (
-                    <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <MapPin className="w-4 h-4 text-blue-500" />
-                                    <h3 className="font-semibold text-gray-900">{grp.location}</h3>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
-                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · ${grp.totalValue.toLocaleString('es-AR')}</p>
-                        </button>
-                        {expandedGroups.has(grp.key) && (
-                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
-                                {grp.products.map((prod) => (
-                                    <div key={prod.name} className="bg-white rounded-xl border border-gray-100 p-3">
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="font-medium text-gray-900">{prod.name}</span>
-                                            <span className="text-xs font-semibold text-gray-600">×{prod.qty}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-500 mt-1">Costo prom: ${prod.avgCost.toLocaleString('es-AR')}/u</p>
-                                        <div className="flex gap-2 mt-2 flex-wrap">
-                                            {prod.items.map(item => (
-                                                <div key={item.id} className="flex gap-1">
+                                    <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                                        <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>
+                                        <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>
+                                        <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
+                                    </div>
+                                </button>
+                                {expandedGroups.has(grp.key) && (
+                                    <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                        {grp.children.map(item => (
+                                            <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <div>
+                                                        <span className="text-gray-700 font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
+                                                        <span className="text-gray-400 mx-2">·</span>
+                                                        <span className="text-gray-500">{item.location || 'Sin ubicación'}</span>
+                                                    </div>
+                                                    <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
+                                                </div>
+                                                <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                                    <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                    <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                                </div>
+                                                <div className="flex gap-2 mt-2 flex-wrap">
                                                     <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
                                                     <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )) : batchGroups.map((grp) => (
-                    <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                        <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <Box className="w-4 h-4 text-blue-500" />
-                                    <h3 className="font-semibold text-gray-900">{grp.label}</h3>
-                                    {grp.status && <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${grp.status.color}`}>{grp.status.label}</span>}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
-                                    {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">{grp.children.length} items · ${grp.totalValue.toLocaleString('es-AR')}</p>
-                        </button>
-                        {expandedGroups.has(grp.key) && (
-                            <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
-                                {grp.children.map(item => (
-                                    <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="font-medium text-gray-900">{item.productName}</span>
-                                            <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
-                                        </div>
-                                        <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                                            <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
-                                            <span>{item.location || 'Sin ubicación'}</span>
-                                            <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
-                                        </div>
-                                        <div className="flex gap-2 mt-2 flex-wrap">
-                                            <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
-                                            <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                            {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
-                                            <div className="relative">
-                                                <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
-                                                {withdrawMenuId === item.id && (
-                                                    <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                        <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                        <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                        <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                    <button onClick={() => onManageImages(item)} className="text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md">📷 Fotos</button>
+                                                    {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                                    <div className="relative">
+                                                        <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
+                                                        {withdrawMenuId === item.id && (
+                                                            <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                                <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                                <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                                <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                )}
+                                                    <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                                </div>
                                             </div>
-                                            <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))
+                    )
+                ) : viewMode === 'locations' ? (
+                    locationGroups.map((grp) => (
+                        <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                            <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <MapPin className="w-4 h-4 text-blue-500" />
+                                        <div>
+                                            <h3 className="font-semibold text-gray-900">{grp.location}</h3>
+                                            {grp.whatsapp && (
+                                                <p className="text-[11px] text-emerald-600 font-mono flex items-center gap-1 mt-0.5">
+                                                    <MessageCircle className="w-3 h-3" />
+                                                    WA: {grp.whatsapp}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
-                                ))}
+                                    <div className="flex items-center gap-2">
+                                        <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                        {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                            </button>
+                            {expandedGroups.has(grp.key) && (
+                                <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                    {grp.products.map((prod) => (
+                                        <div key={prod.name} className="bg-white rounded-xl border border-gray-100 p-3">
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="font-medium text-gray-900">{prod.name}</span>
+                                                <span className="text-xs font-semibold text-gray-600">×{prod.qty}</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-1">Costo prom: ${prod.avgCost.toLocaleString('es-AR')}/u</p>
+                                            <div className="flex gap-2 mt-2 flex-wrap">
+                                                {prod.items.map(item => (
+                                                    <div key={item.id} className="flex gap-1">
+                                                        <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                                        <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))
+                ) : viewMode === 'batches' ? (
+                    batchGroups.map((grp) => (
+                        <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                            <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <Box className="w-4 h-4 text-blue-500" />
+                                        <h3 className="font-semibold text-gray-900">{grp.label}</h3>
+                                        {grp.status && <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${grp.status.color}`}>{grp.status.label}</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
+                                        {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">{grp.children.length} items · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                            </button>
+                            {expandedGroups.has(grp.key) && (
+                                <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                    {grp.children.map(item => (
+                                        <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="font-medium text-gray-900">{item.productName}</span>
+                                                <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
+                                            </div>
+                                            <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                                <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                <span>{item.location || 'Sin ubicación'}</span>
+                                                <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                            </div>
+                                            <div className="flex gap-2 mt-2 flex-wrap">
+                                                <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                                <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                                {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                                <div className="relative">
+                                                    <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
+                                                    {withdrawMenuId === item.id && (
+                                                        <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                            <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                            <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                            <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))
+                ) : (
+                    /* Mobile View: PROPIOS */
+                    personalGroups.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400 text-sm">No tienes productos marcados como propios en stock.</div>
+                    ) : (
+                        personalGroups.map((grp) => (
+                            <div key={grp.key} className="rounded-2xl border border-violet-200 bg-violet-50/30 shadow-sm overflow-hidden">
+                                <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            {grp.imageUrl ? (
+                                                <div className="w-10 h-10 rounded-lg overflow-hidden border border-violet-200 flex-shrink-0">
+                                                    <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                </div>
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-lg border border-violet-200 bg-violet-100 flex-shrink-0 flex items-center justify-center">
+                                                    <User className="w-4 h-4 text-violet-600" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
+                                                    <span className="text-[10px] font-bold bg-violet-200 text-violet-800 px-1.5 py-0.5 rounded">PROPIO</span>
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="px-2 py-1 rounded-md text-xs font-semibold text-white bg-violet-600">{grp.totalQty}</span>
+                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 flex gap-4 text-xs text-violet-700">
+                                        <span>Solo ingreso (sin costo de compra)</span>
+                                    </div>
+                                </button>
+                                {expandedGroups.has(grp.key) && (
+                                    <div className="border-t border-violet-100 bg-white/60 p-3 space-y-2">
+                                        {grp.children.map(item => (
+                                            <div key={item.id} className="bg-white rounded-xl border border-violet-100 p-3 shadow-xs">
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <span className="text-gray-600 font-medium">📍 {item.location || 'Sin ubicación'}</span>
+                                                    <span className="text-xs font-bold text-violet-700">×{item.quantity}</span>
+                                                </div>
+                                                <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                                    <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
+                                                    {item.salePrice && <span className="text-emerald-600 font-bold">Venta: ${item.salePrice.toLocaleString('es-AR')}</span>}
+                                                </div>
+                                                <div className="flex gap-2 mt-2 flex-wrap">
+                                                    <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
+                                                    <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
+                                                    <button onClick={() => onManageImages(item)} className="text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md">📷 Fotos</button>
+                                                    {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
+                                                    <div className="relative">
+                                                        <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
+                                                        {withdrawMenuId === item.id && (
+                                                            <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+                                                                <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
+                                                                <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
+                                                                <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                ))}
+                        ))
+                    )
+                )}
             </div>
 
             {/* ===== DESKTOP VIEW ===== */}
             <div className="hidden sm:block overflow-x-auto">
                 {viewMode === 'products' ? (
-                    <table className="w-full text-left text-sm text-gray-600">
-                        <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
-                            <tr>
-                                <th className="px-4 py-3 w-8"></th>
-                                <th className="px-4 py-3 w-10">Img</th>
-                                <th className="px-4 py-3">Producto</th>
-                                <th className="px-4 py-3 text-center">Stock</th>
-                                <th className="px-4 py-3 text-right">Costo Prom.</th>
-                                <th className="px-4 py-3 text-right">Valor Total</th>
-                                <th className="px-4 py-3 text-center">Ubicaciones</th>
-                                <th className="px-4 py-3 text-center">Tandas</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {productGroups.map((grp) => (
-                                <>{/* Fragment key on first tr */}
-                                    <tr
-                                        key={grp.key}
-                                        onClick={() => toggleGroup(grp.key)}
-                                        className={`transition-colors cursor-pointer group border-l-4 ${
-                                            grp.isPersonal
-                                                ? 'border-violet-400 bg-violet-50/50 hover:bg-violet-50'
-                                                : 'border-blue-400 bg-white hover:bg-blue-50/30'
-                                        }`}
-                                    >
-                                        <td className="px-3 py-3 text-gray-400 w-8">
-                                            {expandedGroups.has(grp.key)
-                                                ? <ChevronDown className="w-4 h-4 text-blue-400" />
-                                                : <ChevronRight className="w-4 h-4" />}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            {grp.imageUrl ? (
-                                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
-                                                    <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
-                                                </div>
-                                            ) : (
-                                                <div className={`w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center ${
-                                                    grp.isPersonal ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'
-                                                }`}>
-                                                    {grp.isPersonal && <User className="w-4 h-4 text-violet-400" />}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="font-semibold text-gray-900 text-sm leading-snug">{grp.name}</span>
-                                                {grp.isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">PROPIO</span>}
-                                                {(() => {
-                                                    const status = getBatchStatus(grp.batches);
-                                                    if (!status) return null;
-                                                    return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
-                                                })()}
-                                            </div>
-                                            <p className="text-[11px] text-gray-400 mt-0.5">
-                                                {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
-                                            </p>
-                                        </td>
-                                        <td className="px-3 py-3 text-center">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold text-white ${
-                                                grp.isPersonal ? 'bg-violet-500' : 'bg-blue-600'
-                                            }`}>{grp.totalQty}</span>
-                                        </td>
-                                        <td className="px-3 py-3 text-right font-mono text-sm">
-                                            {grp.isPersonal
-                                                ? <span className="text-violet-300">—</span>
-                                                : <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>}
-                                        </td>
-                                        <td className="px-3 py-3 text-right font-mono">
-                                            {grp.isPersonal
-                                                ? <span className="text-violet-300">—</span>
-                                                : <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>}
-                                        </td>
-                                        <td className="px-3 py-3 text-center">
-                                            <div className="flex flex-wrap justify-center gap-1">
-                                                {grp.locations.map(l => (
-                                                    <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                                                        {l.loc} ×{l.qty}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td></td>
-                                    </tr>
-                                    {expandedGroups.has(grp.key) && grp.children.map(item => (
-                                        <tr key={item.id} className="bg-slate-50 border-l-4 border-blue-200">
-                                            <td className="pl-8 py-3" colSpan={2}>
-                                                {/* Chips de metadatos */}
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                                        {getBatchLabel(resolveBatchRef(item))}
-                                                    </span>
-                                                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                                                        {conditionLabelMap[item.condition || 'nuevo']}
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-400">
-                                                        {new Date(item.date).toLocaleDateString('es-AR')}
-                                                    </span>
-                                                </div>
+                    productGroups.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400">No hay productos comerciales en stock.</div>
+                    ) : (
+                        <table className="w-full text-left text-sm text-gray-600">
+                            <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3 w-8"></th>
+                                    <th className="px-4 py-3 w-10">Img</th>
+                                    <th className="px-4 py-3">Producto</th>
+                                    <th className="px-4 py-3 text-center">Stock</th>
+                                    <th className="px-4 py-3 text-right">Costo Prom.</th>
+                                    <th className="px-4 py-3 text-right">Valor Total</th>
+                                    <th className="px-4 py-3 text-center">Ubicaciones</th>
+                                    <th className="px-4 py-3 text-center">Tandas</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {productGroups.map((grp) => (
+                                    <>{/* Fragment key on first tr */}
+                                        <tr
+                                            key={grp.key}
+                                            onClick={() => toggleGroup(grp.key)}
+                                            className="transition-colors cursor-pointer group border-l-4 border-blue-400 bg-white hover:bg-blue-50/30"
+                                        >
+                                            <td className="px-3 py-3 text-gray-400 w-8">
+                                                {expandedGroups.has(grp.key)
+                                                    ? <ChevronDown className="w-4 h-4 text-blue-400" />
+                                                    : <ChevronRight className="w-4 h-4" />}
                                             </td>
                                             <td className="px-3 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    {item.location && (
-                                                        <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                                            📍 {item.location}
-                                                        </span>
-                                                    )}
+                                                {grp.imageUrl ? (
+                                                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                                                        <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center bg-gray-50 border-gray-200">
+                                                        <Package className="w-4 h-4 text-gray-400" />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-semibold text-gray-900 text-sm leading-snug">{grp.name}</span>
+                                                    {(() => {
+                                                        const status = getBatchStatus(grp.batches);
+                                                        if (!status) return null;
+                                                        return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                                    })()}
                                                 </div>
+                                                <p className="text-[11px] text-gray-400 mt-0.5">
+                                                    {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
+                                                </p>
                                             </td>
                                             <td className="px-3 py-3 text-center">
-                                                <span className="text-sm font-bold text-gray-700">×{item.quantity}</span>
+                                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white bg-blue-600">{grp.totalQty}</span>
                                             </td>
-                                            <td className="px-3 py-3 text-right font-mono text-xs text-gray-600">
-                                                ${item.purchasePrice.toLocaleString('es-AR')}
+                                            <td className="px-3 py-3 text-right font-mono text-sm">
+                                                <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>
                                             </td>
-                                            <td className="px-3 py-3 text-right font-mono text-xs">
-                                                <span className="font-semibold text-gray-800">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</span>
-                                                {item.salePrice && <span className="block text-emerald-600 text-[10px]">→ ${item.salePrice.toLocaleString('es-AR')}/u</span>}
+                                            <td className="px-3 py-3 text-right font-mono">
+                                                <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>
                                             </td>
-                                            <td className="px-3 py-3" colSpan={2}>
-                                                {/* Acciones organizadas */}
-                                                <div className="flex items-center gap-1">
-                                                    {/* Primaria */}
-                                                    <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                        className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
-                                                        <DollarSign className="w-3 h-3" /> Vender
-                                                    </button>
-
-                                                    {/* Separador */}
-                                                    <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                    {/* Secundarias */}
-                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                        className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
-                                                        <Edit2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
-                                                        className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
-                                                        📷
-                                                        {(item.storeImages?.length || 0) > 0 && (
-                                                            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
-                                                        )}
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
-                                                        className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
-                                                            item.publicInStore
-                                                                ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
-                                                                : item.description || item.storeTitle
-                                                                    ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
-                                                                    : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
-                                                        }`}
-                                                        title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
-                                                        {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
-                                                    </button>
-                                                    {item.quantity > 1 && (
-                                                        <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
-                                                            className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
-                                                            <Split className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    )}
-
-                                                    {/* Separador */}
-                                                    <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                    {/* Peligrosas */}
-                                                    <div className="relative">
-                                                        <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
-                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
-                                                            <Ban className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        {withdrawMenuId === item.id && (
-                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3.5 h-3.5" />Regalo</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3.5 h-3.5" />Uso personal</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3.5 h-3.5" />Pérdida</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                                                        className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
+                                            <td className="px-3 py-3 text-center">
+                                                <div className="flex flex-wrap justify-center gap-1">
+                                                    {grp.locations.map(l => (
+                                                        <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                                            {l.loc} ×{l.qty}
+                                                        </span>
+                                                    ))}
                                                 </div>
                                             </td>
+                                            <td></td>
                                         </tr>
-                                    ))}
-                                </>
-                            ))}
-                        </tbody>
-                    </table>
+                                        {expandedGroups.has(grp.key) && grp.children.map(item => (
+                                            <tr key={item.id} className="bg-slate-50 border-l-4 border-blue-200">
+                                                <td className="pl-8 py-3" colSpan={2}>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                                            {getBatchLabel(resolveBatchRef(item))}
+                                                        </span>
+                                                        <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                                            {conditionLabelMap[item.condition || 'nuevo']}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-400">
+                                                            {new Date(item.date).toLocaleDateString('es-AR')}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <div className="flex items-center gap-1.5">
+                                                        {item.location && (
+                                                            <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                                                📍 {item.location}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <span className="text-sm font-bold text-gray-700">×{item.quantity}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-mono text-xs text-gray-600">
+                                                    ${item.purchasePrice.toLocaleString('es-AR')}
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-mono text-xs">
+                                                    <span className="font-semibold text-gray-800">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</span>
+                                                    {item.salePrice && <span className="block text-emerald-600 text-[10px]">→ ${item.salePrice.toLocaleString('es-AR')}/u</span>}
+                                                </td>
+                                                <td className="px-3 py-3" colSpan={2}>
+                                                    <div className="flex items-center gap-1">
+                                                        <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
+                                                            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
+                                                            <DollarSign className="w-3 h-3" /> Vender
+                                                        </button>
+
+                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                        <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
+                                                            <Edit2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
+                                                            className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
+                                                            📷
+                                                            {(item.storeImages?.length || 0) > 0 && (
+                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
+                                                            className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
+                                                                item.publicInStore
+                                                                    ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                                                                    : item.description || item.storeTitle
+                                                                        ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                                                                        : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
+                                                            }`}
+                                                            title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
+                                                            {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
+                                                        </button>
+                                                        {item.quantity > 1 && (
+                                                            <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
+                                                                className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
+                                                                <Split className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+
+                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                        <div className="relative">
+                                                            <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
+                                                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
+                                                                <Ban className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            {withdrawMenuId === item.id && (
+                                                                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
+                                                                    <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3.5 h-3.5" />Regalo</button>
+                                                                    <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3.5 h-3.5" />Uso personal</button>
+                                                                    <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3.5 h-3.5" />Pérdida</button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                                                            className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
                 ) : viewMode === 'locations' ? (
                     <table className="w-full text-left text-sm text-gray-600">
                         <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
                             <tr>
                                 <th className="px-4 py-3 w-8"></th>
                                 <th className="px-4 py-3">Ubicación</th>
+                                <th className="px-4 py-3">Contacto Asignado</th>
                                 <th className="px-4 py-3 text-center">Productos</th>
                                 <th className="px-4 py-3 text-center">Unidades</th>
                                 <th className="px-4 py-3 text-right">Valor Total</th>
@@ -3086,9 +3287,19 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                         <td className="px-4 py-3 text-gray-400">
                                             {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                         </td>
-                                        <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                                        <td className="px-4 py-3 font-bold text-gray-900 flex items-center gap-2">
                                             <MapPin className="w-4 h-4 text-blue-500" />
                                             {grp.location}
+                                        </td>
+                                        <td className="px-4 py-3 text-xs">
+                                            {grp.whatsapp ? (
+                                                <span className="font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                                    WA: {grp.whatsapp}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">Predeterminado</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-center text-xs font-semibold">{grp.products.length}</td>
                                         <td className="px-4 py-3 text-center">
@@ -3099,7 +3310,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                                     {expandedGroups.has(grp.key) && grp.products.map(prod => (
                                         <tr key={prod.name} className="bg-blue-50/30 border-l-2 border-blue-200">
                                             <td className="px-4 py-2"></td>
-                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs">{prod.name}</td>
+                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs" colSpan={2}>{prod.name}</td>
                                             <td className="px-4 py-2 text-center text-xs text-gray-400">
                                                 prom: ${prod.avgCost.toLocaleString('es-AR')}/u
                                             </td>
@@ -3124,7 +3335,7 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                             ))}
                         </tbody>
                     </table>
-                ) : (
+                ) : viewMode === 'batches' ? (
                     <table className="w-full text-left text-sm text-gray-600">
                         <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs tracking-wider">
                             <tr>
@@ -3213,6 +3424,183 @@ function InventoryTable({ items, allItems, onEdit, onDelete, onSell, resolveBatc
                             ))}
                         </tbody>
                     </table>
+                ) : (
+                    /* Desktop View: PROPIOS */
+                    personalGroups.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400">No tienes productos propios en stock actualmente.</div>
+                    ) : (
+                        <table className="w-full text-left text-sm text-gray-600">
+                            <thead className="bg-violet-50/80 text-violet-900 uppercase font-semibold text-xs tracking-wider border-b border-violet-100">
+                                <tr>
+                                    <th className="px-4 py-3 w-8"></th>
+                                    <th className="px-4 py-3 w-10">Img</th>
+                                    <th className="px-4 py-3">Producto Propio</th>
+                                    <th className="px-4 py-3 text-center">Stock</th>
+                                    <th className="px-4 py-3 text-center">Ubicaciones</th>
+                                    <th className="px-4 py-3 text-right">Precio Venta</th>
+                                    <th className="px-4 py-3 text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-violet-100/60">
+                                {personalGroups.map((grp) => (
+                                    <>{/* Fragment key on first tr */}
+                                        <tr
+                                            key={grp.key}
+                                            onClick={() => toggleGroup(grp.key)}
+                                            className="transition-colors cursor-pointer group border-l-4 border-violet-500 bg-violet-50/30 hover:bg-violet-50/70"
+                                        >
+                                            <td className="px-3 py-3 text-violet-400 w-8">
+                                                {expandedGroups.has(grp.key)
+                                                    ? <ChevronDown className="w-4 h-4 text-violet-600" />
+                                                    : <ChevronRight className="w-4 h-4" />}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                                {grp.imageUrl ? (
+                                                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-violet-200 shadow-xs">
+                                                        <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-xl border border-violet-200 bg-violet-100 flex items-center justify-center">
+                                                        <User className="w-4 h-4 text-violet-600" />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-gray-900 text-sm leading-snug">{grp.name}</span>
+                                                    <span className="text-[10px] font-bold bg-violet-200 text-violet-800 px-2 py-0.5 rounded-full">PROPIO</span>
+                                                </div>
+                                                <p className="text-[11px] text-violet-600 mt-0.5 font-medium">
+                                                    Solo ingreso · Sin costo de compra asignado
+                                                </p>
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white bg-violet-600 shadow-xs">{grp.totalQty}</span>
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                                <div className="flex flex-wrap justify-center gap-1">
+                                                    {grp.locations.map(l => (
+                                                        <span key={l.loc} className="text-[10px] font-semibold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full">
+                                                            📍 {l.loc} ×{l.qty}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-3 text-right font-mono text-xs text-gray-500">
+                                                {grp.children.some(c => c.salePrice) ? (
+                                                    <span className="text-emerald-700 font-bold">
+                                                        ${Math.max(...grp.children.map(c => c.salePrice || 0)).toLocaleString('es-AR')}/u
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400">A convenir</span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-3 text-right">
+                                                <span className="text-xs font-bold text-violet-600 hover:text-violet-800">
+                                                    {expandedGroups.has(grp.key) ? 'Ocultar items ▲' : 'Ver items ▼'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        {expandedGroups.has(grp.key) && grp.children.map(item => (
+                                            <tr key={item.id} className="bg-violet-50/20 border-l-4 border-violet-300">
+                                                <td className="pl-8 py-3" colSpan={2}>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+                                                            {conditionLabelMap[item.condition || 'nuevo']}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-400">
+                                                            {new Date(item.date).toLocaleDateString('es-AR')}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+                                                            📍 {item.location || 'Sin ubicación'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <span className="text-sm font-bold text-violet-900">×{item.quantity}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <span className="text-xs text-violet-600 font-medium">Uso / Propio</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-mono text-xs">
+                                                    {item.salePrice ? (
+                                                        <span className="font-bold text-emerald-600">${item.salePrice.toLocaleString('es-AR')}</span>
+                                                    ) : (
+                                                        <span className="text-gray-400">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
+                                                            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
+                                                            <DollarSign className="w-3 h-3" /> Vender
+                                                        </button>
+
+                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                        <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
+                                                            <Edit2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
+                                                            className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
+                                                            📷
+                                                            {(item.storeImages?.length || 0) > 0 && (
+                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
+                                                            className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
+                                                                item.publicInStore
+                                                                    ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                                                                    : item.description || item.storeTitle
+                                                                        ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                                                                        : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
+                                                            }`}
+                                                            title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
+                                                            {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
+                                                        </button>
+                                                        {item.quantity > 1 && (
+                                                            <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
+                                                                className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
+                                                                <Split className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+
+                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+                                                        <div className="relative">
+                                                            <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
+                                                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
+                                                                <Ban className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            {withdrawMenuId === item.id && (
+                                                                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
+                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3 h-3" />Regalo</button>
+                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3 h-3" />Uso personal</button>
+                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3 h-3" />Pérdida</button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+                                                            className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
                 )}
             </div>
         </>
@@ -3790,7 +4178,20 @@ function ComboboxInput({ value, onChange, suggestions, placeholder, className, r
     );
 }
 
-function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, editingItemStatus, suggestedNames = [], suggestedLocations = [], batchCodes = [], existingImages = [], isSaving = false }: {
+function ProductForm({ 
+    formData, 
+    setFormData, 
+    onSubmit, 
+    onCancel, 
+    isEditing, 
+    editingItemStatus, 
+    suggestedNames = [], 
+    locations = [],
+    onOpenLocationsModal,
+    batchCodes = [], 
+    existingImages = [], 
+    isSaving = false 
+}: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
     onSubmit: (e: React.FormEvent) => void,
@@ -3798,7 +4199,8 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
     isEditing: boolean,
     editingItemStatus?: ItemStatus,
     suggestedNames?: string[],
-    suggestedLocations?: string[],
+    locations?: LocationItem[],
+    onOpenLocationsModal?: () => void,
     batchCodes?: string[],
     existingImages?: { url: string; name: string }[],
     isSaving?: boolean
@@ -3973,14 +4375,60 @@ function ProductForm({ formData, setFormData, onSubmit, onCancel, isEditing, edi
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ubicación</label>
-                    <ComboboxInput
-                        value={formData.location || ''}
-                        onChange={val => setFormData({ ...formData, location: val })}
-                        suggestions={suggestedLocations}
-                        placeholder="Ej: Jujuy, Depósito 1"
-                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="block text-sm font-medium text-gray-700">Ubicación</label>
+                        {onOpenLocationsModal && (
+                            <button
+                                type="button"
+                                onClick={onOpenLocationsModal}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                            >
+                                <MapPin className="w-3 h-3" />
+                                Gestionar
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex gap-1.5">
+                        <select
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700 font-medium"
+                            value={formData.location || ''}
+                            onChange={e => setFormData({ ...formData, location: e.target.value })}
+                        >
+                            <option value="">Seleccionar ubicación...</option>
+                            {locations.map(loc => (
+                                <option key={loc.id} value={loc.name}>
+                                    📍 {loc.name} {loc.isDefault ? '(Predeterminada)' : ''} {loc.whatsapp ? `• WA: ${loc.whatsapp}` : ''}
+                                </option>
+                            ))}
+                            {formData.location && !locations.some(l => l.name.toLowerCase() === (formData.location || '').toLowerCase()) && (
+                                <option value={formData.location}>
+                                    📍 {formData.location} (Ubicación actual)
+                                </option>
+                            )}
+                        </select>
+                        {onOpenLocationsModal && (
+                            <button
+                                type="button"
+                                onClick={onOpenLocationsModal}
+                                className="p-2 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-600 transition-colors shrink-0"
+                                title="Agregar o editar ubicaciones"
+                            >
+                                <Plus className="w-4 h-4 text-blue-600" />
+                            </button>
+                        )}
+                    </div>
+                    {(() => {
+                        const matchedLoc = locations.find(l => l.name.toLowerCase() === (formData.location || '').toLowerCase());
+                        if (matchedLoc?.whatsapp) {
+                            return (
+                                <p className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
+                                    <MessageCircle className="w-3 h-3" />
+                                    WhatsApp asignado: <span className="font-mono">{matchedLoc.whatsapp}</span>
+                                </p>
+                            );
+                        }
+                        return null;
+                    })()}
                 </div>
             </div>
 

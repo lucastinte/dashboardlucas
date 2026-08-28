@@ -46,3 +46,13 @@ export interface Item {
 // Deprecated but kept for temporary compatibility if needed during migration, 
 // though we will migrate state immediately.
 export interface Sale extends Item { }
+
+export interface LocationItem {
+    id: string;
+    name: string;
+    whatsapp?: string;
+    phone?: string;
+    address?: string;
+    isDefault?: boolean;
+    createdAt?: string;
+}
