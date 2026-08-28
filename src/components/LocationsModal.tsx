@@ -156,6 +156,14 @@ export function LocationsModal({
     // ── Stock agrupado por ubicación ──────────────────────────────────────
     const inStockItems = items.filter(i => i.status === 'in_stock');
 
+    type ProductEntry = {
+        name: string;
+        totalQty: number;
+        totalValue: number;
+        byCondition: Record<string, number>; // condition -> qty
+        byType: Record<string, number>;      // type -> qty
+    };
+
     type LocationGroup = {
         locName: string;
         locObj: LocationItem | null;
@@ -164,7 +172,7 @@ export function LocationsModal({
         totalValue: number;
         byCondition: Record<string, number>;
         byType: Record<string, number>;
-        products: Array<{ name: string; qty: number; condition: string; type: string; value: number }>;
+        products: ProductEntry[]; // grouped strictly by name
     };
 
     const grouped: Record<string, LocationGroup> = {};
@@ -214,12 +222,21 @@ export function LocationsModal({
         g.byCondition[cond] = (g.byCondition[cond] || 0) + qty;
         g.byType[type] = (g.byType[type] || 0) + qty;
 
-        const existingProd = g.products.find(p => p.name === item.productName && p.condition === cond && p.type === type);
+        // Agrupar por nombre de producto únicamente (sin importar precio ni condición)
+        const existingProd = g.products.find(p => p.name === item.productName);
         if (existingProd) {
-            existingProd.qty += qty;
-            existingProd.value += val;
+            existingProd.totalQty += qty;
+            existingProd.totalValue += val;
+            existingProd.byCondition[cond] = (existingProd.byCondition[cond] || 0) + qty;
+            existingProd.byType[type] = (existingProd.byType[type] || 0) + qty;
         } else {
-            g.products.push({ name: item.productName, qty, condition: cond, type, value: val });
+            g.products.push({
+                name: item.productName,
+                totalQty: qty,
+                totalValue: val,
+                byCondition: { [cond]: qty },
+                byType: { [type]: qty },
+            });
         }
     });
 
@@ -587,26 +604,37 @@ export function LocationsModal({
                                             {isExpanded && grp.totalQty > 0 && (
                                                 <div className="border-t border-gray-200 dark:border-gray-700/60 divide-y divide-gray-100 dark:divide-gray-700/40">
                                                     {grp.products
-                                                        .sort((a, b) => b.qty - a.qty)
+                                                        .sort((a, b) => b.totalQty - a.totalQty)
                                                         .map((prod, i) => (
                                                             <div
                                                                 key={i}
-                                                                className="px-4 py-2.5 flex items-center justify-between gap-3 bg-white/60 dark:bg-gray-800/40 hover:bg-white/90 dark:hover:bg-gray-800/70 transition-colors"
+                                                                className="px-4 py-2.5 flex items-start justify-between gap-3 bg-white/60 dark:bg-gray-800/40 hover:bg-white/90 dark:hover:bg-gray-800/70 transition-colors"
                                                             >
-                                                                <div className="flex items-center gap-2 min-w-0">
-                                                                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${color.bg}`} />
-                                                                    <span className="text-xs text-gray-800 dark:text-gray-200 font-medium truncate">{prod.name}</span>
-                                                                    <span className="text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded-full shrink-0">
-                                                                        {conditionLabel[prod.condition] || prod.condition}
-                                                                    </span>
-                                                                    {prod.type === 'personal' && (
-                                                                        <span className="text-[10px] bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded-full shrink-0">Personal</span>
-                                                                    )}
+                                                                {/* Nombre + subdivisions */}
+                                                                <div className="flex flex-col gap-1 min-w-0">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 mt-0.5 ${color.bg}`} />
+                                                                        <span className="text-xs text-gray-800 dark:text-gray-200 font-semibold truncate">{prod.name}</span>
+                                                                    </div>
+                                                                    {/* Subdivisiones: condición y tipo */}
+                                                                    <div className="flex flex-wrap gap-1 pl-3.5">
+                                                                        {Object.entries(prod.byCondition).map(([cond, qty]) => (
+                                                                            <span key={cond} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">
+                                                                                {conditionLabel[cond] || cond}: {qty}
+                                                                            </span>
+                                                                        ))}
+                                                                        {Object.entries(prod.byType).some(([t]) => t === 'personal') && (
+                                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 font-medium">
+                                                                                Personal: {prod.byType['personal']}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-2 shrink-0">
-                                                                    <span className={`text-xs font-bold ${color.badge} px-2 py-0.5 rounded-full`}>×{prod.qty}</span>
-                                                                    {prod.value > 0 && (
-                                                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">{fmt(prod.value)}</span>
+                                                                {/* Cantidad + valor */}
+                                                                <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                                                                    <span className={`text-xs font-bold ${color.badge} px-2 py-0.5 rounded-full`}>×{prod.totalQty}</span>
+                                                                    {prod.totalValue > 0 && (
+                                                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">{fmt(prod.totalValue)}</span>
                                                                     )}
                                                                 </div>
                                                             </div>

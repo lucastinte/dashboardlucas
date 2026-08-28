@@ -4,7 +4,7 @@ import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -881,6 +881,33 @@ export default function Dashboard() {
         setEditingItem(null);
     };
 
+    const handleRepublish = async (soldItem: Item) => {
+        const defaultLoc = locations.find(l => l.isDefault)?.name || (locations[0]?.name || '');
+        const newItemData = {
+            productName: soldItem.productName,
+            purchasePrice: soldItem.purchasePrice,
+            salePrice: 0,
+            quantity: 1,
+            date: new Date().toISOString().split('T')[0],
+            status: 'in_stock' as ItemStatus,
+            condition: soldItem.condition || 'nuevo',
+            itemType: soldItem.itemType || 'resale',
+            location: soldItem.location || defaultLoc,
+            estimatedSalePrice: soldItem.estimatedSalePrice || 0,
+            publishUrls: '',
+            imageUrl: soldItem.imageUrl || '',
+            description: soldItem.description,
+            storeTitle: soldItem.storeTitle,
+            storeGroup: soldItem.storeGroup,
+            storeImages: soldItem.storeImages,
+            storeVideoUrl: soldItem.storeVideoUrl,
+        };
+        // Open the form pre-filled so the user can adjust before saving
+        setEditingItem(null);
+        setFormData(newItemData as any);
+        setIsModalOpen(true);
+    };
+
     const openNewModal = (initialStatus: ItemStatus = 'in_stock') => {
         resetForm();
         setFormData(prev => ({ ...prev, status: initialStatus }));
@@ -1127,7 +1154,7 @@ export default function Dashboard() {
                                     Nueva Venta Directa
                                 </button>
                             </div>
-                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} onUpdateEnvio={handleUpdateEnvio} onToggleCobrado={handleToggleCobrado} />
+                            <SalesTable items={soldItems} onEdit={startEdit} onDelete={handleDeleteItem} resolveBatchRef={getItemBatchRef} onToggleFacturado={handleToggleFacturado} onToggleNoFacturar={handleToggleNoFacturar} onUpdateEnvio={handleUpdateEnvio} onToggleCobrado={handleToggleCobrado} onRepublish={handleRepublish} />
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
@@ -2161,7 +2188,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     );
 }
 
-function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio, onToggleCobrado }: {
+function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio, onToggleCobrado, onRepublish }: {
     items: Item[],
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
@@ -2169,7 +2196,8 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     onToggleFacturado: (id: string, value: boolean) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
     onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void,
-    onToggleCobrado: (id: string, value: boolean) => void
+    onToggleCobrado: (id: string, value: boolean) => void,
+    onRepublish: (item: Item) => void
 }) {
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
     const FACTURACION_CUTOFF = new Date('2026-04-18T00:00:00');
@@ -2277,6 +2305,13 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                 >
                                     <Edit2 className="w-4 h-4" />
                                     Editar
+                                </button>
+                                <button
+                                    onClick={() => onRepublish(item)}
+                                    className="flex-1 h-10 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <RotateCcw className="w-4 h-4" />
+                                    Republicar
                                 </button>
                                 <button
                                     onClick={() => onDelete(item.id)}
@@ -2470,6 +2505,13 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 title="Editar"
                                             >
                                                 <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => onRepublish(item)}
+                                                className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all"
+                                                title="Republicar — crear nuevo stock con los datos de este producto"
+                                            >
+                                                <RotateCcw className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={() => onDelete(item.id)}
