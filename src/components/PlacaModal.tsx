@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import qrcode from 'qrcode-generator';
-import { X, Download, Upload, Loader2, Copy, Check } from 'lucide-react';
-import type { Item } from '../types';
+import { X, Download, Upload, Loader2, Copy, Check, MapPin } from 'lucide-react';
+import type { Item, LocationItem } from '../types';
 
 // Icono de WhatsApp (SVG → imagen) para dibujar nítido en canvas
 const WA_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ffffff" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.892c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.882 11.882 0 005.71 1.454h.005c6.585 0 11.946-5.359 11.949-11.945a11.821 11.821 0 00-3.484-8.413"/></svg>`;
@@ -95,13 +95,20 @@ function drawContain(c: CanvasRenderingContext2D, img: HTMLImageElement, x: numb
     c.drawImage(img, dx, dy, dw, dh);
 }
 
-export default function PlacaModal({ item, onClose }: { item: Item; onClose: () => void }) {
+export default function PlacaModal({ item, locations = [], onClose }: { item: Item; locations?: LocationItem[]; onClose: () => void }) {
     const initialConfig = useRef(loadConfig());
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Detect WhatsApp number from item's location if available
+    const matchedLoc = locations.find(l =>
+        item.location && l.name.trim().toLowerCase() === item.location.trim().toLowerCase()
+    );
+    const locationWa = matchedLoc?.whatsapp || matchedLoc?.phone;
+
     // Título y precio arrancan vacíos: solo aparecen en la placa si se completan
     const [title, setTitle] = useState('');
     const [price, setPrice] = useState('');
-    const [wa, setWa] = useState(initialConfig.current.wa);
+    const [wa, setWa] = useState(locationWa || initialConfig.current.wa);
     const [store, setStore] = useState(initialConfig.current.store);
     const [qrMode, setQrMode] = useState<'wa' | 'store'>('wa');
     const [fmt, setFmt] = useState<{ w: number; h: number }>({ w: 1080, h: 1080 });
@@ -417,14 +424,44 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">WhatsApp</p>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">WhatsApp</p>
+                                        {item.location && (
+                                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                                <MapPin className="w-2.5 h-2.5" />
+                                                {item.location}
+                                            </span>
+                                        )}
+                                    </div>
                                     <input type="text" value={wa} onChange={e => setWa(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400 font-mono" />
+                                    {locations.filter(l => l.whatsapp || l.phone).length > 0 && (
+                                        <div className="flex gap-1 flex-wrap mt-1.5">
+                                            {locations.filter(l => l.whatsapp || l.phone).map(l => {
+                                                const locNum = l.whatsapp || l.phone || '';
+                                                const isSel = wa.replace(/\D/g, '') === locNum.replace(/\D/g, '');
+                                                return (
+                                                    <button
+                                                        key={l.id}
+                                                        type="button"
+                                                        onClick={() => setWa(locNum)}
+                                                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${
+                                                            isSel
+                                                                ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-xs'
+                                                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                                        }`}
+                                                    >
+                                                        {l.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tienda</p>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Tienda</p>
                                     <input type="text" value={store} onChange={e => setStore(e.target.value)}
                                         className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
                                 </div>

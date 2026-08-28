@@ -835,6 +835,67 @@ export default function Dashboard() {
         }
     };
 
+    const handleMergeItems = async (itemsToMerge: Item[]) => {
+        if (itemsToMerge.length <= 1) return;
+        if (savingRef.current) return;
+
+        const first = itemsToMerge[0];
+        const totalQty = itemsToMerge.reduce((acc, i) => acc + i.quantity, 0);
+        const totalCost = itemsToMerge.reduce((acc, i) => acc + (i.purchasePrice * i.quantity), 0);
+        const avgCost = Math.round(totalCost / totalQty);
+        const bestSalePrice = itemsToMerge.reduce((max, i) => Math.max(max, i.salePrice || i.estimatedSalePrice || 0), 0);
+        const loc = first.location || 'Sin ubicación';
+
+        const confirmMsg = `¿Unificar ${itemsToMerge.length} registros de "${first.productName}" en ${loc}?\n\n` +
+            `• Cantidad total: ${totalQty} unidades\n` +
+            `• Costo de compra promedio: $${avgCost.toLocaleString('es-AR')}\n` +
+            (bestSalePrice > 0 ? `• Precio de venta: $${bestSalePrice.toLocaleString('es-AR')}\n` : '') +
+            `\nSe consolidarán en 1 sola fila limpia y se conservarán fotos y datos de tienda.`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        savingRef.current = true;
+        try {
+            const itemWithStoreTitle = itemsToMerge.find(i => i.storeTitle);
+            const itemWithDesc = itemsToMerge.find(i => i.description);
+            const itemWithImg = itemsToMerge.find(i => i.imageUrl);
+            const itemWithStoreImgs = itemsToMerge.find(i => (i.storeImages?.length || 0) > 0);
+            const itemWithStoreVideo = itemsToMerge.find(i => i.storeVideoUrl);
+            const itemWithGroup = itemsToMerge.find(i => i.storeGroup);
+            const isPublicInStore = itemsToMerge.some(i => i.publicInStore);
+            const resolvedBatchRef = itemsToMerge.map(getItemBatchRef).find(Boolean);
+
+            const updates: Partial<Item> = {
+                quantity: totalQty,
+                purchasePrice: avgCost,
+                salePrice: bestSalePrice || first.salePrice || 0,
+                estimatedSalePrice: bestSalePrice || first.estimatedSalePrice || 0,
+                storeTitle: itemWithStoreTitle?.storeTitle || first.storeTitle,
+                storeGroup: itemWithGroup?.storeGroup || first.storeGroup,
+                description: itemWithDesc?.description || first.description,
+                imageUrl: itemWithImg?.imageUrl || first.imageUrl,
+                storeImages: itemWithStoreImgs?.storeImages || first.storeImages,
+                storeVideoUrl: itemWithStoreVideo?.storeVideoUrl || first.storeVideoUrl,
+                publicInStore: isPublicInStore,
+                batchRef: resolvedBatchRef
+            };
+
+            await itemService.updateItem(first.id, updates);
+
+            for (let i = 1; i < itemsToMerge.length; i++) {
+                await itemService.deleteItem(itemsToMerge[i].id);
+            }
+
+            await loadItems();
+        } catch (err) {
+            console.error('Error merging items:', err);
+            alert('Error al unificar los registros. Intenta nuevamente.');
+            loadItems();
+        } finally {
+            savingRef.current = false;
+        }
+    };
+
 
 
     const handleWithdraw = async (item: Item, reason: WithdrawalReason) => {
@@ -1199,6 +1260,7 @@ export default function Dashboard() {
                                 onWithdraw={handleWithdraw} 
                                 onTogglePublicInStore={handleTogglePublicInStore} 
                                 onManageImages={setStoreImagesItem} 
+                                onMerge={handleMergeItems}
                                 onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
@@ -1266,7 +1328,7 @@ export default function Dashboard() {
 
             {/* Placa Marketplace Modal */}
             {placaItem && (
-                <PlacaModal item={placaItem} onClose={() => setPlacaItem(null)} />
+                <PlacaModal item={placaItem} locations={locations} onClose={() => setPlacaItem(null)} />
             )}
 
             {/* Modal Overlay */}
@@ -2543,6 +2605,7 @@ function InventoryTable({
     onWithdraw, 
     onTogglePublicInStore, 
     onManageImages, 
+    onMerge,
     batchHistory,
     locations = [],
     onOpenLocationsModal
@@ -2557,6 +2620,7 @@ function InventoryTable({
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     onTogglePublicInStore: (id: string, value: boolean) => void,
     onManageImages: (item: Item) => void,
+    onMerge?: (items: Item[]) => void,
     batchHistory: BatchRecord[],
     locations?: LocationItem[],
     onOpenLocationsModal?: () => void
@@ -2628,7 +2692,7 @@ function InventoryTable({
 
     const productGroups: ProductGroup[] = (() => {
         const map = new Map<string, ProductGroup>();
-        filteredResaleItems.forEach(item => {
+        filteredItems.forEach(item => {
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
@@ -2637,7 +2701,7 @@ function InventoryTable({
             }
             grp.children.push(item);
             grp.totalQty += item.quantity;
-            grp.totalValue += item.purchasePrice * item.quantity;
+            grp.totalValue += (item.purchasePrice || 0) * item.quantity;
             if (!grp.imageUrl && item.imageUrl) grp.imageUrl = item.imageUrl;
             const loc = item.location || 'Sin ubicación';
             const existingLoc = grp.locations.find(l => normalizeText(l.loc) === normalizeText(loc));
@@ -2668,7 +2732,7 @@ function InventoryTable({
 
     const locationGroups: LocationGroup[] = (() => {
         const map = new Map<string, LocationGroup>();
-        filteredResaleItems.forEach(item => {
+        filteredItems.forEach(item => {
             const loc = item.location || 'Sin ubicación';
             const locKey = normalizeText(loc);
             let grp = map.get(locKey);
@@ -2686,7 +2750,7 @@ function InventoryTable({
                 map.set(locKey, grp);
             }
             grp.totalQty += item.quantity;
-            grp.totalValue += item.purchasePrice * item.quantity;
+            grp.totalValue += (item.purchasePrice || 0) * item.quantity;
             const normName = normalizeText(item.productName);
             let prod = grp.products.find(p => normalizeText(p.name) === normName);
             if (!prod) {
@@ -2698,7 +2762,7 @@ function InventoryTable({
         });
         for (const grp of map.values()) {
             for (const prod of grp.products) {
-                const totalCost = prod.items.reduce((a, i) => a + i.purchasePrice * i.quantity, 0);
+                const totalCost = prod.items.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0);
                 prod.avgCost = prod.qty > 0 ? Math.round(totalCost / prod.qty) : 0;
             }
             grp.products.sort((a, b) => a.name.localeCompare(b.name));
@@ -2718,15 +2782,15 @@ function InventoryTable({
 
     const batchGroups: BatchGroup[] = (() => {
         const map = new Map<string, BatchGroup>();
-        filteredResaleItems.forEach(item => {
+        filteredItems.forEach(item => {
             const bRef = resolveBatchRef(item) || '';
-            const bKey = bRef || '__direct__';
+            const bKey = bRef || (item.itemType === 'personal' ? '__propio__' : '__direct__');
             let grp = map.get(bKey);
             if (!grp) {
                 grp = {
                     key: bKey,
                     batchCode: bRef,
-                    label: bRef ? getBatchLabel(bRef) : 'Venta directa',
+                    label: bRef ? getBatchLabel(bRef) : (item.itemType === 'personal' ? 'Artículos Propios' : 'Venta directa'),
                     status: bRef ? getBatchStatus([bRef]) : null,
                     totalQty: 0,
                     totalValue: 0,
@@ -2736,11 +2800,11 @@ function InventoryTable({
             }
             grp.children.push(item);
             grp.totalQty += item.quantity;
-            grp.totalValue += item.purchasePrice * item.quantity;
+            grp.totalValue += (item.purchasePrice || 0) * item.quantity;
         });
         return Array.from(map.values()).sort((a, b) => {
-            if (a.key === '__direct__') return 1;
-            if (b.key === '__direct__') return -1;
+            if (a.key === '__direct__' || a.key === '__propio__') return 1;
+            if (b.key === '__direct__' || b.key === '__propio__') return -1;
             const numA = Number(a.batchCode.match(/\d+/)?.[0] || 0);
             const numB = Number(b.batchCode.match(/\d+/)?.[0] || 0);
             return numB - numA;
@@ -2793,15 +2857,11 @@ function InventoryTable({
                             </span>
                         ) : (
                             <>
-                                {productGroups.length} productos comerciales · {filteredResaleItems.reduce((a, i) => a + i.quantity, 0)} unidades · ${filteredResaleItems.reduce((a, i) => a + i.purchasePrice * i.quantity, 0).toLocaleString('es-AR')} invertido
+                                {productGroups.length} productos · {filteredItems.reduce((a, i) => a + i.quantity, 0)} unidades en stock · ${filteredItems.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0).toLocaleString('es-AR')} invertido
                                 {personalTotalQty > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { setViewMode('personal'); setExpandedGroups(new Set()); }}
-                                        className="text-violet-600 hover:text-violet-800 ml-1.5 font-medium underline underline-offset-2"
-                                    >
-                                        · {personalTotalQty} propios en pestaña aparte
-                                    </button>
+                                    <span className="text-violet-600 ml-1.5 font-medium">
+                                        ({personalTotalQty} de origen propio)
+                                    </span>
                                 )}
                             </>
                         )}
@@ -2914,6 +2974,36 @@ function InventoryTable({
                                 </button>
                                 {expandedGroups.has(grp.key) && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                                        {(() => {
+                                            const locMap = new Map<string, Item[]>();
+                                            grp.children.forEach(item => {
+                                                const loc = item.location || 'Sin ubicación';
+                                                if (!locMap.has(loc)) locMap.set(loc, []);
+                                                locMap.get(loc)!.push(item);
+                                            });
+                                            return Array.from(locMap.entries()).filter(([_, lItems]) => lItems.length > 1).map(([locName, lItems]) => {
+                                                const totalQty = lItems.reduce((a, i) => a + i.quantity, 0);
+                                                const totalCost = lItems.reduce((a, i) => a + i.purchasePrice * i.quantity, 0);
+                                                const avgCost = Math.round(totalCost / totalQty);
+                                                return (
+                                                    <div key={`merge-m-${locName}`} className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex flex-col gap-2">
+                                                        <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
+                                                            <Merge className="w-4 h-4 text-indigo-600 shrink-0" />
+                                                            <span><b>{lItems.length} registros</b> en <b>{locName}</b> ({totalQty} u. · Costo prom: <b>${avgCost.toLocaleString('es-AR')}</b>)</span>
+                                                        </div>
+                                                        {onMerge && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); onMerge(lItems); }}
+                                                                className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <Merge className="w-3.5 h-3.5" />
+                                                                Unificar en 1 fila
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
                                         {grp.children.map(item => (
                                             <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
                                                 <div className="flex justify-between items-center text-sm">
@@ -2986,6 +3076,14 @@ function InventoryTable({
                                             </div>
                                             <p className="text-xs text-gray-500 mt-1">Costo prom: ${prod.avgCost.toLocaleString('es-AR')}/u</p>
                                             <div className="flex gap-2 mt-2 flex-wrap">
+                                                {prod.items.length > 1 && onMerge && (
+                                                    <button
+                                                        onClick={() => onMerge(prod.items)}
+                                                        className="text-[10px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2 py-1 rounded-md flex items-center gap-1"
+                                                    >
+                                                        <Merge className="w-3 h-3" /> Unificar ({prod.items.length})
+                                                    </button>
+                                                )}
                                                 {prod.items.map(item => (
                                                     <div key={item.id} className="flex gap-1">
                                                         <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
@@ -3204,8 +3302,45 @@ function InventoryTable({
                                             </td>
                                             <td></td>
                                         </tr>
-                                        {expandedGroups.has(grp.key) && grp.children.map(item => (
-                                            <tr key={item.id} className="bg-slate-50 border-l-4 border-blue-200">
+                                        {expandedGroups.has(grp.key) && (
+                                            <>
+                                                {(() => {
+                                                    const locMap = new Map<string, Item[]>();
+                                                    grp.children.forEach(item => {
+                                                        const loc = item.location || 'Sin ubicación';
+                                                        if (!locMap.has(loc)) locMap.set(loc, []);
+                                                        locMap.get(loc)!.push(item);
+                                                    });
+                                                    return Array.from(locMap.entries()).filter(([_, lItems]) => lItems.length > 1).map(([locName, lItems]) => {
+                                                        const totalQty = lItems.reduce((a, i) => a + i.quantity, 0);
+                                                        const totalCost = lItems.reduce((a, i) => a + i.purchasePrice * i.quantity, 0);
+                                                        const avgCost = Math.round(totalCost / totalQty);
+                                                        return (
+                                                            <tr key={`merge-desktop-${locName}`} className="bg-indigo-50/70 border-l-4 border-indigo-500">
+                                                                <td colSpan={8} className="px-6 py-2.5">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
+                                                                            <Merge className="w-4 h-4 text-indigo-600 shrink-0" />
+                                                                            <span>Hay <b>{lItems.length} registros individuales</b> en <b>{locName}</b> ({totalQty} unidades · Costo prom: <b>${avgCost.toLocaleString('es-AR')}</b>)</span>
+                                                                        </div>
+                                                                        {onMerge && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); onMerge(lItems); }}
+                                                                                className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                                                                title={`Unificar los ${lItems.length} registros en 1 solo registro con costo promedio`}
+                                                                            >
+                                                                                <Merge className="w-3.5 h-3.5" />
+                                                                                Unificar en 1 fila
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    });
+                                                })()}
+                                                {grp.children.map(item => (
+                                                    <tr key={item.id} className="bg-slate-50 border-l-4 border-blue-200">
                                                 <td className="pl-8 py-3" colSpan={2}>
                                                     <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
@@ -3359,6 +3494,15 @@ function InventoryTable({
                                             <td className="px-4 py-2 text-center text-xs font-semibold">{prod.qty}</td>
                                             <td className="px-4 py-2 text-right">
                                                 <div className="flex justify-end items-center gap-1">
+                                                    {prod.items.length > 1 && onMerge && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onMerge(prod.items); }}
+                                                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm mr-1 cursor-pointer"
+                                                            title="Unificar unidades en 1 registro con costo promedio"
+                                                        >
+                                                            <Merge className="w-3 h-3" /> Unificar
+                                                        </button>
+                                                    )}
                                                     {prod.items.map(item => (
                                                         <div key={item.id} className="flex gap-0.5">
                                                             <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
