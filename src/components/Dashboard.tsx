@@ -2670,7 +2670,15 @@ function InventoryTable({
         })
         : items;
 
-    const filteredPersonalItems = filteredItems.filter(i => i.itemType === 'personal');
+    // Productos a la venta: todos los de reventa + los propios con precio fijado
+    const forSaleItems = filteredItems.filter(i =>
+        i.itemType !== 'personal' || (i.salePrice && i.salePrice > 0) || (i.estimatedSalePrice && i.estimatedSalePrice > 0)
+    );
+
+    // Productos propios sin precio (A convenir / uso propio)
+    const filteredPersonalItems = filteredItems.filter(i =>
+        i.itemType === 'personal' && !(i.salePrice && i.salePrice > 0) && !(i.estimatedSalePrice && i.estimatedSalePrice > 0)
+    );
 
     const getLocationInfo = (locName: string) => {
         const norm = locName.trim().toLowerCase();
@@ -2691,7 +2699,7 @@ function InventoryTable({
 
     const productGroups: ProductGroup[] = (() => {
         const map = new Map<string, ProductGroup>();
-        filteredItems.forEach(item => {
+        forSaleItems.forEach(item => {
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
@@ -2731,7 +2739,7 @@ function InventoryTable({
 
     const locationGroups: LocationGroup[] = (() => {
         const map = new Map<string, LocationGroup>();
-        filteredItems.forEach(item => {
+        forSaleItems.forEach(item => {
             const loc = item.location || 'Sin ubicación';
             const locKey = normalizeText(loc);
             let grp = map.get(locKey);
@@ -2781,7 +2789,7 @@ function InventoryTable({
 
     const batchGroups: BatchGroup[] = (() => {
         const map = new Map<string, BatchGroup>();
-        filteredItems.forEach(item => {
+        forSaleItems.forEach(item => {
             const bRef = resolveBatchRef(item) || '';
             const bKey = bRef || (item.itemType === 'personal' ? '__propio__' : '__direct__');
             let grp = map.get(bKey);
@@ -2852,15 +2860,19 @@ function InventoryTable({
                     <p className="text-xs text-gray-500">
                         {viewMode === 'personal' ? (
                             <span className="text-violet-700 font-medium">
-                                {personalGroups.length} productos propios · {personalTotalQty} unidad{personalTotalQty !== 1 ? 'es' : ''} en total · Solo ingreso (sin costo asignado)
+                                {personalGroups.length} productos propios a convenir · {personalTotalQty} unidad{personalTotalQty !== 1 ? 'es' : ''} (sin precio fijado)
                             </span>
                         ) : (
                             <>
-                                {productGroups.length} productos · {filteredItems.reduce((a, i) => a + i.quantity, 0)} unidades en stock · ${filteredItems.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0).toLocaleString('es-AR')} invertido
+                                {productGroups.length} productos en venta · {forSaleItems.reduce((a, i) => a + i.quantity, 0)} unidades en stock · ${forSaleItems.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0).toLocaleString('es-AR')} invertido
                                 {personalTotalQty > 0 && (
-                                    <span className="text-violet-600 ml-1.5 font-medium">
-                                        ({personalTotalQty} de origen propio)
-                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setViewMode('personal'); setExpandedGroups(new Set()); }}
+                                        className="text-violet-600 hover:text-violet-800 ml-1.5 font-medium underline underline-offset-2"
+                                    >
+                                        · {personalTotalQty} propios a convenir
+                                    </button>
                                 )}
                             </>
                         )}
