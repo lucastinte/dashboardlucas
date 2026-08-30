@@ -2647,6 +2647,88 @@ async function checkTikTokAlive(url: string): Promise<boolean | null> {
     }
 }
 
+// ── Preview de video en el panel ──────────────────────────────────────────────
+// ID numérico directo desde la URL (www.tiktok.com/@user/video/<id>, /v/<id>, /embed/v2/<id>)
+function getTikTokId(url: string): string | null {
+    return url.match(/tiktok\.com\/(?:@[^/?#]+\/video\/|v\/|embed\/v2\/)(\d{6,})/i)?.[1] ?? null;
+}
+
+// Links cortos (vm./vt.) no traen el ID: se resuelve vía oEmbed, que responde
+// con CORS abierto y el HTML del embed contiene data-video-id="<id>".
+async function resolveTikTokId(url: string): Promise<string | null> {
+    const direct = getTikTokId(url);
+    if (direct) return direct;
+    try {
+        const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+        if (!res.ok) return null;
+        const html = String((await res.json()).html || '');
+        return html.match(/data-video-id="(\d+)"/)?.[1] ?? html.match(/tiktok\.com\/[^"]*?video\/(\d{6,})/)?.[1] ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function getYouTubeId(url: string): string | null {
+    return url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/)?.[1] ?? null;
+}
+
+/** Preview del video de tienda dentro del modal: TikTok/YouTube embebidos,
+ *  archivo directo con <video>, y fallback a link externo. */
+function VideoPreview({ url }: { url: string }) {
+    const [tiktokId, setTiktokId] = useState<string | null>(() => getTikTokId(url));
+
+    useEffect(() => {
+        let cancelled = false;
+        setTiktokId(getTikTokId(url));
+        if (TIKTOK_URL_RE.test(url)) {
+            resolveTikTokId(url).then(id => { if (!cancelled && id) setTiktokId(id); });
+        }
+        return () => { cancelled = true; };
+    }, [url]);
+
+    const ytId = getYouTubeId(url);
+    if (TIKTOK_URL_RE.test(url)) {
+        if (!tiktokId) {
+            return (
+                <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full aspect-video rounded-xl bg-black text-white text-sm font-bold hover:bg-gray-800 transition-colors">
+                    🎬 Ver video en TikTok
+                </a>
+            );
+        }
+        return (
+            <iframe
+                src={`https://www.tiktok.com/embed/v2/${tiktokId}`}
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+                title="Video de TikTok"
+                className="mx-auto rounded-xl bg-black"
+                style={{ height: '320px', width: 'auto', maxWidth: '100%', aspectRatio: '9 / 16' }}
+            />
+        );
+    }
+    if (ytId) {
+        return (
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black">
+                <iframe
+                    src={`https://www.youtube.com/embed/${ytId}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    title="Video de YouTube"
+                    className="absolute inset-0 w-full h-full"
+                />
+            </div>
+        );
+    }
+    if (DIRECT_VIDEO_RE.test(url)) {
+        return <video src={url} controls className="w-full max-h-64 rounded-xl bg-black" />;
+    }
+    return (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full aspect-video rounded-xl bg-black text-white text-sm font-bold hover:bg-gray-800 transition-colors">
+            🎬 Ver video (abre en otra pestaña)
+        </a>
+    );
+}
+
 type MediaCheck = { url: string; kind: 'image' | 'video' };
 
 /**
@@ -4479,12 +4561,18 @@ Aquí va la descripción
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Video</p>
 
                         {videoUrl ? (
-                            <div className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50">
-                                <span className="text-lg">🎬</span>
-                                <p className="text-xs text-gray-600 flex-1 truncate">{videoUrl}</p>
-                                <button onClick={() => setVideoUrl('')} className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Quitar video">
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
+                            <div className="space-y-2">
+                                <VideoPreview url={videoUrl} />
+                                <div className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50">
+                                    <span className="text-lg">🎬</span>
+                                    <p className="text-xs text-gray-600 flex-1 truncate">{videoUrl}</p>
+                                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all" title="Abrir video en otra pestaña">
+                                        <ArrowUpRight className="w-3.5 h-3.5" />
+                                    </a>
+                                    <button onClick={() => setVideoUrl('')} className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Quitar video">
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="space-y-2">
