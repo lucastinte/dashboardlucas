@@ -2622,7 +2622,50 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     );
 }
 
-function InventoryTable({ 
+/* Barra de progreso de publicación: 4 segmentos (título, descripción, video, fotos).
+   Reemplaza a los chips de texto — misma info, más compacta e interactiva. */
+function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen }: {
+    hasTitle: boolean;
+    hasDesc: boolean;
+    hasVideo: boolean;
+    photoCount: number;
+    onOpen: () => void;
+}) {
+    const segments = [
+        { label: 'Título', done: hasTitle, doneText: 'Título listo', missingText: 'Falta el título de la publicación' },
+        { label: 'Desc', done: hasDesc, doneText: 'Descripción lista', missingText: 'Falta la descripción' },
+        { label: 'Video', done: hasVideo, doneText: 'Video subido', missingText: 'Sin video (opcional)' },
+        { label: 'Fotos', done: photoCount > 0, doneText: `${photoCount} foto${photoCount > 1 ? 's' : ''}`, missingText: 'Sin fotos' },
+    ];
+    const doneCount = segments.filter(s => s.done).length;
+    return (
+        <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 px-1.5 py-1 rounded-full bg-gray-100/90 dark:bg-slate-800/90">
+                {segments.map(seg => (
+                    <button
+                        key={seg.label}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpen(); }}
+                        title={seg.done ? `${seg.label}: ${seg.doneText}` : `${seg.label}: ${seg.missingText} — click para completar`}
+                        aria-label={`${seg.label}: ${seg.done ? seg.doneText : seg.missingText}`}
+                        className={`h-1.5 w-4 rounded-full transition-all duration-200 hover:w-5 hover:h-2.5 hover:shadow-sm ${
+                            seg.done
+                                ? 'bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-400'
+                                : seg.label === 'Video'
+                                    ? 'bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500'
+                                    : 'bg-amber-400 hover:bg-amber-500 dark:bg-amber-500 dark:hover:bg-amber-400'
+                        }`}
+                    />
+                ))}
+            </div>
+            <span className={`text-[10px] font-bold tabular-nums ${doneCount === segments.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'}`}>
+                {doneCount}/{segments.length}
+            </span>
+        </div>
+    );
+}
+
+function InventoryTable({
     items, 
     allItems, 
     onEdit, 
@@ -3052,34 +3095,13 @@ function InventoryTable({
                                             </button>
                                         </div>
                                         <div className="flex items-center gap-1 flex-nowrap overflow-x-auto">
-                                            <span
-                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasStoreTitle ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}
-                                                title={hasStoreTitle ? 'Título listo' : 'Falta título'}
-                                            >
-                                                {hasStoreTitle ? '✓ Título' : '⚠️ Título'}
-                                            </span>
-                                            <span
-                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasDesc ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}
-                                                title={hasDesc ? 'Descripción lista' : 'Falta desc'}
-                                            >
-                                                {hasDesc ? '✓ Desc' : '⚠️ Desc'}
-                                            </span>
-                                            <span
-                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasVideo ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
-                                                title={hasVideo ? 'Video listo' : 'Sin video'}
-                                            >
-                                                {hasVideo ? '✓ Video' : '✕ Video'}
-                                            </span>
-                                            <span
-                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${photoCount > 0 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'}`}
-                                                title={photoCount > 0 ? `${photoCount} fotos` : 'Sin fotos'}
-                                            >
-                                                {photoCount > 0 ? `📷 ${photoCount}` : '⚠️ Fotos'}
-                                            </span>
+                                            <StoreProgress
+                                                hasTitle={hasStoreTitle}
+                                                hasDesc={hasDesc}
+                                                hasVideo={hasVideo}
+                                                photoCount={photoCount}
+                                                onOpen={() => onManageImages(repItem)}
+                                            />
                                         </div>
                                     </div>
                                 {expandedGroups.has(grp.key) && (
@@ -3131,7 +3153,6 @@ function InventoryTable({
                                                 <div className="flex gap-2 mt-2 flex-wrap">
                                                     <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
                                                     <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                    <button onClick={() => onManageImages(item)} className="text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md">📷 Fotos</button>
                                                     {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
                                                     <div className="relative">
                                                         <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
@@ -3302,7 +3323,7 @@ function InventoryTable({
                                         {grp.children.map(item => (
                                             <div key={item.id} className="bg-white rounded-xl border border-violet-100 p-3 shadow-xs">
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="text-gray-600 font-medium">📍 {item.location || 'Sin ubicación'}</span>
+                                                    <span className="inline-flex items-center gap-1 text-gray-600 font-medium"><MapPin className="w-3 h-3 text-violet-400" />{item.location || 'Sin ubicación'}</span>
                                                     <span className="text-xs font-bold text-violet-700">×{item.quantity}</span>
                                                 </div>
                                                 <div className="flex gap-4 text-xs text-gray-500 mt-1">
@@ -3312,7 +3333,7 @@ function InventoryTable({
                                                 <div className="flex gap-2 mt-2 flex-wrap">
                                                     <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
                                                     <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                    <button onClick={() => onManageImages(item)} className="text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md">📷 Fotos</button>
+                                                    <button onClick={() => onManageImages(item)} className="inline-flex items-center gap-1 text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md" title="Fotos y video de tienda"><ImageIcon className="w-3 h-3" />Fotos</button>
                                                     {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
                                                     <div className="relative">
                                                         <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
@@ -3447,59 +3468,15 @@ function InventoryTable({
                                                                 <Edit2 className="w-3.5 h-3.5" />
                                                             </button>
                                                         </div>
-                                                        {/* Completeness Chips (Single line flex-nowrap) */}
-                                                        <div className="flex items-center justify-center gap-1 flex-nowrap overflow-x-auto py-0.5 max-w-full">
-                                                            {/* Título */}
-                                                            <span
-                                                                onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
-                                                                    hasStoreTitle
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
-                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60 dark:hover:bg-amber-900/50'
-                                                                }`}
-                                                                title={hasStoreTitle ? `Título optimizado: "${repItem.storeTitle}"` : 'Falta título para Facebook/tienda (click para agregar)'}
-                                                            >
-                                                                {hasStoreTitle ? '✓ Título' : '⚠️ Título'}
-                                                            </span>
-
-                                                            {/* Descripción */}
-                                                            <span
-                                                                onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
-                                                                    hasDesc
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
-                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60 dark:hover:bg-amber-900/50'
-                                                                }`}
-                                                                title={hasDesc ? 'Descripción lista' : 'Falta descripción (click para agregar)'}
-                                                            >
-                                                                {hasDesc ? '✓ Desc' : '⚠️ Desc'}
-                                                            </span>
-
-                                                            {/* Video */}
-                                                            <span
-                                                                onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
-                                                                    hasVideo
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
-                                                                        : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700/60 dark:hover:bg-slate-700/80'
-                                                                }`}
-                                                                title={hasVideo ? 'Video subido/vinculado' : 'Sin video (click para agregar)'}
-                                                            >
-                                                                {hasVideo ? '✓ Video' : '✕ Video'}
-                                                            </span>
-
-                                                            {/* Fotos */}
-                                                            <span
-                                                                onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
-                                                                    photoCount > 0
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
-                                                                        : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800/60 dark:hover:bg-rose-900/50'
-                                                                }`}
-                                                                title={photoCount > 0 ? `${photoCount} foto${photoCount > 1 ? 's' : ''} disponible${photoCount > 1 ? 's' : ''}` : 'Sin fotos (click para agregar)'}
-                                                            >
-                                                                {photoCount > 0 ? `📷 ${photoCount}` : '⚠️ Fotos'}
-                                                            </span>
+                                                        {/* Completitud de la publicación (segmentos clicables) */}
+                                                        <div className="flex items-center justify-center py-0.5">
+                                                            <StoreProgress
+                                                                hasTitle={hasStoreTitle}
+                                                                hasDesc={hasDesc}
+                                                                hasVideo={hasVideo}
+                                                                photoCount={photoCount}
+                                                                onOpen={() => onManageImages(repItem)}
+                                                            />
                                                         </div>
                                                     </div>
                                                 </td>
@@ -3559,8 +3536,9 @@ function InventoryTable({
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center gap-1.5">
                                                         {item.location && (
-                                                            <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                                                📍 {item.location}
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                                                <MapPin className="w-2.5 h-2.5" />
+                                                                {item.location}
                                                             </span>
                                                         )}
                                                     </div>
@@ -3587,26 +3565,6 @@ function InventoryTable({
                                                         <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
                                                             className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
                                                             <Edit2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
-                                                            className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
-                                                            📷
-                                                            {(item.storeImages?.length || 0) > 0 && (
-                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
-                                                            )}
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
-                                                            className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
-                                                                item.publicInStore
-                                                                    ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
-                                                                    : item.description || item.storeTitle
-                                                                        ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
-                                                                        : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
-                                                            }`}
-                                                            title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
-                                                            {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
                                                         </button>
                                                         {item.quantity > 1 && (
                                                             <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
@@ -3871,8 +3829,9 @@ function InventoryTable({
                                             <td className="px-3 py-3 text-center">
                                                 <div className="flex flex-wrap justify-center gap-1">
                                                     {grp.locations.map(l => (
-                                                        <span key={l.loc} className="text-[10px] font-semibold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full">
-                                                            📍 {l.loc} ×{l.qty}
+                                                        <span key={l.loc} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full">
+                                                            <MapPin className="w-2.5 h-2.5" />
+                                                            {l.loc} ×{l.qty}
                                                         </span>
                                                     ))}
                                                 </div>
@@ -3906,8 +3865,9 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-[10px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
-                                                            📍 {item.location || 'Sin ubicación'}
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+                                                            <MapPin className="w-2.5 h-2.5" />
+                                                            {item.location || 'Sin ubicación'}
                                                         </span>
                                                     </div>
                                                 </td>
@@ -3939,23 +3899,11 @@ function InventoryTable({
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
-                                                            className="p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all relative" title="Fotos de tienda">
-                                                            📷
+                                                            className="relative p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all" title="Fotos y video de tienda">
+                                                            <ImageIcon className="w-3.5 h-3.5" />
                                                             {(item.storeImages?.length || 0) > 0 && (
                                                                 <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
                                                             )}
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onTogglePublicInStore(item.id, !item.publicInStore); }}
-                                                            className={`p-1.5 rounded-lg transition-all text-sm font-bold ${
-                                                                item.publicInStore
-                                                                    ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
-                                                                    : item.description || item.storeTitle
-                                                                        ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
-                                                                        : 'text-gray-300 hover:text-indigo-400 hover:bg-indigo-50'
-                                                            }`}
-                                                            title={item.publicInStore ? 'En tienda — pausar' : 'Publicar en tienda'}>
-                                                            {item.publicInStore ? '🏪' : item.description || item.storeTitle ? '⏸' : '🏪'}
                                                         </button>
                                                         {item.quantity > 1 && (
                                                             <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
