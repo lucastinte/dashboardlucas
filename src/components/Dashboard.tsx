@@ -4055,14 +4055,14 @@ Aquí va el título
 Aquí va la descripción
 [/DESCRIPCION]`;
 
-            const res = await fetch('https://agentrouter.org/v1/chat/completions', {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${aiApiKey.trim()}`,
                 },
                 body: JSON.stringify({
-                    model: 'gpt-4o-mini',
+                    model: 'llama-3.3-70b-versatile',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Ordena esto y genera título y descripción para:\n\n${aiInput.trim()}` },
@@ -4314,7 +4314,7 @@ Aquí va la descripción
                             <div className="px-4 pb-4 space-y-3 border-t border-violet-100">
                                 {/* API Key */}
                                 <div className="pt-3">
-                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">API Key de Agent Router</label>
+                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">API Key de Groq</label>
                                     <div className="flex gap-2 mt-1">
                                         <input
                                             type="password"
@@ -4327,7 +4327,7 @@ Aquí va la descripción
                                             <span className="self-center text-[10px] text-emerald-600 font-semibold">✓ Guardada</span>
                                         )}
                                     </div>
-                                    <p className="text-[10px] text-violet-400 mt-0.5">Tu API Key de Agent Router. Se guarda en tu navegador.</p>
+                                    <p className="text-[10px] text-violet-400 mt-0.5">Tu API Key de Groq. Se guarda en tu navegador.</p>
                                 </div>
                                 {/* Input de datos */}
                                 <div>
