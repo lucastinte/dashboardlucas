@@ -691,8 +691,22 @@ export default function Dashboard() {
 
     const handleTogglePublicInStore = async (id: string, value: boolean) => {
         try {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, publicInStore: value } : i));
+            const targetItem = items.find(i => i.id === id);
+            const targetName = targetItem ? normalizeText(targetItem.productName) : null;
+            const siblingItems = targetName 
+                ? items.filter(i => i.id !== id && normalizeText(i.productName) === targetName && i.status === 'in_stock')
+                : [];
+
+            setItems(prev => prev.map(i => 
+                (i.id === id || (targetName && normalizeText(i.productName) === targetName && i.status === 'in_stock'))
+                    ? { ...i, publicInStore: value }
+                    : i
+            ));
+
             await itemService.updateItem(id, { publicInStore: value });
+            for (const sib of siblingItems) {
+                await itemService.updateItem(sib.id, { publicInStore: value });
+            }
         } catch (err) {
             console.error('Error updating publicInStore:', err);
             loadItems();
@@ -701,8 +715,22 @@ export default function Dashboard() {
 
     const handleUpdateStoreImages = async (id: string, patch: Partial<Item>) => {
         try {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+            const targetItem = items.find(i => i.id === id);
+            const targetName = targetItem ? normalizeText(targetItem.productName) : null;
+            const siblingItems = targetName 
+                ? items.filter(i => i.id !== id && normalizeText(i.productName) === targetName && i.status === 'in_stock')
+                : [];
+
+            setItems(prev => prev.map(i => 
+                (i.id === id || (targetName && normalizeText(i.productName) === targetName && i.status === 'in_stock'))
+                    ? { ...i, ...patch }
+                    : i
+            ));
+
             await itemService.updateItem(id, patch);
+            for (const sib of siblingItems) {
+                await itemService.updateItem(sib.id, patch);
+            }
         } catch (err) {
             console.error('Error updating storeImages:', err);
             loadItems();
@@ -2944,45 +2972,116 @@ function InventoryTable({
                     productGroups.length === 0 ? (
                         <div className="text-center py-8 text-gray-400 text-sm">No hay productos comerciales en stock.</div>
                     ) : (
-                        productGroups.map((grp) => (
-                            <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                                <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-center gap-3">
-                                            {grp.imageUrl ? (
-                                                <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                                    <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                        productGroups.map((grp) => {
+                            const repItem = grp.children.find(c => c.publicInStore) || grp.children.find(c => c.storeTitle || c.description || c.storeVideoUrl || (c.storeImages && c.storeImages.length > 0)) || grp.children[0];
+                            const isPublic = grp.children.some(c => c.publicInStore);
+                            const hasStoreTitle = Boolean(repItem?.storeTitle?.trim());
+                            const hasDesc = Boolean(repItem?.description?.trim());
+                            const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
+                            const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
+
+                            return (
+                                <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                                    <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                {grp.imageUrl ? (
+                                                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                                        <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-lg border border-dashed flex-shrink-0 flex items-center justify-center bg-gray-50 border-gray-200">
+                                                        <Package className="w-4 h-4 text-gray-400" />
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
+                                                        {(() => {
+                                                            const status = getBatchStatus(grp.batches);
+                                                            if (!status) return null;
+                                                            return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                                        })()}
+                                                    </div>
+                                                    <p className="text-xs text-gray-400 mt-0.5">
+                                                        {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
+                                                    </p>
                                                 </div>
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-lg border border-dashed flex-shrink-0 flex items-center justify-center bg-gray-50 border-gray-200">
-                                                    <Package className="w-4 h-4 text-gray-400" />
-                                                </div>
-                                            )}
-                                            <div>
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
-                                                    {(() => {
-                                                        const status = getBatchStatus(grp.batches);
-                                                        if (!status) return null;
-                                                        return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
-                                                    })()}
-                                                </div>
-                                                <p className="text-xs text-gray-400 mt-0.5">
-                                                    {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
-                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className="px-2 py-1 rounded-md text-xs font-semibold text-white bg-blue-600">{grp.totalQty}</span>
+                                                {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <span className="px-2 py-1 rounded-md text-xs font-semibold text-white bg-blue-600">{grp.totalQty}</span>
-                                            {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                        <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                                            <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>
+                                            <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>
+                                            <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
+                                        </div>
+                                    </button>
+
+                                    {/* Mobile Store Status Bar */}
+                                    <div className="px-4 py-2 bg-slate-50/80 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const nextState = !isPublic;
+                                                    grp.children.forEach(c => onTogglePublicInStore(c.id, nextState));
+                                                }}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold shadow-xs transition-all cursor-pointer ${
+                                                    isPublic
+                                                        ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                                                        : 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
+                                                }`}
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                                                {isPublic ? 'Publicado' : 'No publicado'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onManageImages(repItem);
+                                                }}
+                                                className="p-1 text-violet-600 hover:bg-violet-100 rounded-md transition-all"
+                                                title="Editar tienda"
+                                            >
+                                                <Edit2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span
+                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasStoreTitle ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                                                title={hasStoreTitle ? 'Título listo' : 'Falta título'}
+                                            >
+                                                {hasStoreTitle ? '✓ Título' : '⚠️ Título'}
+                                            </span>
+                                            <span
+                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasDesc ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                                                title={hasDesc ? 'Descripción lista' : 'Falta desc'}
+                                            >
+                                                {hasDesc ? '✓ Desc' : '⚠️ Desc'}
+                                            </span>
+                                            <span
+                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasVideo ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}
+                                                title={hasVideo ? 'Video listo' : 'Sin video'}
+                                            >
+                                                {hasVideo ? '✓ Video' : '✕ Video'}
+                                            </span>
+                                            <span
+                                                onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${photoCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}
+                                                title={photoCount > 0 ? `${photoCount} fotos` : 'Sin fotos'}
+                                            >
+                                                {photoCount > 0 ? `📷 ${photoCount}` : '⚠️ Fotos'}
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="mt-2 flex gap-4 text-xs text-gray-500">
-                                        <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>
-                                        <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>
-                                        <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
-                                    </div>
-                                </button>
                                 {expandedGroups.has(grp.key) && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
                                         {(() => {
@@ -3051,8 +3150,8 @@ function InventoryTable({
                                     </div>
                                 )}
                             </div>
-                        ))
-                    )
+                        );
+                    }))
                 ) : viewMode === 'locations' ? (
                     locationGroups.map((grp) => (
                         <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -3253,66 +3352,158 @@ function InventoryTable({
                                     <th className="px-4 py-3 text-right">Costo Prom.</th>
                                     <th className="px-4 py-3 text-right">Valor Total</th>
                                     <th className="px-4 py-3 text-center">Ubicaciones</th>
-                                    <th className="px-4 py-3 text-center">Tandas</th>
+                                    <th className="px-4 py-3 text-center min-w-[210px]">Publicación / Tienda</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {productGroups.map((grp) => (
-                                    <>{/* Fragment key on first tr */}
-                                        <tr
-                                            key={grp.key}
-                                            onClick={() => toggleGroup(grp.key)}
-                                            className="transition-colors cursor-pointer group border-l-4 border-blue-400 bg-white hover:bg-blue-50/30"
-                                        >
-                                            <td className="px-3 py-3 text-gray-400 w-8">
-                                                {expandedGroups.has(grp.key)
-                                                    ? <ChevronDown className="w-4 h-4 text-blue-400" />
-                                                    : <ChevronRight className="w-4 h-4" />}
-                                            </td>
-                                            <td className="px-3 py-3">
-                                                {grp.imageUrl ? (
-                                                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
-                                                        <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                {productGroups.map((grp) => {
+                                    const repItem = grp.children.find(c => c.publicInStore) || grp.children.find(c => c.storeTitle || c.description || c.storeVideoUrl || (c.storeImages && c.storeImages.length > 0)) || grp.children[0];
+                                    const isPublic = grp.children.some(c => c.publicInStore);
+                                    const hasStoreTitle = Boolean(repItem?.storeTitle?.trim());
+                                    const hasDesc = Boolean(repItem?.description?.trim());
+                                    const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
+                                    const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
+
+                                    return (
+                                        <>
+                                            <tr
+                                                key={grp.key}
+                                                onClick={() => toggleGroup(grp.key)}
+                                                className="transition-colors cursor-pointer group border-l-4 border-blue-400 bg-white hover:bg-blue-50/30"
+                                            >
+                                                <td className="px-3 py-3 text-gray-400 w-8">
+                                                    {expandedGroups.has(grp.key)
+                                                        ? <ChevronDown className="w-4 h-4 text-blue-400" />
+                                                        : <ChevronRight className="w-4 h-4" />}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    {grp.imageUrl ? (
+                                                        <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                                                            <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center bg-gray-50 border-gray-200">
+                                                            <Package className="w-4 h-4 text-gray-400" />
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-semibold text-gray-900 text-sm leading-snug">{grp.name}</span>
+                                                        {(() => {
+                                                            const status = getBatchStatus(grp.batches);
+                                                            if (!status) return null;
+                                                            return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
+                                                        })()}
                                                     </div>
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center bg-gray-50 border-gray-200">
-                                                        <Package className="w-4 h-4 text-gray-400" />
+                                                    <p className="text-[11px] text-gray-400 mt-0.5">
+                                                        {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
+                                                    </p>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white bg-blue-600">{grp.totalQty}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-mono text-sm">
+                                                    <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-mono">
+                                                    <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <div className="flex flex-wrap justify-center gap-1">
+                                                        {grp.locations.map(l => (
+                                                            <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                                                {l.loc} ×{l.qty}
+                                                            </span>
+                                                        ))}
                                                     </div>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-3">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="font-semibold text-gray-900 text-sm leading-snug">{grp.name}</span>
-                                                    {(() => {
-                                                        const status = getBatchStatus(grp.batches);
-                                                        if (!status) return null;
-                                                        return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
-                                                    })()}
-                                                </div>
-                                                <p className="text-[11px] text-gray-400 mt-0.5">
-                                                    {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
-                                                </p>
-                                            </td>
-                                            <td className="px-3 py-3 text-center">
-                                                <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white bg-blue-600">{grp.totalQty}</span>
-                                            </td>
-                                            <td className="px-3 py-3 text-right font-mono text-sm">
-                                                <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>
-                                            </td>
-                                            <td className="px-3 py-3 text-right font-mono">
-                                                <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>
-                                            </td>
-                                            <td className="px-3 py-3 text-center">
-                                                <div className="flex flex-wrap justify-center gap-1">
-                                                    {grp.locations.map(l => (
-                                                        <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                                                            {l.loc} ×{l.qty}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </td>
-                                            <td></td>
-                                        </tr>
+                                                </td>
+                                                <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex flex-col items-center justify-center gap-1.5 min-w-[200px]">
+                                                        {/* Switch / Status & Edit */}
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const nextState = !isPublic;
+                                                                    grp.children.forEach(c => onTogglePublicInStore(c.id, nextState));
+                                                                }}
+                                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                                                                    isPublic
+                                                                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 ring-1 ring-emerald-300'
+                                                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 ring-1 ring-gray-200'
+                                                                }`}
+                                                                title={isPublic ? 'Publicado en tienda — click para pausar' : 'No publicado — click para publicar en tienda'}
+                                                            >
+                                                                <span className={`w-2 h-2 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                                                                {isPublic ? 'Publicado' : 'No publicado'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onManageImages(repItem)}
+                                                                className="p-1 text-violet-600 hover:text-violet-800 hover:bg-violet-50 rounded-lg transition-all"
+                                                                title="Editar título, descripción, fotos y video de tienda"
+                                                            >
+                                                                <Edit2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                        {/* Completeness Chips */}
+                                                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                                                            {/* Título */}
+                                                            <span
+                                                                onClick={() => onManageImages(repItem)}
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                    hasStoreTitle
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                                                }`}
+                                                                title={hasStoreTitle ? `Título optimizado: "${repItem.storeTitle}"` : 'Falta título para Facebook/tienda (click para agregar)'}
+                                                            >
+                                                                {hasStoreTitle ? '✓ Título' : '⚠️ Título'}
+                                                            </span>
+
+                                                            {/* Descripción */}
+                                                            <span
+                                                                onClick={() => onManageImages(repItem)}
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                    hasDesc
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                                                }`}
+                                                                title={hasDesc ? 'Descripción lista' : 'Falta descripción (click para agregar)'}
+                                                            >
+                                                                {hasDesc ? '✓ Desc' : '⚠️ Desc'}
+                                                            </span>
+
+                                                            {/* Video */}
+                                                            <span
+                                                                onClick={() => onManageImages(repItem)}
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                    hasVideo
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                                        : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'
+                                                                }`}
+                                                                title={hasVideo ? 'Video subido/vinculado' : 'Sin video (click para agregar)'}
+                                                            >
+                                                                {hasVideo ? '✓ Video' : '✕ Video'}
+                                                            </span>
+
+                                                            {/* Fotos */}
+                                                            <span
+                                                                onClick={() => onManageImages(repItem)}
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                    photoCount > 0
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                                        : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                                                }`}
+                                                                title={photoCount > 0 ? `${photoCount} foto${photoCount > 1 ? 's' : ''} disponible${photoCount > 1 ? 's' : ''}` : 'Sin fotos (click para agregar)'}
+                                                            >
+                                                                {photoCount > 0 ? `📷 ${photoCount}` : '⚠️ Fotos'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
                                         {expandedGroups.has(grp.key) && (
                                             <>
                                                 {(() => {
@@ -3450,7 +3641,8 @@ function InventoryTable({
                                             </>
                                         )}
                                     </>
-                                ))}
+                                );
+                            })}
                             </tbody>
                         </table>
                     )
