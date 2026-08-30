@@ -2630,14 +2630,30 @@ const mediaStatusCache = new Map<string, boolean>();
 const mediaChecksInFlight = new Set<string>();
 
 const DIRECT_VIDEO_RE = /\.(mp4|webm|mov|m4v|ogv|ogg|avi|mkv)([?#]|$)/i;
+// TikTok expone oEmbed con `access-control-allow-origin: *`: 200 = vivo, 400/404 = caído.
+const TIKTOK_URL_RE = /^https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\//i;
+
+async function checkTikTokAlive(url: string): Promise<boolean | null> {
+    try {
+        const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+        // 400 = video eliminado/privado. Errores de red o 5xx del propio oEmbed no
+        // dicen nada del link, así que devolvemos null (no verificado) para no
+        // marcar rojo un video sano.
+        if (res.status === 400 || res.status === 404) return false;
+        if (res.ok) return true;
+        return null;
+    } catch {
+        return null;
+    }
+}
 
 type MediaCheck = { url: string; kind: 'image' | 'video' };
 
 /**
  * Chequea que los links de media sigan vivos. Las imágenes se validan cargándolas
- * con `Image()`; los videos solo si son links directos a archivo (los embeds de
- * YouTube/etc. no se pueden validar desde el cliente). Devuelve el set de URLs
- * confirmadas como caídas.
+ * con `Image()`; los videos de TikTok vía oEmbed y los directos a archivo con
+ * `<video>` (los embeds de YouTube/etc. no se pueden validar desde el cliente).
+ * Devuelve el set de URLs confirmadas como caídas.
  */
 function useBrokenMedia(checks: MediaCheck[]): Set<string> {
     const key = checks.map(c => `${c.kind}:${c.url}`).join('\n');
@@ -2655,7 +2671,7 @@ function useBrokenMedia(checks: MediaCheck[]): Set<string> {
         };
         checks.forEach(({ url, kind }) => {
             if (mediaStatusCache.has(url) || mediaChecksInFlight.has(url)) return;
-            if (kind === 'video' && !DIRECT_VIDEO_RE.test(url)) return; // embed (YouTube etc.): no validable
+            if (kind === 'video' && !DIRECT_VIDEO_RE.test(url) && !TIKTOK_URL_RE.test(url)) return; // embed (YouTube etc.): no validable
             mediaChecksInFlight.add(url);
             let settled = false;
             const settle = (ok: boolean) => {
@@ -2664,7 +2680,20 @@ function useBrokenMedia(checks: MediaCheck[]): Set<string> {
                 mediaChecksInFlight.delete(url);
                 mark(url, ok);
             };
-            if (kind === 'video') {
+            // "no verificado" (red caída, oEmbed indisponible): no marca rojo ni
+            // cachea, para que se reintente en el próximo render.
+            const skip = () => {
+                if (settled) return;
+                settled = true;
+                mediaChecksInFlight.delete(url);
+            };
+            if (kind === 'video' && TIKTOK_URL_RE.test(url)) {
+                setTimeout(skip, 12000);
+                checkTikTokAlive(url).then(r => {
+                    if (r === null) skip();
+                    else settle(r);
+                });
+            } else if (kind === 'video') {
                 const v = document.createElement('video');
                 v.preload = 'metadata';
                 v.muted = true;
