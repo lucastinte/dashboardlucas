@@ -4037,28 +4037,29 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         setAiError(null);
         localStorage.setItem('ai_api_key', aiApiKey.trim());
         try {
-            const systemPrompt = `Actúa como un experto en copywriting para e-commerce y marketplaces de Facebook/Instagram.
-A partir de los datos crudos de un producto, generá:
-1. Un TÍTULO atractivo y optimizado (máx 120 caracteres), con emojis relevantes al inicio.
-2. Una DESCRIPCIÓN completa y profesional con formato Markdown usando viñetas con emojis temáticos (🔋, ⚡, 📱, 🎧, etc según corresponda).
+            const systemPrompt = `Act as an e-commerce copywriting expert for Facebook/Instagram marketplaces.
+Based on the raw product data provided, generate:
+1. An attractive and optimized TITLE (max 120 characters), with relevant emojis at the beginning.
+2. A complete and professional DESCRIPTION formatted in Markdown using bullet points with thematic emojis.
 
-Reglas estrictas:
-- NO incluyas precios, ubicación ni datos de envío.
-- Empezá la descripción con una frase gancho corta y motivacional con emoji.
-- Luego un párrafo breve describiendo el producto.
-- Después listá las especificaciones técnicas como viñetas con emoji + **Clave:** Valor
-- Si hay características destacadas, agregalas como sección aparte con viñetas.
-- Al final incluí siempre: 📦 **Condición:** Producto totalmente nuevo en caja.
-- Cerrá con: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
-- Usá negrita (**) para las claves de cada viñeta.
-- NO uses encabezados (#), solo viñetas y texto plano con negrita.
+Strict rules:
+- ALL YOUR OUTPUT MUST BE IN SPANISH (Español).
+- DO NOT include prices, location, or shipping details.
+- Start the description with a short, motivational hook phrase with an emoji.
+- Then a brief paragraph describing the product.
+- Then list the technical specifications as bullet points with emoji + **Key:** Value.
+- If there are highlighted features, add them as a separate section with bullet points.
+- Always include at the end: 📦 **Condición:** Producto totalmente nuevo en caja.
+- Close with: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
+- Use bold (**) for the keys of each bullet point.
+- DO NOT use headers (#), only bullet points and plain text with bold.
 
-Formato de respuesta OBLIGATORIO (respetá exactamente estas etiquetas):
+MANDATORY Response Format (respect these exact tags):
 [TITULO]
-(el título generado aquí)
+(the generated Spanish title here)
 [/TITULO]
 [DESCRIPCION]
-(la descripción completa aquí)
+(the complete Spanish description here)
 [/DESCRIPCION]`;
 
             const res = await fetch('https://agentrouter.org/v1/chat/completions', {
