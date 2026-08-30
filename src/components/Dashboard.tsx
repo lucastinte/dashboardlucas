@@ -4037,29 +4037,22 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         setAiError(null);
         localStorage.setItem('ai_api_key', aiApiKey.trim());
         try {
-            const systemPrompt = `Act as an e-commerce copywriting expert for Facebook/Instagram marketplaces.
-Based on the raw product data provided, generate:
-1. An attractive and optimized TITLE (max 120 characters), with relevant emojis at the beginning.
-2. A complete and professional DESCRIPTION formatted in Markdown using bullet points with thematic emojis.
+            const systemPrompt = `Eres un experto en copywriting para ecommerce. Tu trabajo es recibir texto desordenado o especificaciones técnicas de un producto y transformarlo en un título atractivo y una descripción optimizada para ventas.
+        
+Instrucciones:
+- Crea un título corto y llamativo con emojis.
+- Agrega viñetas con los puntos clave usando emojis.
+- Ignora texto spam, marcas de agua o fragmentos repetitivos.
+- NO incluyas precios, ubicación ni datos de envío.
+- Al final incluye siempre: 📦 **Condición:** Producto totalmente nuevo en caja.
+- Cierra con: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
 
-Strict rules:
-- ALL YOUR OUTPUT MUST BE IN SPANISH (Español).
-- DO NOT include prices, location, or shipping details.
-- Start the description with a short, motivational hook phrase with an emoji.
-- Then a brief paragraph describing the product.
-- Then list the technical specifications as bullet points with emoji + **Key:** Value.
-- If there are highlighted features, add them as a separate section with bullet points.
-- Always include at the end: 📦 **Condición:** Producto totalmente nuevo en caja.
-- Close with: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
-- Use bold (**) for the keys of each bullet point.
-- DO NOT use headers (#), only bullet points and plain text with bold.
-
-MANDATORY Response Format (respect these exact tags):
+Formato OBLIGATORIO:
 [TITULO]
-(the generated Spanish title here)
+Aquí va el título
 [/TITULO]
 [DESCRIPCION]
-(the complete Spanish description here)
+Aquí va la descripción
 [/DESCRIPCION]`;
 
             const res = await fetch('https://agentrouter.org/v1/chat/completions', {
@@ -4072,7 +4065,7 @@ MANDATORY Response Format (respect these exact tags):
                     model: 'gpt-4o-mini',
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `Datos del producto:\n${aiInput.trim()}` },
+                        { role: 'user', content: `Ordena esto y genera título y descripción para:\n\n${aiInput.trim()}` },
                     ],
                     temperature: 0.7,
                 }),
