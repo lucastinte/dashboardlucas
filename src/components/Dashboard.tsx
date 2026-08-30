@@ -4023,6 +4023,73 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
     const [fbCopied, setFbCopied] = useState(false);
     const [titleCopied, setTitleCopied] = useState(false);
 
+    // ── AI Generation States ──
+    const [showAiPanel, setShowAiPanel] = useState(false);
+    const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+    const [aiInput, setAiInput] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
+
+    const handleGenerateWithAI = async () => {
+        if (!aiApiKey.trim()) { setAiError('Ingresá tu API Key de Gemini primero.'); return; }
+        if (!aiInput.trim()) { setAiError('Pegá los datos del producto para que la IA los procese.'); return; }
+        setIsGenerating(true);
+        setAiError(null);
+        localStorage.setItem('gemini_api_key', aiApiKey.trim());
+        try {
+            const { GoogleGenerativeAI } = await import('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(aiApiKey.trim());
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+            const prompt = `Actúa como un experto en copywriting para e-commerce y marketplaces de Facebook/Instagram.
+A partir de los siguientes datos crudos de un producto, generá:
+1. Un TÍTULO atractivo y optimizado (máx 120 caracteres), con emojis relevantes al inicio.
+2. Una DESCRIPCIÓN completa y profesional con formato Markdown usando viñetas con emojis temáticos (🔋, ⚡, 📱, 🎧, etc según corresponda).
+
+Reglas estrictas:
+- NO incluyas precios, ubicación ni datos de envío.
+- Empezá la descripción con una frase gancho corta y motivacional con emoji.
+- Luego un párrafo breve describiendo el producto.
+- Después listá las especificaciones técnicas como viñetas con emoji + **Clave:** Valor
+- Si hay características destacadas, agregalas como sección aparte con viñetas.
+- Al final incluí siempre: 📦 **Condición:** Producto totalmente nuevo en caja.
+- Cerrá con: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
+- Usá negrita (**) para las claves de cada viñeta.
+- NO uses encabezados (#), solo viñetas y texto plano con negrita.
+
+Formato de respuesta OBLIGATORIO (respetá exactamente estas etiquetas):
+[TITULO]
+(el título generado aquí)
+[/TITULO]
+[DESCRIPCION]
+(la descripción completa aquí)
+[/DESCRIPCION]
+
+Datos del producto:
+${aiInput.trim()}`;
+            const result = await model.generateContent(prompt);
+            const text = result.response.text();
+            const titleMatch = text.match(/\[TITULO\]\s*([\s\S]*?)\s*\[\/TITULO\]/i);
+            const descMatch = text.match(/\[DESCRIPCION\]\s*([\s\S]*?)\s*\[\/DESCRIPCION\]/i);
+            if (titleMatch?.[1]) setStoreTitle(titleMatch[1].trim());
+            if (descMatch?.[1]) setDescription(descMatch[1].trim());
+            if (!titleMatch && !descMatch) {
+                setAiError('La IA no devolvió el formato esperado. Intentá de nuevo.');
+            } else {
+                setShowAiPanel(false);
+                setAiInput('');
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Error al conectar con Gemini';
+            if (msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('api_key') || msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('permission')) {
+                setAiError('API Key inválida. Verificá que sea correcta y que tenga permisos para Gemini.');
+            } else {
+                setAiError(msg);
+            }
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     const addImages = (urls: string[]) => setImages(prev => [...prev, ...urls.filter(u => u && !prev.includes(u))]);
 
     const handleFiles = async (files: FileList | null) => {
@@ -4222,6 +4289,64 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
                             rows={4}
                             className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 resize-y"
                         />
+                    </div>
+
+                    {/* ── GENERAR CON IA ── */}
+                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-indigo-50/60 overflow-hidden">
+                        <button
+                            onClick={() => setShowAiPanel(!showAiPanel)}
+                            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-violet-700 hover:bg-violet-100/50 transition-all"
+                        >
+                            <span className="flex items-center gap-2">
+                                <span className="text-base">✨</span>
+                                Generar título y descripción con IA
+                            </span>
+                            <ChevronDown className={`w-4 h-4 transition-transform ${showAiPanel ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showAiPanel && (
+                            <div className="px-4 pb-4 space-y-3 border-t border-violet-100">
+                                {/* API Key */}
+                                <div className="pt-3">
+                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">API Key de Gemini</label>
+                                    <div className="flex gap-2 mt-1">
+                                        <input
+                                            type="password"
+                                            value={aiApiKey}
+                                            onChange={e => setAiApiKey(e.target.value)}
+                                            placeholder="AIza..."
+                                            className="flex-1 px-3 py-2 rounded-lg border border-violet-200 text-xs outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 bg-white"
+                                        />
+                                        {aiApiKey && (
+                                            <span className="self-center text-[10px] text-emerald-600 font-semibold">✓ Guardada</span>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-violet-400 mt-0.5">Obtenela gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline hover:text-violet-600">Google AI Studio</a>. Se guarda en tu navegador.</p>
+                                </div>
+                                {/* Input de datos */}
+                                <div>
+                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">Datos del producto (texto desordenado, specs, notas...)</label>
+                                    <textarea
+                                        value={aiInput}
+                                        onChange={e => setAiInput(e.target.value)}
+                                        placeholder={'Pegá acá toda la info cruda del producto...\n\nEj: Cargador Xiaomi Redmi 20000mAh, modelo PB200LZM, USB-C, carga rapida 18W, 2 puertos, blanco, nuevo en caja'}
+                                        rows={5}
+                                        className="w-full mt-1 px-3 py-2.5 rounded-lg border border-violet-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 resize-y bg-white"
+                                    />
+                                </div>
+                                {aiError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{aiError}</p>}
+                                <button
+                                    onClick={handleGenerateWithAI}
+                                    disabled={isGenerating || !aiInput.trim()}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-bold hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                                >
+                                    {isGenerating ? (
+                                        <><Loader2 className="w-4 h-4 animate-spin" />Generando con Gemini...</>
+                                    ) : (
+                                        <>✨ Generar título y descripción</>
+                                    )}
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* ── FOTOS ── */}
