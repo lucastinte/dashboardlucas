@@ -3021,7 +3021,7 @@ function InventoryTable({
                                     </button>
 
                                     {/* Mobile Store Status Bar */}
-                                    <div className="px-4 py-2 bg-slate-50/80 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
                                         <div className="flex items-center gap-1.5">
                                             <button
                                                 type="button"
@@ -3032,11 +3032,11 @@ function InventoryTable({
                                                 }}
                                                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold shadow-xs transition-all cursor-pointer ${
                                                     isPublic
-                                                        ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
-                                                        : 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
+                                                        ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:ring-emerald-800/60'
+                                                        : 'bg-gray-100 text-gray-600 ring-1 ring-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700'
                                                 }`}
                                             >
-                                                <span className={`w-1.5 h-1.5 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                                                <span className={`w-1.5 h-1.5 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400 dark:bg-slate-500'}`} />
                                                 {isPublic ? 'Publicado' : 'No publicado'}
                                             </button>
                                             <button
@@ -3045,37 +3045,37 @@ function InventoryTable({
                                                     e.stopPropagation();
                                                     onManageImages(repItem);
                                                 }}
-                                                className="p-1 text-violet-600 hover:bg-violet-100 rounded-md transition-all"
+                                                className="p-1 text-violet-600 hover:bg-violet-100 dark:text-violet-400 dark:hover:bg-violet-950/50 rounded-md transition-all"
                                                 title="Editar tienda"
                                             >
                                                 <Edit2 className="w-3 h-3" />
                                             </button>
                                         </div>
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex items-center gap-1 flex-nowrap overflow-x-auto">
                                             <span
                                                 onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasStoreTitle ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasStoreTitle ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}
                                                 title={hasStoreTitle ? 'Título listo' : 'Falta título'}
                                             >
                                                 {hasStoreTitle ? '✓ Título' : '⚠️ Título'}
                                             </span>
                                             <span
                                                 onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasDesc ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasDesc ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}
                                                 title={hasDesc ? 'Descripción lista' : 'Falta desc'}
                                             >
                                                 {hasDesc ? '✓ Desc' : '⚠️ Desc'}
                                             </span>
                                             <span
                                                 onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${hasVideo ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hasVideo ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
                                                 title={hasVideo ? 'Video listo' : 'Sin video'}
                                             >
                                                 {hasVideo ? '✓ Video' : '✕ Video'}
                                             </span>
                                             <span
                                                 onClick={(e) => { e.stopPropagation(); onManageImages(repItem); }}
-                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded ${photoCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}
+                                                className={`cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${photoCount > 0 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'}`}
                                                 title={photoCount > 0 ? `${photoCount} fotos` : 'Sin fotos'}
                                             >
                                                 {photoCount > 0 ? `📷 ${photoCount}` : '⚠️ Fotos'}
@@ -3419,7 +3419,7 @@ function InventoryTable({
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="flex flex-col items-center justify-center gap-1.5 min-w-[200px]">
+                                                    <div className="flex flex-col items-center justify-center gap-1.5 min-w-[210px]">
                                                         {/* Switch / Status & Edit */}
                                                         <div className="flex items-center gap-1.5">
                                                             <button
@@ -3430,32 +3430,32 @@ function InventoryTable({
                                                                 }}
                                                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer ${
                                                                     isPublic
-                                                                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 ring-1 ring-emerald-300'
-                                                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 ring-1 ring-gray-200'
+                                                                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 ring-1 ring-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:ring-emerald-800/60 dark:hover:bg-emerald-900/70'
+                                                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 ring-1 ring-gray-200 dark:bg-slate-800/90 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700'
                                                                 }`}
                                                                 title={isPublic ? 'Publicado en tienda — click para pausar' : 'No publicado — click para publicar en tienda'}
                                                             >
-                                                                <span className={`w-2 h-2 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                                                                <span className={`w-2 h-2 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400 dark:bg-slate-500'}`} />
                                                                 {isPublic ? 'Publicado' : 'No publicado'}
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => onManageImages(repItem)}
-                                                                className="p-1 text-violet-600 hover:text-violet-800 hover:bg-violet-50 rounded-lg transition-all"
+                                                                className="p-1 text-violet-600 hover:text-violet-800 hover:bg-violet-50 dark:text-violet-400 dark:hover:text-violet-300 dark:hover:bg-violet-950/50 rounded-lg transition-all"
                                                                 title="Editar título, descripción, fotos y video de tienda"
                                                             >
                                                                 <Edit2 className="w-3.5 h-3.5" />
                                                             </button>
                                                         </div>
-                                                        {/* Completeness Chips */}
-                                                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                                                        {/* Completeness Chips (Single line flex-nowrap) */}
+                                                        <div className="flex items-center justify-center gap-1 flex-nowrap overflow-x-auto py-0.5 max-w-full">
                                                             {/* Título */}
                                                             <span
                                                                 onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
                                                                     hasStoreTitle
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
+                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60 dark:hover:bg-amber-900/50'
                                                                 }`}
                                                                 title={hasStoreTitle ? `Título optimizado: "${repItem.storeTitle}"` : 'Falta título para Facebook/tienda (click para agregar)'}
                                                             >
@@ -3465,10 +3465,10 @@ function InventoryTable({
                                                             {/* Descripción */}
                                                             <span
                                                                 onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
                                                                     hasDesc
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
+                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60 dark:hover:bg-amber-900/50'
                                                                 }`}
                                                                 title={hasDesc ? 'Descripción lista' : 'Falta descripción (click para agregar)'}
                                                             >
@@ -3478,10 +3478,10 @@ function InventoryTable({
                                                             {/* Video */}
                                                             <span
                                                                 onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
                                                                     hasVideo
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                                        : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
+                                                                        : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700/60 dark:hover:bg-slate-700/80'
                                                                 }`}
                                                                 title={hasVideo ? 'Video subido/vinculado' : 'Sin video (click para agregar)'}
                                                             >
@@ -3491,10 +3491,10 @@ function InventoryTable({
                                                             {/* Fotos */}
                                                             <span
                                                                 onClick={() => onManageImages(repItem)}
-                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                                                                className={`cursor-pointer inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all whitespace-nowrap ${
                                                                     photoCount > 0
-                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                                        : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 dark:hover:bg-emerald-900/50'
+                                                                        : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800/60 dark:hover:bg-rose-900/50'
                                                                 }`}
                                                                 title={photoCount > 0 ? `${photoCount} foto${photoCount > 1 ? 's' : ''} disponible${photoCount > 1 ? 's' : ''}` : 'Sin fotos (click para agregar)'}
                                                             >
