@@ -4068,7 +4068,7 @@ Formato de respuesta OBLIGATORIO (respetá exactamente estas etiquetas):
                     'Authorization': `Bearer ${aiApiKey.trim()}`,
                 },
                 body: JSON.stringify({
-                    model: 'gemini-2.0-flash',
+                    model: 'gpt-4o-mini',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Datos del producto:\n${aiInput.trim()}` },
