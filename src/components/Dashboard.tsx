@@ -2704,9 +2704,8 @@ function InventoryTable({
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
+            if (prev.has(key)) return new Set();
+            return new Set([key]);
         });
     };
 
