@@ -2624,20 +2624,86 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
 
 /* Barra de progreso de publicación: 4 segmentos (título, descripción, video, fotos).
    Reemplaza a los chips de texto — misma info, más compacta e interactiva. */
-function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen }: {
+// ── Verificación de links de media (imagen/video) ──────────────────────────────
+// Cache a nivel módulo: sobrevive re-renders y cambios de vista. url -> existe.
+const mediaStatusCache = new Map<string, boolean>();
+const mediaChecksInFlight = new Set<string>();
+
+const DIRECT_VIDEO_RE = /\.(mp4|webm|mov|m4v|ogv|ogg|avi|mkv)([?#]|$)/i;
+
+type MediaCheck = { url: string; kind: 'image' | 'video' };
+
+/**
+ * Chequea que los links de media sigan vivos. Las imágenes se validan cargándolas
+ * con `Image()`; los videos solo si son links directos a archivo (los embeds de
+ * YouTube/etc. no se pueden validar desde el cliente). Devuelve el set de URLs
+ * confirmadas como caídas.
+ */
+function useBrokenMedia(checks: MediaCheck[]): Set<string> {
+    const key = checks.map(c => `${c.kind}:${c.url}`).join('\n');
+    const [broken, setBroken] = useState<Set<string>>(
+        () => new Set(checks.filter(c => mediaStatusCache.get(c.url) === false).map(c => c.url))
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+        const mark = (url: string, ok: boolean) => {
+            mediaStatusCache.set(url, ok);
+            if (!ok && !cancelled) {
+                setBroken(prev => prev.has(url) ? prev : new Set(prev).add(url));
+            }
+        };
+        checks.forEach(({ url, kind }) => {
+            if (mediaStatusCache.has(url) || mediaChecksInFlight.has(url)) return;
+            if (kind === 'video' && !DIRECT_VIDEO_RE.test(url)) return; // embed (YouTube etc.): no validable
+            mediaChecksInFlight.add(url);
+            let settled = false;
+            const settle = (ok: boolean) => {
+                if (settled) return;
+                settled = true;
+                mediaChecksInFlight.delete(url);
+                mark(url, ok);
+            };
+            if (kind === 'video') {
+                const v = document.createElement('video');
+                v.preload = 'metadata';
+                v.muted = true;
+                v.onloadeddata = () => settle(true);
+                v.oncanplay = () => settle(true);
+                v.onerror = () => settle(false);
+                v.src = url;
+                setTimeout(() => settle(false), 12000);
+            } else {
+                const img = new Image();
+                img.onload = () => settle(true);
+                img.onerror = () => settle(false);
+                img.src = url;
+                setTimeout(() => settle(false), 12000);
+            }
+        });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [key]);
+
+    return broken;
+}
+
+function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen, videoBroken, photoBroken }: {
     hasTitle: boolean;
     hasDesc: boolean;
     hasVideo: boolean;
     photoCount: number;
     onOpen: () => void;
+    videoBroken?: boolean;
+    photoBroken?: boolean;
 }) {
     const segments = [
-        { label: 'Título', done: hasTitle, doneText: 'Título listo', missingText: 'Falta el título de la publicación' },
-        { label: 'Desc', done: hasDesc, doneText: 'Descripción lista', missingText: 'Falta la descripción' },
-        { label: 'Video', done: hasVideo, doneText: 'Video subido', missingText: 'Sin video (opcional)' },
-        { label: 'Fotos', done: photoCount > 0, doneText: `${photoCount} foto${photoCount > 1 ? 's' : ''}`, missingText: 'Sin fotos' },
+        { label: 'Título', done: hasTitle, doneText: 'Título listo', missingText: 'Falta el título de la publicación', broken: false, brokenText: '' },
+        { label: 'Desc', done: hasDesc, doneText: 'Descripción lista', missingText: 'Falta la descripción', broken: false, brokenText: '' },
+        { label: 'Video', done: hasVideo, doneText: 'Video subido', missingText: 'Sin video (opcional)', broken: Boolean(hasVideo && videoBroken), brokenText: 'El link del video ya no funciona — click para reemplazarlo' },
+        { label: 'Fotos', done: photoCount > 0, doneText: `${photoCount} foto${photoCount > 1 ? 's' : ''}`, missingText: 'Sin fotos', broken: Boolean(photoCount > 0 && photoBroken), brokenText: 'Algún link de foto ya no carga — click para reemplazarlo' },
     ];
-    const doneCount = segments.filter(s => s.done).length;
+    const doneCount = segments.filter(s => s.done && !s.broken).length;
     return (
         <div className="flex items-center gap-1.5">
             <div className="flex items-center gap-1 px-1.5 py-1 rounded-full bg-gray-100/90 dark:bg-slate-800/90">
@@ -2646,14 +2712,18 @@ function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen }: {
                         key={seg.label}
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpen(); }}
-                        title={seg.done ? `${seg.label}: ${seg.doneText}` : `${seg.label}: ${seg.missingText} — click para completar`}
-                        aria-label={`${seg.label}: ${seg.done ? seg.doneText : seg.missingText}`}
+                        title={seg.broken
+                            ? `${seg.label}: ${seg.brokenText}`
+                            : seg.done ? `${seg.label}: ${seg.doneText}` : `${seg.label}: ${seg.missingText} — click para completar`}
+                        aria-label={`${seg.label}: ${seg.broken ? seg.brokenText : seg.done ? seg.doneText : seg.missingText}`}
                         className={`h-1.5 w-4 rounded-full transition-all duration-200 hover:w-5 hover:h-2.5 hover:shadow-sm ${
-                            seg.done
-                                ? 'bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-400'
-                                : seg.label === 'Video'
-                                    ? 'bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500'
-                                    : 'bg-amber-400 hover:bg-amber-500 dark:bg-amber-500 dark:hover:bg-amber-400'
+                            seg.broken
+                                ? 'bg-red-500 hover:bg-red-400 dark:bg-red-500'
+                                : seg.done
+                                    ? 'bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-400'
+                                    : seg.label === 'Video'
+                                        ? 'bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500'
+                                        : 'bg-amber-400 hover:bg-amber-500 dark:bg-amber-500 dark:hover:bg-amber-400'
                         }`}
                     />
                 ))}
@@ -2701,6 +2771,14 @@ function InventoryTable({
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [withdrawMenuId, setWithdrawMenuId] = useState<string | null>(null);
+
+    // Verificar que los links de fotos/videos de tienda sigan vivos
+    const mediaChecks = items.flatMap(i => [
+        ...(i.imageUrl ? [{ url: i.imageUrl, kind: 'image' as const }] : []),
+        ...(i.storeImages || []).map(u => ({ url: u, kind: 'image' as const })),
+        ...(i.storeVideoUrl ? [{ url: i.storeVideoUrl, kind: 'video' as const }] : []),
+    ]);
+    const brokenMedia = useBrokenMedia(mediaChecks);
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => {
@@ -3021,6 +3099,8 @@ function InventoryTable({
                             const hasDesc = Boolean(repItem?.description?.trim());
                             const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
                             const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
+                            const videoBroken = Boolean(repItem?.storeVideoUrl?.trim()) && brokenMedia.has(repItem!.storeVideoUrl!.trim());
+                            const photoBroken = [repItem?.imageUrl, ...(repItem?.storeImages || [])].some(u => !!u && brokenMedia.has(u));
 
                             return (
                                 <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -3028,7 +3108,7 @@ function InventoryTable({
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="flex items-center gap-3">
                                                 {grp.imageUrl ? (
-                                                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                                    <div title={brokenMedia.has(grp.imageUrl) ? 'El link de la foto ya no carga — click en el lápiz para reemplazarla' : undefined} className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${brokenMedia.has(grp.imageUrl) ? 'border-2 border-red-400 ring-2 ring-red-200' : 'border border-gray-100'}`}>
                                                         <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                 ) : (
@@ -3100,6 +3180,8 @@ function InventoryTable({
                                                 hasVideo={hasVideo}
                                                 photoCount={photoCount}
                                                 onOpen={() => onManageImages(repItem)}
+                                                videoBroken={videoBroken}
+                                                photoBroken={photoBroken}
                                             />
                                         </div>
                                     </div>
@@ -3290,7 +3372,7 @@ function InventoryTable({
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-center gap-3">
                                             {grp.imageUrl ? (
-                                                <div className="w-10 h-10 rounded-lg overflow-hidden border border-violet-200 flex-shrink-0">
+                                                <div title={brokenMedia.has(grp.imageUrl) ? 'El link de la foto ya no carga' : undefined} className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${brokenMedia.has(grp.imageUrl) ? 'border-2 border-red-400 ring-2 ring-red-200' : 'border border-violet-200'}`}>
                                                     <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
@@ -3383,6 +3465,8 @@ function InventoryTable({
                                     const hasDesc = Boolean(repItem?.description?.trim());
                                     const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
                                     const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
+                                    const videoBroken = Boolean(repItem?.storeVideoUrl?.trim()) && brokenMedia.has(repItem!.storeVideoUrl!.trim());
+                                    const photoBroken = [repItem?.imageUrl, ...(repItem?.storeImages || [])].some(u => !!u && brokenMedia.has(u));
 
                                     return (
                                         <>
@@ -3398,7 +3482,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     {grp.imageUrl ? (
-                                                        <div className="w-10 h-10 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                                                        <div title={brokenMedia.has(grp.imageUrl) ? 'El link de la foto ya no carga — click en el lápiz para reemplazarla' : undefined} className={`w-10 h-10 rounded-xl overflow-hidden shadow-sm ${brokenMedia.has(grp.imageUrl) ? 'border-2 border-red-400 ring-2 ring-red-200' : 'border border-gray-100'}`}>
                                                             <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
                                                         </div>
                                                     ) : (
@@ -3475,6 +3559,8 @@ function InventoryTable({
                                                                 hasVideo={hasVideo}
                                                                 photoCount={photoCount}
                                                                 onOpen={() => onManageImages(repItem)}
+                                                                videoBroken={videoBroken}
+                                                                photoBroken={photoBroken}
                                                             />
                                                         </div>
                                                     </div>
@@ -3804,7 +3890,7 @@ function InventoryTable({
                                             </td>
                                             <td className="px-3 py-3">
                                                 {grp.imageUrl ? (
-                                                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-violet-200 shadow-xs">
+                                                    <div title={brokenMedia.has(grp.imageUrl) ? 'El link de la foto ya no carga' : undefined} className={`w-10 h-10 rounded-xl overflow-hidden shadow-xs ${brokenMedia.has(grp.imageUrl) ? 'border-2 border-red-400 ring-2 ring-red-200' : 'border border-violet-200'}`}>
                                                         <img src={grp.imageUrl} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                 ) : (
