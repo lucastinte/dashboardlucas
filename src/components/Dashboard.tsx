@@ -4062,7 +4062,7 @@ Aquí va la descripción
                     'Authorization': `Bearer ${aiApiKey.trim()}`,
                 },
                 body: JSON.stringify({
-                    model: 'llama-3.3-70b-versatile',
+                    model: 'openai/gpt-oss-120b',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Ordena esto y genera título y descripción para:\n\n${aiInput.trim()}` },
