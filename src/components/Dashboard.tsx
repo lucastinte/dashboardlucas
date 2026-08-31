@@ -4142,6 +4142,74 @@ function InventoryTable({
     );
 }
 
+// ── Formato único de las descripciones de tienda ───────────────────────────────
+/* Toda descripción sigue el mismo molde: una viñeta por línea, con la forma
+   `EMOJI **Etiqueta:** contenido`. La negrita se usa SOLO en la etiqueta, así el
+   texto se ve igual en la tienda, en el bot de WhatsApp y al pegarlo en Facebook. */
+
+/** Emojis iniciales de una viñeta (incluye tonos de piel, ZWJ y variation selector). */
+const BULLET_EMOJI = /^(?:[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D])+/u;
+
+/** Línea de cierre, idéntica en toda la tienda. La comparte el prompt de la IA. */
+const CIERRE_CONTACTO = '💬 **Contacto:** escribime un mensaje directo y coordinamos la entrega';
+
+/**
+ * Saca los asteriscos de markdown dejando el texto. Un `*` entre alfanuméricos
+ * (ej. `2*USB`) se conserva porque ahí no es negrita, es multiplicación.
+ */
+function stripAsterisks(line: string): string {
+    return line.replace(/\*+/g, (m, offset: number, full: string) => {
+        const before = full[offset - 1] ?? ' ';
+        const after = full[offset + m.length] ?? ' ';
+        if (m.length === 1 && /[\p{L}\p{N}]/u.test(before) && /[\p{L}\p{N}]/u.test(after)) return m;
+        return '';
+    });
+}
+
+/**
+ * Normaliza una descripción al formato único. Corre sobre lo que devuelve la IA
+ * y sobre todo lo que se guarde a mano, así las descripciones viejas (negrita
+ * mezclada, viñetas `-`, líneas enteras en bold) quedan homogéneas.
+ *
+ * Las líneas que no tienen etiqueta quedan en texto plano: la negrita nunca
+ * aparece suelta.
+ */
+function normalizeStoreDescription(raw: string): string {
+    if (!raw.trim()) return '';
+
+    const lines = raw.split(/\r?\n/).map(line => {
+        let l = stripAsterisks(line.replace(/__(.+?)__/g, '$1'))
+            .replace(/^\s*#{1,6}\s*/, '')      // ### Título → Título
+            .replace(/^\s*[-–—•]\s+/, '')      // viñetas de markdown → las reemplaza el emoji
+            .trim();
+        if (!l) return '';
+
+        // El emoji inicial se separa para no meterlo dentro de la negrita
+        const emoji = l.match(BULLET_EMOJI)?.[0] ?? '';
+        if (emoji) l = l.slice(emoji.length).trim();
+
+        // El cierre es siempre el mismo, sin importar cómo estaba redactado antes
+        if (/mensaje directo/i.test(l)) return CIERRE_CONTACTO;
+
+        // Etiqueta = lo que va antes del primer `:`, si parece etiqueta y no una
+        // oración larga ni un link (`https://...` también trae dos puntos).
+        const colon = l.indexOf(':');
+        const label = colon > 0 ? l.slice(0, colon).trim() : '';
+        const isLabel = !l.includes('://') && label.length > 0 && label.length <= 40 && !/[?!.]/.test(label);
+
+        // El contenido cierra sin punto final, igual que lo que genera la IA
+        const content = (isLabel ? l.slice(colon + 1) : l).trim().replace(/([^.])\.$/, '$1');
+
+        const parts = isLabel
+            ? [emoji, `**${label}:**`, content]
+            : [emoji, content];
+        return parts.filter(Boolean).join(' ');
+    });
+
+    // Una viñeta por línea, sin líneas en blanco: igual que lo que genera la IA
+    return lines.filter(Boolean).join('\n').trim();
+}
+
 function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }: {
     item: Item;
     onClose: () => void;
@@ -4182,14 +4250,29 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         localStorage.setItem('ai_api_key', aiApiKey.trim());
         try {
             const systemPrompt = `Eres un experto en copywriting para ecommerce. Tu trabajo es recibir texto desordenado o especificaciones técnicas de un producto y transformarlo en un título atractivo y una descripción optimizada para ventas.
-        
-Instrucciones:
-- Crea un título corto y llamativo con emojis.
-- Agrega viñetas con los puntos clave usando emojis.
+
+TÍTULO
+- Corto y llamativo, con uno o dos emojis.
+
+DESCRIPCIÓN — formato estricto, sin excepciones:
+- Entre 4 y 6 líneas. Una viñeta por línea, sin líneas en blanco entre ellas.
+- CADA línea sigue exactamente este molde: EMOJI **Etiqueta:** contenido
+- La etiqueta es de 1 a 3 palabras, sin emojis, y los dos puntos van DENTRO de la negrita.
+- El contenido va en texto normal: sin negrita, sin asteriscos y sin punto final.
+- La negrita (**) se usa SOLO en la etiqueta. Nunca en el contenido ni en una línea entera.
+- Un emoji distinto por línea, siempre al principio.
+- Las dos últimas líneas son siempre estas, textuales:
+📦 **Condición:** producto totalmente nuevo en caja
+${CIERRE_CONTACTO}
 - Ignora texto spam, marcas de agua o fragmentos repetitivos.
 - NO incluyas precios, ubicación ni datos de envío.
-- Al final incluye siempre: 📦 **Condición:** Producto totalmente nuevo en caja.
-- Cierra con: 💬 **¿Tienes dudas o quieres coordinar la entrega? ¡Escríbeme un mensaje directo ahora mismo!**
+
+Ejemplo de descripción bien formada:
+🔋 **Batería:** 20000mAh para varias cargas completas
+⚡ **Carga rápida:** 18W por USB-C
+🔌 **Puertos:** 2 USB para cargar dos equipos a la vez
+📦 **Condición:** producto totalmente nuevo en caja
+${CIERRE_CONTACTO}
 
 Formato OBLIGATORIO:
 [TITULO]
@@ -4211,7 +4294,7 @@ Aquí va la descripción
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Ordena esto y genera título y descripción para:\n\n${aiInput.trim()}` },
                     ],
-                    temperature: 0.7,
+                    temperature: 0.4,
                 }),
             });
             if (!res.ok) {
@@ -4226,7 +4309,7 @@ Aquí va la descripción
             const titleMatch = text.match(/\[TITULO\]\s*([\s\S]*?)\s*\[\/TITULO\]/i);
             const descMatch = text.match(/\[DESCRIPCION\]\s*([\s\S]*?)\s*\[\/DESCRIPCION\]/i);
             if (titleMatch?.[1]) setStoreTitle(titleMatch[1].trim());
-            if (descMatch?.[1]) setDescription(descMatch[1].trim());
+            if (descMatch?.[1]) setDescription(normalizeStoreDescription(descMatch[1]));
             if (!titleMatch && !descMatch) {
                 setAiError('La IA no devolvió el formato esperado. Intentá de nuevo.');
             } else {
@@ -4323,10 +4406,14 @@ Aquí va la descripción
     const handleSave = async () => {
         setSaving(true);
         try {
+            // Se normaliza siempre: lo que generó la IA, lo pegado a mano y las
+            // descripciones viejas quedan todas con el mismo formato.
+            const cleanDescription = normalizeStoreDescription(description);
+            setDescription(cleanDescription);
             await onSave(item.id, {
                 storeImages: images,
                 storeVideoUrl: videoUrl || '',
-                description: description.trim() || '',
+                description: cleanDescription,
                 storeTitle: storeTitle.trim() || '',
                 storeGroup: storeGroup.trim().toLowerCase().replace(/\s+/g, '-') || '',
                 storeVariantName: storeVariantName.trim() || '',
