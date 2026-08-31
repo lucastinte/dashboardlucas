@@ -4,7 +4,7 @@ import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -4343,21 +4343,27 @@ Aquí va la descripción
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col ring-1 ring-black/5">
                 {/* Header */}
-                <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl">
-                    <div>
-                        <h2 className="text-base font-bold text-gray-800">Fotos y video de tienda</h2>
-                        <p className="text-xs text-gray-500 truncate max-w-[260px]">{item.productName}</p>
+                <div className="p-4 border-b border-gray-100 bg-white flex items-center justify-between gap-3 sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-9 h-9 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><ImageIcon className="w-4 h-4" /></span>
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-bold text-gray-800">Fotos y video de tienda</h2>
+                            <p className="text-xs text-gray-500 truncate max-w-[220px]">{item.productName}</p>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
+                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-gray-50 border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-all shrink-0">
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-gray-50">
                     {/* ── TÍTULO DE PUBLICACIÓN ── */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Título de publicación</p>
+                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><FileText className="w-3.5 h-3.5" /></span>
+                                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Título de publicación</p>
+                            </div>
                             {(storeTitle.trim() || item.productName) && (
                                 <button
                                     onClick={() => {
@@ -4367,9 +4373,9 @@ Aquí va la descripción
                                             setTimeout(() => setTitleCopied(false), 2000);
                                         });
                                     }}
-                                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${titleCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                    className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${titleCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                                 >
-                                    {titleCopied ? '✓ Copiado' : '📋 Copiar título'}
+                                    {titleCopied ? '✓ Copiado' : '📋 Copiar'}
                                 </button>
                             )}
                         </div>
@@ -4378,24 +4384,27 @@ Aquí va la descripción
                             value={storeTitle}
                             onChange={e => setStoreTitle(e.target.value)}
                             placeholder={item.productName}
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
                         />
-                        <p className="text-[11px] text-gray-400 mt-1">El título que generás con Gemini para Facebook. Se muestra en la tienda en lugar del nombre interno.</p>
+                        <p className="text-[11px] text-gray-400 leading-snug">El título que generás con Gemini para Facebook. Se muestra en la tienda en lugar del nombre interno.</p>
                     </div>
 
                     {/* ── GRUPO (variantes) ── */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Agrupar variantes</p>
-                        <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
+                        <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0"><Layers className="w-3.5 h-3.5" /></span>
+                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Agrupar variantes</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
                             <div>
                                 <input
                                     type="text"
                                     value={storeGroup}
                                     onChange={e => setStoreGroup(e.target.value)}
                                     placeholder="ej: cable-tipo-c"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
                                 />
-                                <p className="text-[11px] text-gray-400 mt-1">Código de grupo: el mismo en todos los productos similares.</p>
+                                <p className="text-[11px] text-gray-400 mt-1 leading-snug">Código de grupo: el mismo en todos los productos similares.</p>
                             </div>
                             <div>
                                 <input
@@ -4403,17 +4412,20 @@ Aquí va la descripción
                                     value={storeVariantName}
                                     onChange={e => setStoreVariantName(e.target.value)}
                                     placeholder="ej: 2 metros"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
                                 />
-                                <p className="text-[11px] text-gray-400 mt-1">Nombre de esta variante: cómo se muestra en la lista de opciones.</p>
+                                <p className="text-[11px] text-gray-400 mt-1 leading-snug">Nombre de esta variante: cómo se muestra en la lista de opciones.</p>
                             </div>
                         </div>
                     </div>
 
                     {/* ── DESCRIPCIÓN ── */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descripción</p>
+                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><MessageCircle className="w-3.5 h-3.5" /></span>
+                                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Descripción</p>
+                            </div>
                             {description.trim() && (
                                 <button
                                     onClick={() => {
@@ -4427,9 +4439,9 @@ Aquí va la descripción
                                             setTimeout(() => setFbCopied(false), 2000);
                                         });
                                     }}
-                                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                                    className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                                 >
-                                    {fbCopied ? '✓ Copiado' : '📋 Copiar para Facebook'}
+                                    {fbCopied ? '✓ Copiado' : '📋 Copiar'}
                                 </button>
                             )}
                         </div>
@@ -4438,7 +4450,7 @@ Aquí va la descripción
                             onChange={e => setDescription(e.target.value)}
                             placeholder="Pegá acá la descripción (ej. generada con Gemini). Se muestra en la tienda, la lee el bot de WhatsApp y la copiás lista para Facebook."
                             rows={4}
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 resize-y"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors resize-y"
                         />
                     </div>
 
@@ -4501,11 +4513,14 @@ Aquí va la descripción
                     </div>
 
                     {/* ── FOTOS ── */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Fotos</p>
+                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-3 shadow-xs">
+                        <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><ImageIcon className="w-3.5 h-3.5" /></span>
+                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Fotos</p>
+                        </div>
 
                         {images.length > 0 ? (
-                            <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="grid grid-cols-3 gap-2">
                                 {images.map((url, i) => (
                                     <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
                                         <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
@@ -4520,7 +4535,7 @@ Aquí va la descripción
                                 ))}
                             </div>
                         ) : (
-                            <p className="text-xs text-gray-400 mb-2">Sin fotos adicionales — se muestra la foto principal del producto.</p>
+                            <p className="text-xs text-gray-400">Sin fotos adicionales — se muestra la foto principal del producto.</p>
                         )}
 
                         {/* Drop zone */}
@@ -4541,24 +4556,25 @@ Aquí va la descripción
                             </label>
                         </div>
 
-                        <div className="mt-2">
-                            {showUrlInput ? (
-                                <div className="flex gap-2">
-                                    <input type="url" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUrlAdd()} placeholder="https://..." className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-violet-400" autoFocus />
-                                    <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">Agregar</button>
-                                    <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
-                                </div>
-                            ) : (
-                                <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
-                                    <ImageIcon className="w-4 h-4" />Pegar link de foto
-                                </button>
-                            )}
-                        </div>
+                        {showUrlInput ? (
+                            <div className="flex gap-2">
+                                <input type="url" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUrlAdd()} placeholder="https://..." className="flex-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors" autoFocus />
+                                <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">Agregar</button>
+                                <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
+                            </div>
+                        ) : (
+                            <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
+                                <ImageIcon className="w-4 h-4" />Pegar link de foto
+                            </button>
+                        )}
                     </div>
 
                     {/* ── VIDEO ── */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Video</p>
+                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-3 shadow-xs">
+                        <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><Play className="w-3.5 h-3.5 fill-current" /></span>
+                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Video</p>
+                        </div>
 
                         {videoUrl ? (
                             <div className="space-y-2">
@@ -4589,13 +4605,13 @@ Aquí va la descripción
                                 {/* Video URL */}
                                 {showVideoUrlInput ? (
                                     <div className="flex gap-2">
-                                        <input type="url" value={videoUrlInput} onChange={e => setVideoUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVideoUrlSave()} placeholder="https://youtube.com/watch?v=... o link directo" className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" autoFocus />
+                                        <input type="url" value={videoUrlInput} onChange={e => setVideoUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVideoUrlSave()} placeholder="https://youtube.com/watch?v=... o link directo" className="flex-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 focus:bg-white transition-colors" autoFocus />
                                         <button onClick={handleVideoUrlSave} disabled={!videoUrlInput.trim()} className="px-3 py-2 rounded-xl bg-amber-500 text-white text-sm font-medium disabled:opacity-50">OK</button>
                                         <button onClick={() => { setShowVideoUrlInput(false); setVideoUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
                                     </div>
                                 ) : (
                                     <button onClick={() => setShowVideoUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
-                                        <span>🔗</span>Pegar link de YouTube / video
+                                        <span>🔗</span>Pegar link de YouTube / TikTok
                                     </button>
                                 )}
                             </div>
