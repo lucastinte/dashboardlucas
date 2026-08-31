@@ -348,13 +348,13 @@ export function LocationsModal({
                                                 <MessageCircle className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2" />
                                                 <input
                                                     type="text"
-                                                    placeholder="Ej: 5493885925942"
+                                                    placeholder="Ej: 3885925942"
                                                     value={whatsapp}
                                                     onChange={e => setWhatsapp(e.target.value)}
                                                     className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono"
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Sin + (ej. 549388…)</p>
+                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Sin + ni código de país (ej. 388592…)</p>
                                         </div>
 
                                         <div>

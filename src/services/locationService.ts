@@ -1,15 +1,16 @@
 import { supabase } from '../lib/supabase';
 import type { LocationItem, Item } from '../types';
-import { STORE_CONFIG } from '../config/storeConfig';
+import { STORE_CONFIG, normalizeWhatsApp } from '../config/storeConfig';
 
 const LOCAL_STORAGE_KEY = 'dashboard_locations';
 
 // Helper to map DB columns (snake_case) to application model (camelCase)
+// Los números se normalizan para que todas las vistas muestren el formato local (sin +54/549)
 const mapFromDb = (row: any): LocationItem => ({
     id: row.id,
     name: row.name,
-    whatsapp: row.whatsapp || undefined,
-    phone: row.phone || undefined,
+    whatsapp: normalizeWhatsApp(row.whatsapp) || undefined,
+    phone: normalizeWhatsApp(row.phone) || undefined,
     address: row.address || undefined,
     isDefault: row.is_default === true,
     createdAt: row.created_at || undefined,
@@ -32,7 +33,13 @@ const getLocalLocations = (): LocationItem[] => {
         const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed;
+            if (Array.isArray(parsed)) {
+                return parsed.map(loc => ({
+                    ...loc,
+                    whatsapp: normalizeWhatsApp(loc.whatsapp) || undefined,
+                    phone: normalizeWhatsApp(loc.phone) || undefined,
+                }));
+            }
         }
     } catch (e) {
         console.warn('Error reading locations from localStorage', e);
@@ -116,8 +123,8 @@ export const locationService = {
         const newItem: LocationItem = {
             id,
             name: locationData.name.trim(),
-            whatsapp: locationData.whatsapp?.trim() || undefined,
-            phone: locationData.phone?.trim() || undefined,
+            whatsapp: normalizeWhatsApp(locationData.whatsapp) || undefined,
+            phone: normalizeWhatsApp(locationData.phone) || undefined,
             address: locationData.address?.trim() || undefined,
             isDefault: locationData.isDefault || false,
             createdAt: new Date().toISOString()
@@ -176,6 +183,6 @@ export const locationService = {
         if (!locationName) return STORE_CONFIG.defaultWhatsApp;
         const norm = locationName.trim().toLowerCase();
         const found = locations.find(l => l.name.trim().toLowerCase() === norm);
-        return found?.whatsapp?.trim() || STORE_CONFIG.defaultWhatsApp;
+        return normalizeWhatsApp(found?.whatsapp) || STORE_CONFIG.defaultWhatsApp;
     }
 };
