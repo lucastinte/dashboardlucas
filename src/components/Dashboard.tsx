@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
 import { LocationsModal } from './LocationsModal';
+import StockSheetsPanel from './StockSheetsPanel';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
@@ -1272,6 +1273,13 @@ export default function Dashboard() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Stock → Google Sheets */}
+                        <StockSheetsPanel
+                            stockItems={stockItems}
+                            stockValue={totalStockValue}
+                            resolveBatchRef={getItemBatchRef}
+                        />
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
