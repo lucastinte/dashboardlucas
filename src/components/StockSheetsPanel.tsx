@@ -1,52 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileSpreadsheet, Loader2, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import type { Item } from '../types';
 
 /**
  * Panel "Stock en Google Sheets" — espejo de una sola vía.
- * Empuja el stock actual (stockItems, ya filtrado en Dashboard) a una hoja de
- * Google vía su Apps Script publicado como Web App (/exec).
+ * Empuja a una hoja de Google (vía su Apps Script /exec) SOLO los productos
+ * publicados en tienda, con las columnas que ve un cliente:
+ * Producto (título de tienda), Descripción, Precio de venta, Cantidad y Categoría.
  *
  * Env var requerida: VITE_SHEETS_WEBAPP_URL
  */
 interface StockSheetsPanelProps {
     stockItems: Item[];
-    stockValue: number;
-    /** Resuelve la tanda de un item (misma función que usa InventoryTable). */
-    resolveBatchRef?: (item: Item) => string;
 }
 
 const WEBAPP_URL = (import.meta.env.VITE_SHEETS_WEBAPP_URL as string | undefined)?.trim() || '';
 
 const HEADERS = [
     'Producto',
-    'Cantidad',
-    'Condición',
-    'Ubicación',
-    'Precio compra',
+    'Descripción',
     'Precio venta',
+    'Cantidad',
     'Categoría',
-    'Tanda',
-    'En tienda',
-    'Fecha',
 ] as const;
 
-const CONDITION_LABEL: Record<string, string> = {
-    nuevo: 'Nuevo',
-    semi_uso: 'Semi uso',
-    usado: 'Usado',
-};
-
 const STORAGE_KEY = 'lucas_stock_sheet';
-
-const fmtDate = (value?: string) => {
-    if (!value) return '';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
-};
 
 const toNumber = (value: unknown) => {
     const n = Number(value);
@@ -77,7 +55,7 @@ const persistStored = (result: SyncResult) => {
     }
 };
 
-export default function StockSheetsPanel({ stockItems, stockValue, resolveBatchRef }: StockSheetsPanelProps) {
+export default function StockSheetsPanel({ stockItems }: StockSheetsPanelProps) {
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastSync, setLastSync] = useState<SyncResult | null>(() => loadStored());
@@ -85,24 +63,26 @@ export default function StockSheetsPanel({ stockItems, stockValue, resolveBatchR
 
     const configured = Boolean(WEBAPP_URL);
 
+    // Solo exporta lo publicado en tienda (lo que ve un cliente).
+    const publishedItems = useMemo(() => stockItems.filter((item) => item.publicInStore), [stockItems]);
+    const publishedValue = publishedItems.reduce(
+        (acc, item) => acc + (item.salePrice ?? item.estimatedSalePrice ?? 0) * (toNumber(item.quantity) || 1),
+        0
+    );
+
     useEffect(() => {
         setError(null);
     }, [WEBAPP_URL]);
 
     const buildRows = useCallback((): (string | number)[][] => {
-        return stockItems.map((item) => [
-            item.productName || '',
-            toNumber(item.quantity) || 1,
-            CONDITION_LABEL[item.condition] || 'Nuevo',
-            item.location || '',
-            toNumber(item.purchasePrice),
+        return publishedItems.map((item) => [
+            item.storeTitle?.trim() || item.productName || '',
+            item.description || '',
             toNumber(item.salePrice ?? item.estimatedSalePrice),
+            toNumber(item.quantity) || 1,
             item.category || '',
-            resolveBatchRef ? resolveBatchRef(item) : item.batchRef || '',
-            item.publicInStore ? 'Sí' : 'No',
-            fmtDate(item.date),
         ]);
-    }, [stockItems, resolveBatchRef]);
+    }, [publishedItems]);
 
     const sync = async () => {
         if (!configured || syncing) return;
@@ -163,14 +143,14 @@ export default function StockSheetsPanel({ stockItems, stockValue, resolveBatchR
                     <div>
                         <h3 className="text-base sm:text-lg font-bold text-gray-800">Stock en Google Sheets</h3>
                         <p className="text-gray-500 text-sm">
-                            Espejo de tu inventario en una planilla compartida, para verlo y colaborar afuera.
+                            Espejo de lo publicado en tu tienda, con las columnas que ve un cliente. Lista para compartir afuera.
                         </p>
                         <div className="mt-1.5 text-xs font-medium text-gray-600 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                             <span className="text-emerald-700 bg-emerald-50 rounded-md px-2 py-0.5">
-                                {stockItems.length} producto{stockItems.length === 1 ? '' : 's'}
+                                {publishedItems.length} publicado{publishedItems.length === 1 ? '' : 's'} en tienda
                             </span>
                             <span className="text-orange-700 bg-orange-50 rounded-md px-2 py-0.5">
-                                ${stockValue.toLocaleString()} en stock
+                                ${publishedValue.toLocaleString()} en venta
                             </span>
                         </div>
                     </div>
@@ -180,7 +160,7 @@ export default function StockSheetsPanel({ stockItems, stockValue, resolveBatchR
                     <button
                         type="button"
                         onClick={sync}
-                        disabled={!configured || syncing || stockItems.length === 0}
+                        disabled={!configured || syncing || publishedItems.length === 0}
                         className="inline-flex items-center gap-2 bg-black hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl shadow-lg transition-all hover:scale-[1.01] active:scale-95 font-medium text-sm"
                     >
                         {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
@@ -223,10 +203,10 @@ export default function StockSheetsPanel({ stockItems, stockValue, resolveBatchR
                             </span>
                         </div>
                     )}
-                    {!error && stockItems.length === 0 && (
+                    {!error && publishedItems.length === 0 && (
                         <div className="flex items-start gap-2 text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
                             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                            <span>No hay productos en stock para exportar.</span>
+                            <span>No hay productos publicados en tienda para exportar.</span>
                         </div>
                     )}
                 </div>

@@ -1,6 +1,6 @@
 # Stock → Google Sheets (una vía)
 
-Panel dentro de **Inventario** que vuelca tu stock actual a una Google Sheet, para verlo o compartirlo afuera. La app (Supabase) sigue siendo la fuente de verdad: acá **no** vuelven cambios desde la hoja.
+Panel dentro de **Inventario** que vuelca a una Google Sheet **solo los productos publicados en tienda**, con las columnas que ve un cliente (Producto, Descripción, Precio de venta, Cantidad y Categoría), para compartir el catálogo afuera. La app (Supabase) sigue siendo la fuente de verdad: acá **no** vuelven cambios desde la hoja.
 
 ## Setup único (~5 min)
 
@@ -49,7 +49,7 @@ function doPost(e) {
   if (!sh) sh = ss.insertSheet('Stock');
 
   const headers = (payload.headers && payload.headers.length) ? payload.headers
-    : ['Producto','Cantidad','Condición','Ubicación','Precio compra','Precio venta','Categoría','Tanda','En tienda','Fecha'];
+    : ['Producto','Descripción','Precio venta','Cantidad','Categoría'];
   const items = Array.isArray(payload.items) ? payload.items : [];
 
   const values = [headers];
@@ -77,7 +77,7 @@ function send(obj) {
 
 ## Cómo se usa
 - Abrí la pestaña **Inventario** → panel **"Stock en Google Sheets"** → **Sincronizar hoja**.
-- Cada sync **reemplaza** la pestaña `Stock` con el inventario actual (no es un histórico).
+- Cada sync **reemplaza** la pestaña `Stock` con los productos publicados en tienda (no es un histórico).
 - El link "Abrir la hoja" y la hora de la última sincronización se guardan en tu navegador.
 
 ## Troubleshooting

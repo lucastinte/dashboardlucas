@@ -1275,11 +1275,7 @@ export default function Dashboard() {
                         </div>
 
                         {/* Stock → Google Sheets */}
-                        <StockSheetsPanel
-                            stockItems={stockItems}
-                            stockValue={totalStockValue}
-                            resolveBatchRef={getItemBatchRef}
-                        />
+                        <StockSheetsPanel stockItems={stockItems} />
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
