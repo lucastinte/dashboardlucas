@@ -98,7 +98,17 @@ function send(obj) {
 - Cada sync **reemplaza** la pestaña `Stock` con los productos publicados en tienda (no es un histórico).
 - El link "Abrir la hoja" y la hora de la última sincronización se guardan en tu navegador.
 
+## Por qué hay un `/api/sheets` en el medio
+
+El navegador **no puede** hablar directo con el Web App de Apps Script: responde con un 302 a `script.googleusercontent.com`, y esa respuesta final no trae los headers CORS. El `fetch` del cliente muere con `TypeError: Failed to fetch` antes de que la request salga.
+
+Por eso el panel hace `POST /api/sheets` (la función de `api/sheets.js`), que reenvía el payload desde el servidor — donde CORS no aplica — y devuelve la respuesta ya limpia.
+
+> **Ojo:** esto significa que el sync necesita la función serverless. En producción (Vercel) anda solo. Con `vite dev` a secas `/api` no existe, así que el panel cae al llamado directo — que va a fallar por CORS. Para probar local usá `vercel dev`.
+
 ## Troubleshooting
-- **"No se pudo sincronizar"**: revisá que la URL del `.env` termine en `/exec`, que el Web App esté publicado con *acceso: Cualquier persona*, y que reiniciaste el dev server.
-- **CORS / respuesta bloqueada**: si algún navegador bloquea la respuesta, hay un plan B (un passthrough serverless igual a `api/catalogo.js`) — avisá y lo armamos.
+- **"El navegador bloqueó el llamado a la hoja (CORS)"**: estás corriendo `vite dev` sin la función serverless. Usá `vercel dev`, o probá contra el deploy.
+- **"La hoja respondió HTTP 4xx/5xx"**: el Web App dejó de estar accesible. Revisá que siga publicado con *acceso: Cualquier persona* (si lo pusiste en "Solo yo", Google redirige al login y el POST falla).
+- **"No se pudo contactar la hoja de Google"**: la URL del `.env` no termina en `/exec`, o el deploy del Web App se venció.
+- **La columna Link sale sin ser clickeable**: el Apps Script quedó en la versión vieja. Hay que redesplegar (Implementar → *Gestionar implementaciones* → editar → *Nueva versión*); guardar no alcanza.
 - **Cambios en la hoja no vuelven a la app**: es así por diseño (espejo una vía).

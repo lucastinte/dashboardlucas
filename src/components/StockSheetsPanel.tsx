@@ -35,6 +35,51 @@ const toNumber = (value: unknown) => {
 };
 
 type SyncResult = { url: string; lastSyncAt: string };
+type SheetResponse = { ok?: boolean; error?: string; rows?: number; url?: string };
+
+// En Vercel el POST sale por la función serverless, que evita el bloqueo CORS
+// del Web App de Apps Script. Con `vite dev` esa ruta no existe (404), así que
+// caemos al llamado directo.
+const PROXY_ENDPOINT = '/api/sheets';
+
+const postToSheet = async (payload: unknown): Promise<SheetResponse> => {
+    const init: RequestInit = {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    };
+
+    let lastError = 'La hoja no respondió correctamente.';
+    for (const endpoint of [PROXY_ENDPOINT, WEBAPP_URL]) {
+        let res: Response;
+        try {
+            res = await fetch(endpoint, init);
+        } catch {
+            lastError = endpoint === PROXY_ENDPOINT
+                ? 'No se pudo contactar el proxy /api/sheets.'
+                : 'El navegador bloqueó el llamado a la hoja (CORS).';
+            continue;
+        }
+
+        // Sin función serverless (dev con vite): probamos el llamado directo.
+        if (endpoint === PROXY_ENDPOINT && (res.status === 404 || res.status === 405)) continue;
+
+        const text = await res.text();
+        let data: SheetResponse | null = null;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            data = null;
+        }
+
+        if (!res.ok || !data?.ok) {
+            throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        return data;
+    }
+
+    throw new Error(lastError);
+};
 
 const loadStored = (): SyncResult | null => {
     try {
@@ -96,25 +141,7 @@ export default function StockSheetsPanel({ stockItems }: StockSheetsPanelProps) 
         setSyncedRows(null);
         try {
             const rows = buildRows();
-            const payload = { headers: [...HEADERS], items: rows };
-            const res = await fetch(WEBAPP_URL, {
-                method: 'POST',
-                body: JSON.stringify(payload),
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            });
-
-            let data: { ok?: boolean; error?: string; rows?: number; url?: string } | null = null;
-            const text = await res.text();
-            try {
-                data = JSON.parse(text);
-            } catch {
-                data = null;
-            }
-
-            if (!res.ok || !data?.ok) {
-                const detail = data?.error || `HTTP ${res.status}`;
-                throw new Error(detail || 'La hoja no respondió correctamente.');
-            }
+            const data = await postToSheet({ headers: [...HEADERS], items: rows });
 
             const result: SyncResult = {
                 url: data.url || '',
@@ -126,7 +153,7 @@ export default function StockSheetsPanel({ stockItems }: StockSheetsPanelProps) 
                 persistStored(result);
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'No se pudo sincronizar. Revisá la URL del Web App.');
+            setError(err instanceof Error ? err.message : 'No se pudo sincronizar.');
         } finally {
             setSyncing(false);
         }
