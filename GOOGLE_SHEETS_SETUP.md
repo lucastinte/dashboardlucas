@@ -62,20 +62,23 @@ function doPost(e) {
   sh.clearContents();
   if (values.length) sh.getRange(1, 1, values.length, headers.length).setValues(values);
 
-  // Hacer clickeables las celdas que contienen URLs (columna Link).
-  // setValues guarda el texto pero no siempre lo convierte en link.
-  if (items.length) {
-    const body = sh.getRange(2, 1, items.length, headers.length).getValues();
-    for (let r = 0; r < body.length; r++) {
-      for (let c = 0; c < body[r].length; c++) {
-        const v = body[r][c];
+  // Hacer clickeables los links (columna "Link"). setValues guarda el texto
+  // pero no siempre lo convierte en hipervínculo. Solo se toca esa columna, y
+  // va en try/catch a propósito: es cosmético, nunca debe romper el sync.
+  try {
+    const linkCol = headers.indexOf('Link');
+    if (linkCol !== -1) {
+      for (let r = 0; r < items.length; r++) {
+        const v = values[r + 1][linkCol];
         if (typeof v === 'string' && /^https?:\/\//i.test(v)) {
-          sh.getRange(r + 2, c + 1).setRichTextValue(
+          sh.getRange(r + 2, linkCol + 1).setRichTextValue(
             SpreadsheetApp.newRichTextValue().setText(v).setLinkUrl(v).build()
           );
         }
       }
     }
+  } catch (err) {
+    // Los datos ya se escribieron; el formato de link es opcional.
   }
 
   sh.setFrozenRows(1);

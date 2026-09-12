@@ -44,11 +44,14 @@ export default async function handler(req, res) {
     }
 
     // Apps Script devuelve HTML cuando algo salió mal del lado de Google
-    // (permisos, cuota, deploy vencido): lo reportamos como error legible.
+    // (excepción en doPost, permisos, cuota, deploy vencido): lo reportamos
+    // como error legible, incluyendo un pedazo del cuerpo para poder diagnosticar.
     if (!upstream.ok || !data) {
+        const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 300);
         res.status(502).json({
             ok: false,
-            error: `La hoja respondió HTTP ${upstream.status}. Revisá que el Web App siga publicado con acceso "Cualquier persona".`,
+            error: `La hoja respondió HTTP ${upstream.status} pero no devolvió JSON. `
+                + (snippet ? `Cuerpo: ${snippet}` : 'El cuerpo vino vacío.'),
         });
         return;
     }
