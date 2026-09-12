@@ -43,14 +43,16 @@ export default async function handler(req, res) {
         data = null;
     }
 
-    // Apps Script devuelve HTML cuando algo salió mal del lado de Google
-    // (excepción en doPost, permisos, cuota, deploy vencido): lo reportamos
-    // como error legible, incluyendo un pedazo del cuerpo para poder diagnosticar.
+    // Apps Script devuelve HTML cuando Google interpone una pantalla propia
+    // (login, permisos, deploy no público, challenge a IPs de datacenter) en
+    // lugar de ejecutar doPost. Sacamos el <title> para saber cuál es.
     if (!upstream.ok || !data) {
-        const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 300);
+        const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text)?.[1]?.trim();
+        const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 200);
         res.status(502).json({
             ok: false,
-            error: `La hoja respondió HTTP ${upstream.status} pero no devolvió JSON. `
+            error: `La hoja devolvió una página de Google en vez de JSON (HTTP ${upstream.status}). `
+                + (title ? `Página: "${title}". ` : '')
                 + (snippet ? `Cuerpo: ${snippet}` : 'El cuerpo vino vacío.'),
         });
         return;
