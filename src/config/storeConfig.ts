@@ -1,6 +1,9 @@
 export const STORE_CONFIG = {
   storeName: 'Lucas Shop',
   defaultWhatsApp: '3885925942', // Sin código de país: área 388 + 5925942 (el +54/549 lo agrega cada uso)
+  // Base pública de la tienda, para armar links a productos (ej: ${storeBaseUrl}/producto/<id>).
+  // Formato actual: sin el prefijo /tienda, que quedó deprecado.
+  storeBaseUrl: 'https://lepzito.vercel.app',
 };
 
 /**

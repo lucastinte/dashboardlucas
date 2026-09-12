@@ -31,6 +31,7 @@ export default async function handler(req, res) {
 
     const condLabel = { nuevo: 'Nuevo', semi_uso: 'Semi uso', usado: 'Usado' };
     const baseUrl = `https://${req.headers.host}`;
+    // La tienda vive en la raíz: el prefijo /tienda quedó deprecado.
 
     const toVariant = (it) => ({
         nombre: it.store_variant_name || it.product_name,
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
         condicion: condLabel[it.item_condition] || 'Nuevo',
         cantidad: it.quantity,
         ubicacion: it.location || null,
-        link: `${baseUrl}/tienda/producto/${it.id}`,
+        link: `${baseUrl}/producto/${it.id}`,
     });
 
     // Variante = nombre de variante + ubicación. Sin nombre y misma ubicación
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
             ubicacion: rep.location || null,
             imagen: rep.image_url || (Array.isArray(rep.store_images) ? rep.store_images[0] : null) || null,
             video: rep.store_video_url || null,
-            link: `${baseUrl}/tienda/producto/${rep.id}`,
+            link: `${baseUrl}/producto/${rep.id}`,
             stockTotal: group.reduce((acc, it) => acc + (it.quantity || 0), 0),
             variantes: mergeItems(group).map(toVariant),
         });
@@ -98,7 +99,7 @@ export default async function handler(req, res) {
             ubicacion: it.location || null,
             imagen: it.image_url || (Array.isArray(it.store_images) ? it.store_images[0] : null) || null,
             video: it.store_video_url || null,
-            link: `${baseUrl}/tienda/producto/${it.id}`,
+            link: `${baseUrl}/producto/${it.id}`,
             stockTotal: it.quantity || 0,
             variantes: [toVariant(it)],
         });
@@ -112,7 +113,7 @@ export default async function handler(req, res) {
         const fmt = (n) => '$' + n.toLocaleString('es-AR');
         const lines = [
             `CATÁLOGO DE PRODUCTOS DISPONIBLES (${productos.length})`,
-            `Tienda: ${baseUrl}/tienda`,
+            `Tienda: ${baseUrl}`,
             '',
         ];
         for (const p of productos) {
@@ -136,5 +137,5 @@ export default async function handler(req, res) {
         return;
     }
 
-    res.status(200).json({ total: productos.length, tienda: `${baseUrl}/tienda`, productos });
+    res.status(200).json({ total: productos.length, tienda: baseUrl, productos });
 }

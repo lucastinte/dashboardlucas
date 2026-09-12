@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileSpreadsheet, Loader2, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import type { Item } from '../types';
+import { STORE_CONFIG } from '../config/storeConfig';
 
 /**
  * Panel "Stock en Google Sheets" — espejo de una sola vía.
  * Empuja a una hoja de Google (vía su Apps Script /exec) SOLO los productos
  * publicados en tienda, con las columnas que ve un cliente:
- * Producto (título de tienda), Descripción, Precio de venta, Cantidad y Categoría.
+ * Producto (título de tienda), Descripción, Precio de venta, Cantidad, Categoría
+ * y Link a la publicación en la tienda.
  *
  * Env var requerida: VITE_SHEETS_WEBAPP_URL
  */
@@ -22,6 +24,7 @@ const HEADERS = [
     'Precio venta',
     'Cantidad',
     'Categoría',
+    'Link',
 ] as const;
 
 const STORAGE_KEY = 'lucas_stock_sheet';
@@ -81,6 +84,8 @@ export default function StockSheetsPanel({ stockItems }: StockSheetsPanelProps) 
             toNumber(item.salePrice ?? item.estimatedSalePrice),
             toNumber(item.quantity) || 1,
             item.category || '',
+            // Link directo a la publicación, para poder abrirla desde la hoja.
+            `${STORE_CONFIG.storeBaseUrl.replace(/\/+$/, '')}/producto/${item.id}`,
         ]);
     }, [publishedItems]);
 

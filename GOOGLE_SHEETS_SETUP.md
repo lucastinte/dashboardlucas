@@ -1,6 +1,8 @@
 # Stock → Google Sheets (una vía)
 
-Panel dentro de **Inventario** que vuelca a una Google Sheet **solo los productos publicados en tienda**, con las columnas que ve un cliente (Producto, Descripción, Precio de venta, Cantidad y Categoría), para compartir el catálogo afuera. La app (Supabase) sigue siendo la fuente de verdad: acá **no** vuelven cambios desde la hoja.
+Panel dentro de **Inventario** que vuelca a una Google Sheet **solo los productos publicados en tienda**, con las columnas que ve un cliente (Producto, Descripción, Precio de venta, Cantidad, Categoría y Link a la publicación), para compartir el catálogo afuera. La app (Supabase) sigue siendo la fuente de verdad: acá **no** vuelven cambios desde la hoja.
+
+La columna **Link** apunta a `https://lepzito.vercel.app/producto/<id>` y se rearma en cada sync, así que siempre refleja lo publicado. La base de esa URL se configura en `STORE_CONFIG.storeBaseUrl` (`src/config/storeConfig.ts`).
 
 ## Setup único (~5 min)
 
@@ -49,7 +51,7 @@ function doPost(e) {
   if (!sh) sh = ss.insertSheet('Stock');
 
   const headers = (payload.headers && payload.headers.length) ? payload.headers
-    : ['Producto','Descripción','Precio venta','Cantidad','Categoría'];
+    : ['Producto','Descripción','Precio venta','Cantidad','Categoría','Link'];
   const items = Array.isArray(payload.items) ? payload.items : [];
 
   const values = [headers];
@@ -59,6 +61,22 @@ function doPost(e) {
 
   sh.clearContents();
   if (values.length) sh.getRange(1, 1, values.length, headers.length).setValues(values);
+
+  // Hacer clickeables las celdas que contienen URLs (columna Link).
+  // setValues guarda el texto pero no siempre lo convierte en link.
+  if (items.length) {
+    const body = sh.getRange(2, 1, items.length, headers.length).getValues();
+    for (let r = 0; r < body.length; r++) {
+      for (let c = 0; c < body[r].length; c++) {
+        const v = body[r][c];
+        if (typeof v === 'string' && /^https?:\/\//i.test(v)) {
+          sh.getRange(r + 2, c + 1).setRichTextValue(
+            SpreadsheetApp.newRichTextValue().setText(v).setLinkUrl(v).build()
+          );
+        }
+      }
+    }
+  }
 
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f4f6');
