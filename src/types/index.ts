@@ -21,6 +21,7 @@ export interface Item {
     imageUrl?: string;
     category?: string;
     facturado?: boolean;
+    nroComprobante?: string; // Número de comprobante generado por ARCA (ej: "0003-00000123")
     noFacturar?: boolean;
     withdrawalReason?: WithdrawalReason;
     envioAplica?: boolean;

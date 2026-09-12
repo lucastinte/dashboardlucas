@@ -680,10 +680,13 @@ export default function Dashboard() {
         }
     };
 
-    const handleToggleFacturado = async (id: string, value: boolean) => {
+    const handleToggleFacturado = async (id: string, value: boolean, nroComprobante?: string) => {
         try {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, facturado: value } : i));
-            await itemService.updateItem(id, { facturado: value });
+            const patch: Partial<Item> = { facturado: value };
+            // Solo tocamos el nro de comprobante si nos pasan uno (así "Desmarcar" no lo borra)
+            if (nroComprobante !== undefined) patch.nroComprobante = nroComprobante.trim() || undefined;
+            setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+            await itemService.updateItem(id, patch);
         } catch (err) {
             console.error('Error updating facturado:', err);
             loadItems();
@@ -1417,7 +1420,7 @@ export default function Dashboard() {
 // Facturación Tab - Control de facturación ARCA separado del dashboard de ganancias
 function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdateEnvio }: {
     items: Item[],
-    onToggleFacturado: (id: string, value: boolean) => void,
+    onToggleFacturado: (id: string, value: boolean, nroComprobante?: string) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
     onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void
 }) {
@@ -1708,6 +1711,11 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                                             Desmarcar
                                         </button>
                                     </div>
+                                    {item.nroComprobante && (
+                                        <p className="mt-2 text-xs text-gray-500">
+                                            Comprobante: <span className="font-mono text-gray-700">{item.nroComprobante}</span>
+                                        </p>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -1722,6 +1730,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                                         <th className="px-6 py-3 text-right">Envío</th>
                                         <th className="px-6 py-3 text-right">Total</th>
                                         <th className="px-6 py-3 text-center">Fecha</th>
+                                        <th className="px-6 py-3 text-center">Comprobante</th>
                                         <th className="px-6 py-3 text-center">Estado</th>
                                     </tr>
                                 </thead>
@@ -1740,6 +1749,11 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                                             </td>
                                             <td className="px-6 py-4 text-right font-mono font-bold text-gray-900">{fmtMoney(getItemTotal(item))}</td>
                                             <td className="px-6 py-4 text-center text-xs text-gray-500">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</td>
+                                            <td className="px-6 py-4 text-center font-mono text-xs">
+                                                {item.nroComprobante
+                                                    ? <span className="text-gray-900">{item.nroComprobante}</span>
+                                                    : <span className="text-gray-300">-</span>}
+                                            </td>
                                             <td className="px-6 py-4 text-center">
                                                 <button
                                                     onClick={() => onToggleFacturado(item.id, false)}
@@ -1757,7 +1771,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                                     <tr className="bg-gray-50 font-bold text-gray-900">
                                         <td className="px-6 py-3" colSpan={4}>Total del mes</td>
                                         <td className="px-6 py-3 text-right font-mono">{fmtMoney(totalMes)}</td>
-                                        <td colSpan={2}></td>
+                                        <td colSpan={3}></td>
                                     </tr>
                                 </tfoot>
                             </table>
@@ -1766,7 +1780,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                 )}
             </div>
 
-            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} onUpdateEnvio={onUpdateEnvio} />}
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id, nro) => onToggleFacturado(id, true, nro)} onUpdateEnvio={onUpdateEnvio} />}
 
             {/* Ventas sin facturar */}
             {(() => {
@@ -1876,7 +1890,7 @@ function formatDateDDMMAAAA(dateStr: string): string {
 }
 
 // Facturar ARCA Modal
-function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void }) {
+function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string, nroComprobante?: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void }) {
     const [producto, setProducto] = useState(
         item.itemType === 'personal' ? `${item.productName} usado` : item.productName
     );
@@ -1933,6 +1947,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     const [envioMetodo, setEnvioMetodo] = useState(item.envioMetodo || '');
     const [showEnvioWarning, setShowEnvioWarning] = useState(false);
     const [step, setStep] = useState<'form' | 'confirm'>('form');
+    const [nroComprobante, setNroComprobante] = useState(item.nroComprobante || '');
 
     const formasPago = [
         { label: 'Contado', value: 'contado' },
@@ -2027,7 +2042,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     };
 
     const handleConfirmFacturado = () => {
-        onFacturado?.(item.id);
+        onFacturado?.(item.id, nroComprobante);
         onClose();
     };
 
@@ -2255,6 +2270,20 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
                                     {' = '}<span className="text-white font-semibold">${totalConEnvio.toLocaleString()}</span>
                                 </p>
                             </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1.5">N° de comprobante</label>
+                                <input
+                                    type="text"
+                                    value={nroComprobante}
+                                    onChange={e => setNroComprobante(e.target.value)}
+                                    placeholder="0003-00000123"
+                                    autoFocus
+                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                                />
+                                <p className="text-xs text-gray-500 mt-1.5">
+                                    Copialo del PDF que generó ARCA. Queda guardado con la venta para rastrearlo después.
+                                </p>
+                            </div>
                             <p className="text-sm text-gray-400 text-center">
                                 Si la facturación fue exitosa, marcala como facturada. Si hubo algún problema, podés cerrar sin marcar.
                             </p>
@@ -2287,7 +2316,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     onEdit: (i: Item) => void,
     onDelete: (id: string) => void,
     resolveBatchRef: (item: Item) => string | undefined,
-    onToggleFacturado: (id: string, value: boolean) => void,
+    onToggleFacturado: (id: string, value: boolean, nroComprobante?: string) => void,
     onToggleNoFacturar: (id: string, value: boolean) => void,
     onUpdateEnvio: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void,
     onToggleCobrado: (id: string, value: boolean) => void,
@@ -2303,7 +2332,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
 
     return (
         <>
-            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id) => onToggleFacturado(id, true)} onUpdateEnvio={onUpdateEnvio} />}
+            {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id, nro) => onToggleFacturado(id, true, nro)} onUpdateEnvio={onUpdateEnvio} />}
             <div className="sm:hidden p-3 space-y-3">
                 {items.map((item) => {
                     const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);

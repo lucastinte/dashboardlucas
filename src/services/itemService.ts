@@ -33,6 +33,7 @@ const mapFromDb = (dbItem: any): Item => ({
     category: dbItem.category || undefined,
     itemType: (dbItem.item_type || 'resale') as ItemType,
     facturado: dbItem.facturado === true,
+    nroComprobante: dbItem.nro_comprobante || undefined,
     noFacturar: dbItem.no_facturar === true,
     withdrawalReason: (dbItem.withdrawal_reason || undefined) as WithdrawalReason | undefined,
     envioAplica: dbItem.envio_aplica === true,
@@ -74,6 +75,7 @@ const mapToDb = (item: Partial<Item>) => {
     if (item.category !== undefined) dbItem.category = item.category;
     if (item.itemType !== undefined) dbItem.item_type = item.itemType;
     if (item.facturado !== undefined) dbItem.facturado = item.facturado;
+    if (item.nroComprobante !== undefined) dbItem.nro_comprobante = item.nroComprobante || null;
     if (item.noFacturar !== undefined) dbItem.no_facturar = item.noFacturar;
     if (item.withdrawalReason !== undefined) dbItem.withdrawal_reason = item.withdrawalReason;
     if (item.envioAplica !== undefined) dbItem.envio_aplica = item.envioAplica;
@@ -130,11 +132,11 @@ export const itemService = {
                 .insert(dbItems.map(item => withoutColumns(item, ['item_type'])))
                 .select());
         }
-        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado') || hasMissingColumn(error, 'nro_comprobante')) {
             console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(dbItems.map(item => withoutColumns(item, ['withdrawal_reason', 'no_facturar', 'facturado'])))
+                .insert(dbItems.map(item => withoutColumns(item, ['withdrawal_reason', 'no_facturar', 'facturado', 'nro_comprobante'])))
                 .select());
         }
         if (hasMissingColumn(error, 'envio_aplica') || hasMissingColumn(error, 'envio_costo') || hasMissingColumn(error, 'envio_metodo')) {
@@ -203,11 +205,11 @@ export const itemService = {
                 .select()
                 .single());
         }
-        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado') || hasMissingColumn(error, 'nro_comprobante')) {
             console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
             ({ data, error } = await supabase
                 .from('items')
-                .insert(withoutColumns(dbItem, ['withdrawal_reason', 'no_facturar', 'facturado']))
+                .insert(withoutColumns(dbItem, ['withdrawal_reason', 'no_facturar', 'facturado', 'nro_comprobante']))
                 .select()
                 .single());
         }
@@ -285,11 +287,11 @@ export const itemService = {
                 .select()
                 .single());
         }
-        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado')) {
+        if (hasMissingColumn(error, 'withdrawal_reason') || hasMissingColumn(error, 'no_facturar') || hasMissingColumn(error, 'facturado') || hasMissingColumn(error, 'nro_comprobante')) {
             console.warn('Supabase: withdrawal/facturación columns missing. Falling back without them.');
             ({ data, error } = await supabase
                 .from('items')
-                .update(withoutColumns(dbUpdates, ['withdrawal_reason', 'no_facturar', 'facturado']))
+                .update(withoutColumns(dbUpdates, ['withdrawal_reason', 'no_facturar', 'facturado', 'nro_comprobante']))
                 .eq('id', id)
                 .select()
                 .single());

@@ -149,3 +149,10 @@ create policy "Public read locations" on locations
   to anon
   using (true);
 
+-- =========================================================================
+-- N° DE COMPROBANTE ARCA (rastreo del comprobante generado en ARCA)
+-- =========================================================================
+-- Se carga a mano en el paso de confirmación de "Facturar en ARCA".
+-- Solo para consulta interna: NO se expone en la tienda pública.
+alter table items add column if not exists nro_comprobante text;
+
