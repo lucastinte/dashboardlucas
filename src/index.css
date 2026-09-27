@@ -120,6 +120,378 @@ html.dark .shadow-2xl {
   box-shadow: 0 8px 26px rgba(2, 6, 23, 0.45) !important;
 }
 
+/* ============================================================
+   Inventario en tono oscuro, en LOS DOS temas
+   La pestaña Inventario es la que más números muestra, así que se
+   pinta oscura siempre: da igual si el tema global es claro u oscuro.
+   Por eso el selector es `:root .inventory-dark` y no `html:not(.dark)`:
+   con `:not(.dark)` las reglas quedaban muertas en modo oscuro, que es
+   justo el tema donde la lista de overrides de arriba tiene huecos
+   (le faltan bg-slate-*, bg-blue-100, etc.) y las filas quedaban blancas.
+   La especificidad de `:root .inventory-dark .bg-white` (0,3,0) le gana a
+   `html.dark .bg-white` (0,2,1), así que estas reglas mandan en ambos temas.
+   ============================================================ */
+:root .inventory-dark {
+  background: linear-gradient(180deg, #0b1220 0%, #0f172a 58%, #131f38 100%) !important;
+  border: 1px solid #263449;
+  border-radius: 1.5rem;
+  padding: 0.85rem;
+}
+
+@media (min-width: 640px) {
+  :root .inventory-dark {
+    padding: 1.25rem;
+  }
+}
+
+/* --- Superficies --- */
+:root .inventory-dark .bg-white,
+:root .inventory-dark .bg-white\/60 {
+  background-color: #1e293b !important;
+}
+
+:root .inventory-dark .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:root .inventory-dark .bg-gray-50,
+:root .inventory-dark .bg-gray-50\/30,
+:root .inventory-dark .bg-gray-50\/50,
+:root .inventory-dark .bg-gray-50\/60,
+:root .inventory-dark .bg-slate-50,
+:root .inventory-dark .bg-slate-50\/80 {
+  background-color: #172033 !important;
+}
+
+/* Las filas expandidas de la tabla usan bg-slate-50 y los chips bg-slate-200.
+   Esa familia no estaba en ninguna de las dos listas de overrides, así que en
+   modo oscuro quedaban en blanco puro: era el "sigue blanco" de la captura. */
+:root .inventory-dark .bg-slate-100 {
+  background-color: #1b2740 !important;
+}
+
+:root .inventory-dark .bg-slate-200,
+:root .inventory-dark .bg-slate-200\/60 {
+  background-color: #2b3649 !important;
+}
+
+:root .inventory-dark .bg-slate-300 {
+  background-color: #334155 !important;
+}
+
+:root .inventory-dark .bg-gray-100 {
+  background-color: #263449 !important;
+}
+
+:root .inventory-dark .bg-gray-200,
+:root .inventory-dark .bg-gray-300 {
+  background-color: #334155 !important;
+}
+
+:root .inventory-dark .text-slate-500,
+:root .inventory-dark .text-slate-600 {
+  color: #a8b8cd !important;
+}
+
+:root .inventory-dark .text-slate-700,
+:root .inventory-dark .text-slate-800,
+:root .inventory-dark .text-slate-900 {
+  color: #e2e8f0 !important;
+}
+
+:root .inventory-dark .border-slate-100,
+:root .inventory-dark .border-slate-200,
+:root .inventory-dark .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+/* --- Chips de color (pasteles claros → tintes oscuros) --- */
+:root .inventory-dark .bg-emerald-50,
+:root .inventory-dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+}
+
+:root .inventory-dark .bg-emerald-200 {
+  background-color: rgba(16, 185, 129, 0.28) !important;
+}
+
+:root .inventory-dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.16) !important;
+}
+
+:root .inventory-dark .bg-blue-50,
+:root .inventory-dark .bg-blue-50\/30,
+:root .inventory-dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
+
+:root .inventory-dark .bg-indigo-50,
+:root .inventory-dark .bg-indigo-50\/70,
+:root .inventory-dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.18) !important;
+}
+
+:root .inventory-dark .bg-violet-50,
+:root .inventory-dark .bg-violet-50\/30,
+:root .inventory-dark .bg-violet-100 {
+  background-color: rgba(139, 92, 246, 0.18) !important;
+}
+
+:root .inventory-dark .bg-violet-200 {
+  background-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+:root .inventory-dark .bg-amber-50,
+:root .inventory-dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+}
+
+/* Chip "En camino": getBatchStatus() devuelve bg-yellow-100 text-yellow-700
+   (Dashboard.tsx:2965) y esa familia tampoco estaba cubierta. */
+:root .inventory-dark .bg-yellow-50,
+:root .inventory-dark .bg-yellow-100 {
+  background-color: rgba(234, 179, 8, 0.16) !important;
+}
+
+:root .inventory-dark .text-yellow-600,
+:root .inventory-dark .text-yellow-700,
+:root .inventory-dark .text-yellow-800 {
+  color: #fde047 !important;
+}
+
+:root .inventory-dark .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.16) !important;
+}
+
+:root .inventory-dark .bg-rose-50,
+:root .inventory-dark .bg-rose-100,
+:root .inventory-dark .bg-red-50,
+:root .inventory-dark .bg-red-100,
+:root .inventory-dark .bg-pink-50 {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+}
+
+/* --- Texto: grises --- */
+:root .inventory-dark .text-gray-900,
+:root .inventory-dark .text-black {
+  color: #f8fafc !important;
+}
+
+:root .inventory-dark .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+:root .inventory-dark .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+:root .inventory-dark .text-gray-600,
+:root .inventory-dark .text-gray-500 {
+  color: #a8b8cd !important;
+}
+
+:root .inventory-dark .text-gray-400 {
+  color: #8598b1 !important;
+}
+
+/* --- Texto: acentos --- */
+:root .inventory-dark .text-emerald-600,
+:root .inventory-dark .text-emerald-700,
+:root .inventory-dark .text-emerald-800 {
+  color: #6ee7b7 !important;
+}
+
+:root .inventory-dark .text-blue-500,
+:root .inventory-dark .text-blue-600,
+:root .inventory-dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+:root .inventory-dark .text-indigo-600,
+:root .inventory-dark .text-indigo-700,
+:root .inventory-dark .text-indigo-900 {
+  color: #a5b4fc !important;
+}
+
+:root .inventory-dark .text-violet-400,
+:root .inventory-dark .text-violet-600,
+:root .inventory-dark .text-violet-700,
+:root .inventory-dark .text-violet-800 {
+  color: #c4b5fd !important;
+}
+
+:root .inventory-dark .text-amber-600,
+:root .inventory-dark .text-amber-700 {
+  color: #fcd34d !important;
+}
+
+:root .inventory-dark .text-orange-700 {
+  color: #fdba74 !important;
+}
+
+:root .inventory-dark .text-rose-600,
+:root .inventory-dark .text-rose-700 {
+  color: #fda4af !important;
+}
+
+:root .inventory-dark .text-red-500,
+:root .inventory-dark .text-red-700 {
+  color: #fca5a5 !important;
+}
+
+:root .inventory-dark .text-pink-700 {
+  color: #f9a8d4 !important;
+}
+
+/* --- Bordes y separadores --- */
+:root .inventory-dark .border-gray-100,
+:root .inventory-dark .border-gray-200,
+:root .inventory-dark .border-gray-300 {
+  border-color: #334155 !important;
+}
+
+:root .inventory-dark .border-emerald-100,
+:root .inventory-dark .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+
+:root .inventory-dark .border-blue-100,
+:root .inventory-dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+:root .inventory-dark .border-indigo-200 {
+  border-color: rgba(99, 102, 241, 0.4) !important;
+}
+
+:root .inventory-dark .border-violet-100,
+:root .inventory-dark .border-violet-200 {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+}
+
+:root .inventory-dark .border-amber-100,
+:root .inventory-dark .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+:root .inventory-dark .border-rose-100,
+:root .inventory-dark .border-rose-200 {
+  border-color: rgba(244, 63, 94, 0.4) !important;
+}
+
+:root .inventory-dark .border-red-200 {
+  border-color: rgba(248, 113, 113, 0.5) !important;
+}
+
+:root .inventory-dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+:root .inventory-dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #2b3649 !important;
+}
+
+:root .inventory-dark .ring-gray-200,
+:root .inventory-dark .ring-violet-200,
+:root .inventory-dark .ring-red-200 {
+  --tw-ring-color: #334155 !important;
+}
+
+:root .inventory-dark .ring-emerald-300 {
+  --tw-ring-color: rgba(16, 185, 129, 0.45) !important;
+}
+
+/* --- Hover --- */
+:root .inventory-dark .hover\:bg-gray-50:hover,
+:root .inventory-dark .hover\:bg-gray-50\/50:hover {
+  background-color: #1b2740 !important;
+}
+
+:root .inventory-dark .hover\:bg-gray-100:hover,
+:root .inventory-dark .hover\:bg-gray-200:hover,
+:root .inventory-dark .hover\:bg-gray-800:hover {
+  background-color: #263449 !important;
+}
+
+:root .inventory-dark .hover\:bg-blue-50:hover,
+:root .inventory-dark .hover\:bg-blue-50\/30:hover,
+:root .inventory-dark .hover\:bg-blue-100:hover {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+}
+
+:root .inventory-dark .hover\:bg-indigo-100:hover {
+  background-color: rgba(99, 102, 241, 0.24) !important;
+}
+
+:root .inventory-dark .hover\:bg-violet-50:hover,
+:root .inventory-dark .hover\:bg-violet-100:hover {
+  background-color: rgba(139, 92, 246, 0.24) !important;
+}
+
+:root .inventory-dark .hover\:bg-emerald-50:hover,
+:root .inventory-dark .hover\:bg-emerald-100:hover,
+:root .inventory-dark .hover\:bg-emerald-200:hover {
+  background-color: rgba(16, 185, 129, 0.24) !important;
+}
+
+:root .inventory-dark .hover\:bg-rose-50:hover,
+:root .inventory-dark .hover\:bg-red-50:hover {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+}
+
+:root .inventory-dark .hover\:bg-pink-50:hover {
+  background-color: rgba(236, 72, 153, 0.18) !important;
+}
+
+:root .inventory-dark .hover\:text-gray-900:hover,
+:root .inventory-dark .hover\:text-violet-300:hover {
+  color: #f8fafc !important;
+}
+
+:root .inventory-dark .hover\:text-blue-700:hover {
+  color: #bfdbfe !important;
+}
+
+:root .inventory-dark .hover\:text-emerald-700:hover {
+  color: #a7f3d0 !important;
+}
+
+:root .inventory-dark .hover\:text-violet-800:hover {
+  color: #ddd6fe !important;
+}
+
+:root .inventory-dark .hover\:text-red-500:hover {
+  color: #fca5a5 !important;
+}
+
+/* --- Botones negros: sobre fondo oscuro pasan a botón claro ---
+   OJO con la especificidad acá. `html.dark .bg-black.text-white` (arriba) es
+   (0,3,1) y pisa el `color` de una regla (0,3,0) como la de abajo: el fondo
+   quedaba claro por nuestro lado y el texto blanco por el otro, o sea blanco
+   sobre blanco. Por eso estos selectores repiten `.text-white`, que los sube a
+   (0,4,0) y les devuelve el `color` oscuro. No saques el `.text-white`. */
+:root .inventory-dark .bg-black,
+:root .inventory-dark .bg-black.text-white {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+:root .inventory-dark .bg-black:hover,
+:root .inventory-dark .bg-black.text-white:hover {
+  background-color: #cbd5e1 !important;
+}
+
+/* --- Inputs --- */
+:root .inventory-dark input:not([type='checkbox']):not([type='radio']),
+:root .inventory-dark select,
+:root .inventory-dark textarea {
+  background-color: #0f172a !important;
+  color: #e5e7eb !important;
+  border-color: #334155 !important;
+}
+
+:root .inventory-dark input::placeholder,
+:root .inventory-dark textarea::placeholder {
+  color: #7c8ea6 !important;
+}
+
 @theme {
   --color-primary: #3b82f6; 
   --color-secondary: #10b981;

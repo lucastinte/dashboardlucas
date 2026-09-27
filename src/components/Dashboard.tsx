@@ -1078,7 +1078,7 @@ export default function Dashboard() {
                         <div className="grid grid-cols-4 bg-white p-1 rounded-xl shadow-sm border border-gray-200">
                             <button
                                 onClick={() => setActiveTab('dashboard')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <TrendingUp className="w-4 h-4" />
@@ -1087,7 +1087,7 @@ export default function Dashboard() {
                             </button>
                             <button
                                 onClick={() => setActiveTab('inventory')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <Box className="w-4 h-4" />
@@ -1096,7 +1096,7 @@ export default function Dashboard() {
                             </button>
                             <button
                                 onClick={() => setActiveTab('pricing')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'pricing' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'pricing' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <DollarSign className="w-4 h-4" />
@@ -1105,7 +1105,7 @@ export default function Dashboard() {
                             </button>
                             <button
                                 onClick={() => setActiveTab('facturacion')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'facturacion' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'facturacion' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
                                 <div className="flex items-center justify-center gap-2">
                                     <Receipt className="w-4 h-4" />
@@ -1117,7 +1117,7 @@ export default function Dashboard() {
                         <button
                             type="button"
                             onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
-                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-gray-900 hover:bg-gray-50 active:scale-95 active:brightness-95 transition-all flex items-center justify-center gap-2 shadow-sm"
                             title={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
                         >
                             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -1127,7 +1127,7 @@ export default function Dashboard() {
                         <button
                             type="button"
                             onClick={signOut}
-                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-red-600 hover:border-red-200 hover:bg-red-50 active:scale-95 active:brightness-95 transition-all flex items-center justify-center gap-2 shadow-sm"
                             title="Cerrar sesión"
                         >
                             <LogOut className="w-4 h-4" />
@@ -1141,7 +1141,7 @@ export default function Dashboard() {
                     <div className="space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
                         {/* Metrics Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                             <MetricCard
                                 title="Ganancia Reventa"
                                 value={`$${totalProfit.toLocaleString()}`}
@@ -1174,11 +1174,14 @@ export default function Dashboard() {
 
                         {/* Charts */}
                         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-                            <div className="flex justify-between items-center mb-4 sm:mb-6">
+                            <div className="flex flex-wrap justify-between items-baseline gap-x-3 gap-y-1 mb-4 sm:mb-6">
                                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Tendencia de Ganancias</h2>
+                                <p className="text-xs sm:text-sm text-gray-500">
+                                    Total del período: <span className="font-bold tabular-nums text-gray-900">${totalProfit.toLocaleString('es-AR')}</span>
+                                </p>
                             </div>
                             <div className="h-[240px] sm:h-[300px] w-full">
-                                <ProfitChart items={soldItems} />
+                                <ProfitChart items={soldItems} dark={theme === 'dark'} />
                             </div>
                         </div>
 
@@ -1198,7 +1201,7 @@ export default function Dashboard() {
                                 </div>
                                 <div className="divide-y divide-amber-100 dark:divide-amber-800/40">
                                     {cobrosPendientes.map(item => (
-                                        <div key={item.id} className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+                                        <div key={item.id} className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                                             <div className="flex items-center gap-3 min-w-0">
                                                 {item.imageUrl && (
                                                     <div className="w-8 h-8 rounded-md overflow-hidden border border-amber-200 dark:border-amber-800/50 flex-shrink-0">
@@ -1217,7 +1220,7 @@ export default function Dashboard() {
                                                 <span className="font-bold text-gray-900 dark:text-gray-100 text-sm">${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
                                                 <button
                                                     onClick={() => handleToggleCobrado(item.id, true)}
-                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                                                    className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 active:scale-95 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
                                                 >
                                                     <Check className="w-3.5 h-3.5" />
                                                     Cobrado
@@ -1241,7 +1244,7 @@ export default function Dashboard() {
                                 </div>
                                 <button
                                     onClick={() => openNewModal('sold')}
-                                    className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-sm"
+                                    className="w-full sm:w-auto bg-black hover:bg-gray-800 active:bg-gray-700 active:scale-95 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <Plus className="w-4 h-4" />
                                     Nueva Venta Directa
@@ -1251,7 +1254,7 @@ export default function Dashboard() {
                         </div>
                     </div>
                 ) : activeTab === 'inventory' ? (
-                    <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="inventory-dark space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Inventory Header */}
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
                             <div>
@@ -2405,14 +2408,14 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                             {item.cobrado === false ? (
                                                 <button
                                                     onClick={() => onToggleCobrado(item.id, true)}
-                                                    className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                                                    className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all active:scale-95"
                                                 >
                                                     PENDIENTE
                                                 </button>
                                             ) : (
                                                 <button
                                                     onClick={() => onToggleCobrado(item.id, false)}
-                                                    className="text-[10px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                                                    className="text-[10px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400 transition-all active:scale-95"
                                                 >
                                                     COBRADO
                                                 </button>
@@ -2421,24 +2424,24 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     </div>
                                 )}
                             </div>
-                            <div className="mt-4 flex gap-2">
+                            <div className="mt-4 grid grid-cols-2 gap-2">
                                 <button
                                     onClick={() => onEdit(item)}
-                                    className="flex-1 h-10 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2"
+                                    className="h-11 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
                                 >
                                     <Edit2 className="w-4 h-4" />
                                     Editar
                                 </button>
                                 <button
                                     onClick={() => onRepublish(item)}
-                                    className="flex-1 h-10 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center justify-center gap-2"
+                                    className="h-11 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
                                 >
                                     <RotateCcw className="w-4 h-4" />
                                     Republicar
                                 </button>
                                 <button
                                     onClick={() => onDelete(item.id)}
-                                    className="flex-1 h-10 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2"
+                                    className="h-11 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                     Eliminar
@@ -2446,7 +2449,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                 {item.facturado ? (
                                     <button
                                         onClick={() => onToggleFacturado(item.id, false)}
-                                        className="flex-1 h-10 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                        className="h-11 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-green-800"
                                     >
                                         <CheckCircle className="w-4 h-4" />
                                         Facturada
@@ -2454,30 +2457,31 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                 ) : item.noFacturar ? (
                                     <button
                                         onClick={() => onToggleNoFacturar(item.id, false)}
-                                        className="flex-1 h-10 rounded-xl bg-gray-400 hover:bg-gray-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                        className="h-11 rounded-xl bg-gray-400 hover:bg-gray-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-gray-600"
                                     >
                                         <XCircle className="w-4 h-4" />
                                         Excluida
                                     </button>
                                 ) : canFacturar(item) ? (
-                                    <div className="flex-1 flex gap-1">
+                                    <div className="col-span-2 flex gap-2">
                                         <button
                                             onClick={() => setFacturarItem(item)}
-                                            className="flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                            className="flex-1 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-blue-800"
                                         >
                                             <FileText className="w-4 h-4" />
                                             Facturar
                                         </button>
                                         <button
                                             onClick={() => onToggleNoFacturar(item.id, true)}
-                                            className="h-10 px-2 rounded-xl border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center transition-colors"
+                                            aria-label="No facturar"
                                             title="No facturar"
+                                            className="h-11 px-3 rounded-xl border border-gray-200 text-gray-400 flex items-center justify-center transition-all hover:border-red-200 hover:text-red-500 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
                                         >
                                             <X className="w-4 h-4" />
                                         </button>
                                     </div>
                                 ) : (
-                                    <span className="flex-1 h-10 rounded-xl text-gray-500 text-sm font-medium flex items-center justify-center">—</span>
+                                    <span className="h-11 rounded-xl text-gray-500 text-sm font-medium flex items-center justify-center">—</span>
                                 )}
                             </div>
                         </div>
@@ -2500,7 +2504,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                             <th className="px-2 py-3 text-center">Cobro</th>
                             <th className="px-2 py-3 text-center whitespace-nowrap">F. Venta</th>
                             <th className="px-2 py-3 text-center">Facturar</th>
-                            <th className="px-2 py-3 text-center w-20">Acción</th>
+                            <th className="px-2 py-3 text-center w-20 lg:w-auto whitespace-nowrap">Acción</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -2558,7 +2562,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 {item.cobrado === false ? (
                                                     <button
                                                         onClick={() => onToggleCobrado(item.id, true)}
-                                                        className="bg-amber-500/20 hover:bg-emerald-500/20 text-amber-600 dark:text-amber-400 hover:text-emerald-600 dark:hover:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded transition-colors"
+                                                        className="bg-amber-500/20 hover:bg-emerald-500/20 text-amber-600 dark:text-amber-400 hover:text-emerald-600 dark:hover:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded transition-all active:scale-95"
                                                         title="Click para marcar como cobrado"
                                                     >
                                                         PENDIENTE
@@ -2566,7 +2570,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                 ) : (
                                                     <button
                                                         onClick={() => onToggleCobrado(item.id, false)}
-                                                        className="bg-emerald-500/20 hover:bg-amber-500/20 text-emerald-600 dark:text-emerald-400 hover:text-amber-600 dark:hover:text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded transition-colors"
+                                                        className="bg-emerald-500/20 hover:bg-amber-500/20 text-emerald-600 dark:text-emerald-400 hover:text-amber-600 dark:hover:text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded transition-all active:scale-95"
                                                         title="Click para marcar como pendiente"
                                                     >
                                                         COBRADO
@@ -2608,13 +2612,16 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                                     <FileText className="w-3 h-3" />
                                                     Facturar
                                                 </button>
-                                                <button
-                                                    onClick={() => onToggleNoFacturar(item.id, true)}
-                                                    className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-0.5 rounded transition-colors"
-                                                    title="Excluir de facturacion"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                                <Hint label="Excluir de facturación">
+                                                    <button
+                                                        onClick={() => onToggleNoFacturar(item.id, true)}
+                                                        aria-label="Excluir de facturación"
+                                                        title="Excluir de facturacion"
+                                                        className="rounded p-1 text-gray-400 transition-all hover:bg-red-50 hover:text-red-500 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </Hint>
                                             </div>
                                         ) : (
                                             <span className="text-gray-500 text-xs">—</span>
@@ -2622,27 +2629,39 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     </td>
                                     <td className="px-2 py-2 text-center">
                                         <div className="flex justify-center gap-1">
-                                            <button
-                                                onClick={() => onEdit(item)}
-                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
-                                                title="Editar"
-                                            >
-                                                <Edit2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={() => onRepublish(item)}
-                                                className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all"
-                                                title="Republicar — crear nuevo stock con los datos de este producto"
-                                            >
-                                                <RotateCcw className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={() => onDelete(item.id)}
-                                                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all"
-                                                title="Eliminar"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                                            <Hint label="Editar esta venta">
+                                                <button
+                                                    onClick={() => onEdit(item)}
+                                                    aria-label="Editar esta venta"
+                                                    title="Editar"
+                                                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md p-1.5 text-blue-500 transition-all hover:bg-blue-50 hover:text-blue-700 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
+                                                >
+                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                    <span className="hidden lg:inline text-[11px] font-semibold">Editar</span>
+                                                </button>
+                                            </Hint>
+                                            <Hint label="Republicar — crear nuevo stock con los datos de este producto">
+                                                <button
+                                                    onClick={() => onRepublish(item)}
+                                                    aria-label="Republicar — crear nuevo stock con los datos de este producto"
+                                                    title="Republicar"
+                                                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md p-1.5 text-emerald-500 transition-all hover:bg-emerald-50 hover:text-emerald-700 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" />
+                                                    <span className="hidden lg:inline text-[11px] font-semibold">Republicar</span>
+                                                </button>
+                                            </Hint>
+                                            <Hint label="Eliminar esta venta">
+                                                <button
+                                                    onClick={() => onDelete(item.id)}
+                                                    aria-label="Eliminar esta venta"
+                                                    title="Eliminar"
+                                                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md p-1.5 text-rose-400 transition-all hover:bg-rose-50 hover:text-rose-600 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <span className="hidden lg:inline text-[11px] font-semibold">Eliminar</span>
+                                                </button>
+                                            </Hint>
                                         </div>
                                     </td>
                                 </tr>
@@ -6929,6 +6948,27 @@ function BulkPricingBoard({
     );
 }
 
+/* Tooltip propio para los botones que quedan solo-icono en pantallas angostas.
+   El atributo `title` no se puede estilar y no aparece al navegar con teclado,
+   así que esto se muestra en hover Y en focus-within.
+   Se abre hacia la IZQUIERDA y centrado en la fila a propósito: la tabla vive
+   dentro de un `overflow-x-auto`, que recortaría un tooltip que salga hacia arriba.
+   Ojo con los colores: `index.css` pisa `.bg-gray-100` y `.text-gray-900` en modo
+   oscuro con `!important`, así que acá se usan tonos fuera de esa lista. */
+function Hint({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <span className="relative inline-flex group/hint">
+            {children}
+            <span
+                role="tooltip"
+                className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 mr-2 z-30 whitespace-nowrap rounded-lg bg-gray-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/hint:opacity-100 group-focus-within/hint:opacity-100 dark:bg-slate-200 dark:text-slate-900"
+            >
+                {label}
+            </span>
+        </span>
+    );
+}
+
 function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title: string, value: string, icon: React.ReactNode, trend?: string, trendColor?: string, bgColor: string }) {
     const getBadgeStyle = () => {
         if (!trendColor) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
@@ -6964,13 +7004,24 @@ function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title:
             </div>
             <div>
                 <p className="text-gray-500 text-xs sm:text-sm font-medium mb-1">{title}</p>
-                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight leading-tight">{value}</h3>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight leading-tight tabular-nums break-words">{value}</h3>
             </div>
         </div>
     );
 }
 
-function ProfitChart({ items }: { items: Item[] }) {
+/* Formato compacto para el eje Y: "$1,2M" en vez de "$1234567", que en celular
+   se come el área de dibujo. */
+function formatCompactCurrency(value: number): string {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `$${(value / 1_000_000).toLocaleString('es-AR', { maximumFractionDigits: 1 })}M`;
+    if (abs >= 1_000) return `$${(value / 1_000).toLocaleString('es-AR', { maximumFractionDigits: 0 })}k`;
+    return `$${value.toLocaleString('es-AR')}`;
+}
+
+/* Los colores de recharts van como props, no como clases de Tailwind, así que el
+   modo oscuro se resuelve con la prop `dark` en vez de con variantes `dark:`. */
+function ProfitChart({ items, dark = false }: { items: Item[]; dark?: boolean }) {
     // Group by Date 
     const dataMap = new Map<string, number>();
 
@@ -6994,13 +7045,16 @@ function ProfitChart({ items }: { items: Item[] }) {
         return <div className="h-full w-full flex items-center justify-center text-gray-400">Sin datos suficientes para graficar</div>;
     }
 
+    const tickColor = dark ? '#70839d' : '#9ca3af';
+    const gridColor = dark ? '#2b3649' : '#f3f4f6';
+
     return (
         <ResponsiveContainer width="100%" height="100%">
             <AreaChart
                 data={data}
                 margin={{
                     top: 10,
-                    right: 30,
+                    right: 12,
                     left: 0,
                     bottom: 0,
                 }}
@@ -7011,22 +7065,33 @@ function ProfitChart({ items }: { items: Item[] }) {
                         <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                 <XAxis
                     dataKey="date"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                    tick={{ fill: tickColor, fontSize: 12 }}
+                    minTickGap={24}
+                    interval="preserveStartEnd"
                     dy={10}
                 />
                 <YAxis
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
-                    tickFormatter={(value) => `$${value}`}
+                    tick={{ fill: tickColor, fontSize: 12 }}
+                    width={52}
+                    tickFormatter={formatCompactCurrency}
                 />
                 <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{
+                        borderRadius: '12px',
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                        backgroundColor: dark ? '#1f2937' : '#ffffff',
+                        color: dark ? '#f8fafc' : '#111827',
+                    }}
+                    labelStyle={{ color: dark ? '#9fb0c7' : '#6b7280' }}
+                    formatter={(value) => [`$${Number(value).toLocaleString('es-AR')}`, 'Ganancia'] as [string, string]}
                     cursor={{ stroke: '#10b981', strokeWidth: 2 }}
                 />
                 <Area
