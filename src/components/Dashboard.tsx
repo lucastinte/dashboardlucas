@@ -4,7 +4,7 @@ import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
-import { Plus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
+import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -1001,6 +1001,48 @@ export default function Dashboard() {
         setIsModalOpen(true);
     };
 
+    // Ajuste rápido de cantidad desde el badge de STOCK en la tabla de inventario.
+    const handleUpdateQuantity = async (id: string, quantity: number) => {
+        const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+        if (items.find(i => i.id === id)?.quantity === qty) return;
+        setItems(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
+        try {
+            await itemService.updateItem(id, { quantity: qty });
+        } catch (err) {
+            console.error('Error updating quantity:', err);
+            alert('No se pudo actualizar la cantidad.');
+            loadItems();
+        }
+    };
+
+    // Agregar otra tanda del mismo producto: abre el formulario precargado para
+    // que se cargue con otro precio / otra ubicación.
+    const handleAddUnits = (anchor: Item) => {
+        const defaultLoc = locations.find(l => l.isDefault)?.name || (locations[0]?.name || '');
+        setEditingItem(null);
+        setFormData({
+            productName: anchor.productName,
+            purchasePrice: anchor.purchasePrice,
+            salePrice: anchor.salePrice || 0,
+            quantity: 1,
+            date: new Date().toISOString().split('T')[0],
+            status: 'in_stock',
+            condition: anchor.condition || 'nuevo',
+            itemType: anchor.itemType || 'resale',
+            location: anchor.location || defaultLoc,
+            estimatedSalePrice: anchor.estimatedSalePrice || 0,
+            imageUrl: anchor.imageUrl || '',
+            description: anchor.description,
+            storeTitle: anchor.storeTitle,
+            storeGroup: anchor.storeGroup,
+            storeImages: anchor.storeImages,
+            storeVideoUrl: anchor.storeVideoUrl,
+            publicInStore: anchor.publicInStore,
+            batchRef: getItemBatchRef(anchor),
+        });
+        setIsModalOpen(true);
+    };
+
     const openNewModal = (initialStatus: ItemStatus = 'in_stock') => {
         resetForm();
         setFormData(prev => ({ ...prev, status: initialStatus }));
@@ -1299,6 +1341,8 @@ export default function Dashboard() {
                                 onTogglePublicInStore={handleTogglePublicInStore} 
                                 onManageImages={setStoreImagesItem} 
                                 onMerge={handleMergeItems}
+                                onUpdateQuantity={handleUpdateQuantity}
+                                onAddUnits={handleAddUnits}
                                 onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
@@ -2898,6 +2942,110 @@ function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen, videoB
     );
 }
 
+/* ── Editor rápido de cantidades (badge de STOCK) ───────────────────────────────
+   Una fila por registro real de stock (ubicación + costo). El input guarda su
+   propio texto y recién confirma al salir del campo o con Enter: así se puede
+   borrar el número y reescribirlo sin que se rellene solo con 1. */
+function QtyRow({ item, onUpdateQuantity, onDelete }: {
+    item: Item;
+    onUpdateQuantity?: (id: string, quantity: number) => void;
+    onDelete: (id: string) => void;
+}) {
+    const [val, setVal] = useState(String(item.quantity));
+
+    useEffect(() => { setVal(String(item.quantity)); }, [item.quantity]);
+
+    const commit = () => {
+        const n = Math.floor(Number(val));
+        if (!val || !Number.isFinite(n) || n < 1) { setVal(String(item.quantity)); return; }
+        if (n !== item.quantity) onUpdateQuantity?.(item.id, n);
+    };
+
+    return (
+        <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1.5">
+            <span
+                className="min-w-0 flex-1 truncate text-[11px] font-semibold text-gray-600"
+                title={item.location || 'Sin ubicación'}
+            >
+                {item.location || 'Sin ubicación'}
+            </span>
+            <span className="font-mono text-[10px] text-gray-400">${item.purchasePrice.toLocaleString('es-AR')}</span>
+            <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                    type="button"
+                    onClick={() => onUpdateQuantity?.(item.id, Math.max(1, item.quantity - 1))}
+                    disabled={item.quantity <= 1}
+                    title="Restar una unidad"
+                    className="rounded-md p-1 text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                    <Minus className="h-3 w-3" />
+                </button>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    value={val}
+                    onChange={e => setVal(e.target.value.replace(/[^\d]/g, ''))}
+                    onBlur={commit}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    aria-label={`Cantidad en ${item.location || 'sin ubicación'}`}
+                    className="w-11 rounded-md border border-gray-200 bg-gray-50 py-0.5 text-center text-xs font-bold text-gray-800 outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                    type="button"
+                    onClick={() => onUpdateQuantity?.(item.id, item.quantity + 1)}
+                    title="Sumar una unidad"
+                    className="rounded-md p-1 text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-800 active:scale-95"
+                >
+                    <Plus className="h-3 w-3" />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onDelete(item.id)}
+                    title="Eliminar este registro de stock"
+                    className="ml-0.5 rounded-md p-1 text-gray-300 transition-all hover:bg-rose-50 hover:text-rose-600 active:scale-95"
+                >
+                    <Trash2 className="h-3 w-3" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function QtyEditorPanel({ items, anchor, onUpdateQuantity, onDelete, onAddUnits, compact = false }: {
+    items: Item[];
+    anchor?: Item;
+    onUpdateQuantity?: (id: string, quantity: number) => void;
+    onDelete: (id: string) => void;
+    onAddUnits?: (anchor: Item) => void;
+    compact?: boolean;
+}) {
+    const total = items.reduce((a, i) => a + i.quantity, 0);
+    const addAnchor = anchor || items[0];
+    return (
+        <div className={`space-y-1.5 text-left ${compact ? '' : 'mx-auto w-full max-w-md'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    Ajustar cantidades · {total} u. en {items.length} registro{items.length === 1 ? '' : 's'}
+                </span>
+                {onAddUnits && addAnchor && (
+                    <button
+                        type="button"
+                        onClick={() => onAddUnits(addAnchor)}
+                        title="Cargar otra tanda del mismo producto con otro precio u otra ubicación"
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+                    >
+                        <Plus className="h-3 w-3" />
+                        Otro precio / ubicación
+                    </button>
+                )}
+            </div>
+            {items.map(it => (
+                <QtyRow key={it.id} item={it} onUpdateQuantity={onUpdateQuantity} onDelete={onDelete} />
+            ))}
+        </div>
+    );
+}
+
 function InventoryTable({
     items, 
     allItems, 
@@ -2908,8 +3056,10 @@ function InventoryTable({
     onSplit, 
     onWithdraw, 
     onTogglePublicInStore, 
-    onManageImages, 
+    onManageImages,
     onMerge,
+    onUpdateQuantity,
+    onAddUnits,
     batchHistory,
     locations = [],
     onOpenLocationsModal
@@ -2925,6 +3075,8 @@ function InventoryTable({
     onTogglePublicInStore: (id: string, value: boolean) => void,
     onManageImages: (item: Item) => void,
     onMerge?: (items: Item[]) => void,
+    onUpdateQuantity?: (id: string, quantity: number) => void,
+    onAddUnits?: (anchor: Item) => void,
     batchHistory: BatchRecord[],
     locations?: LocationItem[],
     onOpenLocationsModal?: () => void
@@ -2934,6 +3086,7 @@ function InventoryTable({
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [withdrawMenuId, setWithdrawMenuId] = useState<string | null>(null);
+    const [qtyEditorKey, setQtyEditorKey] = useState<string | null>(null);
 
     // Verificar que los links de fotos/videos de tienda sigan vivos
     const mediaChecks = items.flatMap(i => [
@@ -3267,7 +3420,13 @@ function InventoryTable({
 
                             return (
                                 <div key={grp.key} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                                    <button type="button" onClick={() => toggleGroup(grp.key)} className="w-full p-4 text-left">
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => toggleGroup(grp.key)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(grp.key); } }}
+                                        className="w-full cursor-pointer p-4 text-left"
+                                    >
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="flex items-center gap-3">
                                                 {grp.imageUrl ? (
@@ -3293,8 +3452,27 @@ function InventoryTable({
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <span className="px-2 py-1 rounded-md text-xs font-semibold text-white bg-blue-600">{grp.totalQty}</span>
+                                            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQtyEditorKey(qtyEditorKey === grp.key ? null : grp.key)}
+                                                    title="Editar cantidades"
+                                                    aria-expanded={qtyEditorKey === grp.key}
+                                                    className={`px-2 py-1 rounded-md text-xs font-semibold text-white transition-all active:scale-95 ${qtyEditorKey === grp.key ? 'bg-blue-800 ring-2 ring-blue-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                >
+                                                    {grp.totalQty}
+                                                </button>
+                                                {onAddUnits && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onAddUnits(repItem)}
+                                                        title="Agregar otra tanda con distinto precio u otra ubicación"
+                                                        aria-label="Agregar otra tanda con distinto precio u otra ubicación"
+                                                        className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:bg-blue-100 hover:border-blue-300 active:scale-95"
+                                                    >
+                                                        <Plus className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                                 {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                             </div>
                                         </div>
@@ -3303,7 +3481,19 @@ function InventoryTable({
                                             <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>
                                             <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
                                         </div>
-                                    </button>
+                                    </div>
+
+                                    {qtyEditorKey === grp.key && (
+                                        <div className="border-t border-blue-100 bg-blue-50/60 px-4 py-3">
+                                            <QtyEditorPanel
+                                                items={grp.children}
+                                                anchor={repItem}
+                                                onUpdateQuantity={onUpdateQuantity}
+                                                onDelete={onDelete}
+                                                onAddUnits={onAddUnits}
+                                            />
+                                        </div>
+                                    )}
 
                                     {/* Mobile Store Status Bar */}
                                     <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
@@ -3667,8 +3857,29 @@ function InventoryTable({
                                                         {grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}
                                                     </p>
                                                 </td>
-                                                <td className="px-3 py-3 text-center">
-                                                    <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white bg-blue-600">{grp.totalQty}</span>
+                                                <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="inline-flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setQtyEditorKey(qtyEditorKey === grp.key ? null : grp.key)}
+                                                            title="Editar cantidades"
+                                                            aria-expanded={qtyEditorKey === grp.key}
+                                                            className={`px-2.5 py-1 rounded-full text-xs font-bold text-white transition-all active:scale-95 ${qtyEditorKey === grp.key ? 'bg-blue-800 ring-2 ring-blue-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                        >
+                                                            {grp.totalQty}
+                                                        </button>
+                                                        {onAddUnits && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onAddUnits(repItem)}
+                                                                title="Agregar otra tanda con distinto precio u otra ubicación"
+                                                                aria-label="Agregar otra tanda con distinto precio u otra ubicación"
+                                                                className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:bg-blue-100 hover:border-blue-300 active:scale-95"
+                                                            >
+                                                                <Plus className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-sm">
                                                     <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>
@@ -3729,6 +3940,19 @@ function InventoryTable({
                                                     </div>
                                                 </td>
                                             </tr>
+                                        {qtyEditorKey === grp.key && (
+                                            <tr key={`qty-${grp.key}`} className="border-l-4 border-blue-500 bg-blue-50/60">
+                                                <td colSpan={8} className="px-6 py-3">
+                                                    <QtyEditorPanel
+                                                        items={grp.children}
+                                                        anchor={repItem}
+                                                        onUpdateQuantity={onUpdateQuantity}
+                                                        onDelete={onDelete}
+                                                        onAddUnits={onAddUnits}
+                                                    />
+                                                </td>
+                                            </tr>
+                                        )}
                                         {expandedGroups.has(grp.key) && (
                                             <>
                                                 {(() => {
@@ -5036,6 +5260,7 @@ function ProductForm({
 
     const [purchasePriceInput, setPurchasePriceInput] = useState('');
     const [salePriceInput, setSalePriceInput] = useState('');
+    const [quantityInput, setQuantityInput] = useState('1');
 
     const formatMoney = (value?: number) => {
         const numeric = Number(value || 0);
@@ -5057,6 +5282,12 @@ function ProductForm({
     useEffect(() => {
         setSalePriceInput(formatMoney(formData.salePrice));
     }, [formData.salePrice]);
+
+    // Cantidad: guardamos el texto tal cual para poder borrar el campo y reescribirlo
+    // (antes un `|| 1` lo devolvía a 1 y no se podía pasar de 1 a 2 sin quedar en 12).
+    useEffect(() => {
+        setQuantityInput(formData.quantity && formData.quantity > 0 ? String(Math.floor(formData.quantity)) : '');
+    }, [formData.quantity]);
 
     const getSubmitLabel = () => {
         if (!isEditing) {
@@ -5169,12 +5400,22 @@ function ProductForm({
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
                     <input
-                        type="number"
-                        required
-                        min="1"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white"
-                        value={formData.quantity}
-                        onChange={e => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+                        placeholder="Ej: 1"
+                        value={quantityInput}
+                        onChange={e => {
+                            const digits = e.target.value.replace(/[^\d]/g, '');
+                            setQuantityInput(digits);
+                            setFormData({ ...formData, quantity: digits ? Number(digits) : 0 });
+                        }}
+                        onBlur={() => {
+                            if (!quantityInput) {
+                                setQuantityInput('1');
+                                setFormData({ ...formData, quantity: 1 });
+                            }
+                        }}
                     />
                 </div>
                 <div>
