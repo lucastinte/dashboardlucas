@@ -122,11 +122,11 @@ export default async function handler(req, res) {
             if (p.ubicacion) lines.push(`  Ubicación: ${p.ubicacion}`);
             if (p.variantes.length === 1) {
                 const v = p.variantes[0];
-                lines.push(`  ${fmt(v.precio)} — ${v.condicion}${v.cantidad > 1 ? ` — ${v.cantidad} disponibles` : ''}`);
+                lines.push(`  ${fmt(v.precio)} — ${v.condicion}${v.cantidad === 1 ? ' — ¡ÚLTIMA UNIDAD!' : v.cantidad > 1 ? ` — ${v.cantidad} disponibles` : ''}`);
             } else {
                 lines.push(`  Stock total: ${p.stockTotal} unidad${p.stockTotal !== 1 ? 'es' : ''}. Opciones:`);
                 for (const v of p.variantes) {
-                    lines.push(`    - ${v.nombre}: ${fmt(v.precio)} — ${v.condicion} — ${v.cantidad} disponible${v.cantidad !== 1 ? 's' : ''}${v.ubicacion ? ` — Ubicación: ${v.ubicacion}` : ''}`);
+                    lines.push(`    - ${v.nombre}: ${fmt(v.precio)} — ${v.condicion} — ${v.cantidad === 1 ? '¡ÚLTIMA UNIDAD!' : `${v.cantidad} disponibles`}${v.ubicacion ? ` — Ubicación: ${v.ubicacion}` : ''}`);
                 }
             }
             lines.push(`  Link: ${p.link}`);
