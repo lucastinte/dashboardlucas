@@ -4,6 +4,7 @@ import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
+import { STORE_CONFIG } from '../config/storeConfig';
 import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -179,7 +180,7 @@ export default function Dashboard() {
         }
     };
 
-    const handleSaveLocation = async (locData: { id?: string; name: string; whatsapp?: string; phone?: string; address?: string; isDefault?: boolean }) => {
+    const handleSaveLocation = async (locData: { id?: string; name: string; phone?: string; address?: string; isDefault?: boolean }) => {
         await locationService.saveLocation(locData);
         await loadLocations();
     };
@@ -1410,7 +1411,7 @@ export default function Dashboard() {
 
             {/* Placa Marketplace Modal */}
             {placaItem && (
-                <PlacaModal item={placaItem} locations={locations} onClose={() => setPlacaItem(null)} />
+                <PlacaModal item={placaItem} onClose={() => setPlacaItem(null)} />
             )}
 
             {/* Modal Overlay */}
@@ -3194,7 +3195,6 @@ function InventoryTable({
     type LocationGroup = {
         key: string;
         location: string;
-        whatsapp?: string;
         phone?: string;
         totalQty: number;
         totalValue: number;
@@ -3211,8 +3211,7 @@ function InventoryTable({
                 const locInfo = getLocationInfo(loc);
                 grp = { 
                     key: locKey, 
-                    location: loc, 
-                    whatsapp: locInfo?.whatsapp,
+                    location: loc,
                     phone: locInfo?.phone,
                     totalQty: 0, 
                     totalValue: 0, 
@@ -3616,12 +3615,6 @@ function InventoryTable({
                                         <MapPin className="w-4 h-4 text-blue-500" />
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{grp.location}</h3>
-                                            {grp.whatsapp && (
-                                                <p className="text-[11px] text-emerald-600 font-mono flex items-center gap-1 mt-0.5">
-                                                    <MessageCircle className="w-3 h-3" />
-                                                    WA: {grp.whatsapp}
-                                                </p>
-                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -4082,7 +4075,6 @@ function InventoryTable({
                             <tr>
                                 <th className="px-4 py-3 w-8"></th>
                                 <th className="px-4 py-3">Ubicación</th>
-                                <th className="px-4 py-3">Contacto Asignado</th>
                                 <th className="px-4 py-3 text-center">Productos</th>
                                 <th className="px-4 py-3 text-center">Unidades</th>
                                 <th className="px-4 py-3 text-right">Valor Total</th>
@@ -4103,16 +4095,6 @@ function InventoryTable({
                                             <MapPin className="w-4 h-4 text-blue-500" />
                                             {grp.location}
                                         </td>
-                                        <td className="px-4 py-3 text-xs">
-                                            {grp.whatsapp ? (
-                                                <span className="font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                                    WA: {grp.whatsapp}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">Predeterminado</span>
-                                            )}
-                                        </td>
                                         <td className="px-4 py-3 text-center text-xs font-semibold">{grp.products.length}</td>
                                         <td className="px-4 py-3 text-center">
                                             <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
@@ -4122,7 +4104,7 @@ function InventoryTable({
                                     {expandedGroups.has(grp.key) && grp.products.map(prod => (
                                         <tr key={prod.name} className="bg-blue-50/30 border-l-2 border-blue-200">
                                             <td className="px-4 py-2"></td>
-                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs" colSpan={2}>{prod.name}</td>
+                                            <td className="px-4 py-2 text-gray-700 font-medium text-xs">{prod.name}</td>
                                             <td className="px-4 py-2 text-center text-xs text-gray-400">
                                                 prom: ${prod.avgCost.toLocaleString('es-AR')}/u
                                             </td>
@@ -5466,10 +5448,10 @@ function ProductForm({
                             <option value="">Seleccionar ubicación...</option>
                             {locations.map(loc => (
                                 <option key={loc.id} value={loc.name}>
-                                    📍 {loc.name} {loc.isDefault ? '(Predeterminada)' : ''} {loc.whatsapp ? `• WA: ${loc.whatsapp}` : ''}
+                                    📍 {loc.name} {loc.isDefault ? '(Predeterminada)' : ''}
                                 </option>
                             ))}
-                            {formData.location && !locations.some(l => l.name.toLowerCase() === (formData.location || '').toLowerCase()) && (
+                            {formData.location && !locations.some(l => l.name === formData.location) && (
                                 <option value={formData.location}>
                                     📍 {formData.location} (Ubicación actual)
                                 </option>
@@ -5486,18 +5468,10 @@ function ProductForm({
                             </button>
                         )}
                     </div>
-                    {(() => {
-                        const matchedLoc = locations.find(l => l.name.toLowerCase() === (formData.location || '').toLowerCase());
-                        if (matchedLoc?.whatsapp) {
-                            return (
-                                <p className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
-                                    <MessageCircle className="w-3 h-3" />
-                                    WhatsApp asignado: <span className="font-mono">{matchedLoc.whatsapp}</span>
-                                </p>
-                            );
-                        }
-                        return null;
-                    })()}
+                    <p className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" />
+                        Contacto de WhatsApp: <span className="font-mono">{STORE_CONFIG.whatsappUser}</span>
+                    </p>
                 </div>
             </div>
 

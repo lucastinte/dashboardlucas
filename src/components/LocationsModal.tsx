@@ -24,7 +24,7 @@ interface LocationsModalProps {
     isOpen: boolean;
     onClose: () => void;
     locations: LocationItem[];
-    onSaveLocation: (loc: { id?: string; name: string; whatsapp?: string; phone?: string; address?: string; isDefault?: boolean }) => Promise<void>;
+    onSaveLocation: (loc: { id?: string; name: string; phone?: string; address?: string; isDefault?: boolean }) => Promise<void>;
     onDeleteLocation: (id: string) => Promise<void>;
     items: Item[];
     theme?: 'light' | 'dark';
@@ -67,7 +67,6 @@ export function LocationsModal({
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [name, setName] = useState('');
-    const [whatsapp, setWhatsapp] = useState('');
     const [phone, setPhone] = useState('');
     const [address, setAddress] = useState('');
     const [isDefault, setIsDefault] = useState(false);
@@ -82,7 +81,6 @@ export function LocationsModal({
         setEditingId(null);
         setIsCreating(false);
         setName('');
-        setWhatsapp('');
         setPhone('');
         setAddress('');
         setIsDefault(false);
@@ -91,7 +89,6 @@ export function LocationsModal({
 
     const handleStartCreate = () => {
         resetForm();
-        setWhatsapp(STORE_CONFIG.defaultWhatsApp);
         setIsCreating(true);
     };
 
@@ -99,7 +96,6 @@ export function LocationsModal({
         setEditingId(loc.id);
         setIsCreating(false);
         setName(loc.name);
-        setWhatsapp(loc.whatsapp || '');
         setPhone(loc.phone || '');
         setAddress(loc.address || '');
         setIsDefault(loc.isDefault || false);
@@ -123,7 +119,6 @@ export function LocationsModal({
             await onSaveLocation({
                 id: editingId || undefined,
                 name: trimmedName,
-                whatsapp: whatsapp.trim() || undefined,
                 phone: phone.trim() || undefined,
                 address: address.trim() || undefined,
                 isDefault,
@@ -340,21 +335,12 @@ export function LocationsModal({
                                             />
                                         </div>
 
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                                WhatsApp de Contacto
-                                            </label>
-                                            <div className="relative">
-                                                <MessageCircle className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                                                <input
-                                                    type="text"
-                                                    placeholder="Ej: 3885925942"
-                                                    value={whatsapp}
-                                                    onChange={e => setWhatsapp(e.target.value)}
-                                                    className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono"
-                                                />
-                                            </div>
-                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Sin + ni código de país (ej. 388592…)</p>
+                                        <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 flex items-center gap-2">
+                                            <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                            <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                                                Contacto de WhatsApp: <span className="font-mono font-bold">{STORE_CONFIG.whatsappUser}</span>
+                                                <span className="block text-emerald-700/70 dark:text-emerald-400/70">Es el mismo para todas las ubicaciones.</span>
+                                            </p>
                                         </div>
 
                                         <div>
@@ -473,12 +459,6 @@ export function LocationsModal({
                                                             </span>
                                                         </div>
                                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                                            {loc.whatsapp && (
-                                                                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-mono">
-                                                                    <MessageCircle className="w-3 h-3" />
-                                                                    {loc.whatsapp}
-                                                                </span>
-                                                            )}
                                                             {loc.phone && (
                                                                 <span className="flex items-center gap-1">
                                                                     <Phone className="w-3 h-3" />

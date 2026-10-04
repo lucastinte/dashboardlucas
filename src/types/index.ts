@@ -51,7 +51,6 @@ export interface Sale extends Item { }
 export interface LocationItem {
     id: string;
     name: string;
-    whatsapp?: string;
     phone?: string;
     address?: string;
     isDefault?: boolean;
