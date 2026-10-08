@@ -1,17 +1,34 @@
+// Topes de ingresos brutos anuales del monotributo (ARCA).
+// Escala vigente desde agosto 2026 — rige hasta enero 2027,
+// próxima actualización por IPC en febrero 2027.
+//
+// ÚNICO lugar donde se definen topes: el dashboard lee todo desde acá.
+// Para recategorizar, cambiar solo CATEGORIA_ACTUAL.
+
 export const CATEGORIA_ACTUAL = 'A' as const;
 
-export const TOPES_2026 = {
-  A: { anual: 8992597.87, mensualSeguro: 636900, mensualTope: 749383 },
-  B: { anual: 13175201.52, mensualSeguro: 933034, mensualTope: 1097933 },
-  C: { anual: 18473166.15, mensualSeguro: 1308516, mensualTope: 1539430 },
-  D: { anual: 22934610.05, mensualSeguro: 1624201, mensualTope: 1911217 },
-  E: { anual: 26977793.60, mensualSeguro: 1910928, mensualTope: 2248149 },
-  F: { anual: 33809379.57, mensualSeguro: 2394831, mensualTope: 2817448 },
-  G: { anual: 40431835.35, mensualSeguro: 2864421, mensualTope: 3369319 },
-  H: { anual: 61344853.64, mensualSeguro: 4345260, mensualTope: 5112071 },
-  I: { anual: 68664410.05, mensualSeguro: 4863729, mensualTope: 5722034 },
-  J: { anual: 78632948.76, mensualSeguro: 5569833, mensualTope: 6552746 },
-  K: { anual: 94805682.90, mensualSeguro: 6715403, mensualTope: 7900473 },
+export type CategoriaMonotributo = 'A' | 'B' | 'C' | 'D' | 'E';
+
+// mensualTope = tope anual / 12 (referencia mensual del gráfico)
+// mensualSeguro = tope anual / 12 × 0.85 (margen "holgado")
+const conMensuales = (anual: number) => ({
+    anual,
+    mensualTope: anual / 12,
+    mensualSeguro: (anual / 12) * 0.85,
+});
+
+export const TOPES_VIGENTES: Record<CategoriaMonotributo, { anual: number; mensualTope: number; mensualSeguro: number }> = {
+    A: conMensuales(12009410.45),
+    B: conMensuales(17595182.74),
+    C: conMensuales(24670494.31),
+    D: conMensuales(30628651.43),
+    E: conMensuales(36028231.33),
 };
 
-export const TOPE = TOPES_2026[CATEGORIA_ACTUAL];
+export const TOPE = TOPES_VIGENTES[CATEGORIA_ACTUAL];
+
+// Categoría siguiente (referencia para recategorización)
+const ORDEN: CategoriaMonotributo[] = ['A', 'B', 'C', 'D', 'E'];
+export const CATEGORIA_SIGUIENTE: CategoriaMonotributo =
+    ORDEN[Math.min(ORDEN.indexOf(CATEGORIA_ACTUAL) + 1, ORDEN.length - 1)];
+export const TOPE_SIGUIENTE = TOPES_VIGENTES[CATEGORIA_SIGUIENTE];

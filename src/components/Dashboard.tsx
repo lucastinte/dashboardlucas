@@ -3,7 +3,7 @@ import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, Locat
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
-import { TOPE, CATEGORIA_ACTUAL } from '../config/monotributo';
+import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE } from '../config/monotributo';
 import { STORE_CONFIG } from '../config/storeConfig';
 import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -1521,16 +1521,15 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
     const porcentajeRolling = TOPE.anual > 0 ? (totalRolling / TOPE.anual) * 100 : 0;
 
     // Progress bar color & message
+    // < 85%: verde sin alerta \u00B7 85\u2013100%: amarillo \u00B7 > 100%: rojo
     const getProgressColor = (pct: number) => {
         if (pct >= 100) return '#ef4444';
-        if (pct >= 85) return '#f97316';
-        if (pct >= 70) return '#f59e0b';
+        if (pct >= 85) return '#f59e0b';
         return '#10b981';
     };
     const getProgressMessage = (pct: number) => {
-        if (pct >= 100) return { icon: '\u{1F6A8}', text: `Excediste el tope categoria ${CATEGORIA_ACTUAL}`, color: 'bg-red-50 text-red-700' };
-        if (pct >= 85) return { icon: '\u26A0\uFE0F', text: `Considera pasar a categoria B`, color: 'bg-orange-50 text-orange-700' };
-        if (pct >= 70) return { icon: '\u26A0\uFE0F', text: `Acercandote al tope categoria ${CATEGORIA_ACTUAL}`, color: 'bg-amber-50 text-amber-700' };
+        if (pct >= 100) return { icon: '\u{1F6A8}', text: `Excediste el tope categor\u00EDa ${CATEGORIA_ACTUAL}, recategoriz\u00E1 en ARCA`, color: 'bg-red-50 text-red-700' };
+        if (pct >= 85) return { icon: '\u26A0\uFE0F', text: `Cerca del tope categor\u00EDa ${CATEGORIA_ACTUAL}`, color: 'bg-amber-50 text-amber-700' };
         return null;
     };
     const progressMsg = getProgressMessage(porcentajeRolling);
@@ -1624,7 +1623,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Tope anual cat. {CATEGORIA_ACTUAL}</p>
                     <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(TOPE.anual)}</p>
-                    <p className="text-sm text-gray-500 mt-1">{fmtMoney(TOPE.anual - totalRolling)} restante</p>
+                    <p className="text-sm text-gray-500 mt-1">{fmtMoney(Math.max(0, TOPE.anual - totalRolling))} restante</p>
                 </div>
             </div>
 
@@ -1649,6 +1648,11 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                     <span>{fmtMoney(totalRolling)} facturado</span>
                     <span>{fmtMoney(Math.max(TOPE.anual - totalRolling, 0))} restante</span>
                 </div>
+                {CATEGORIA_SIGUIENTE !== CATEGORIA_ACTUAL && (
+                    <p className="mt-2 text-xs text-gray-400">
+                        Referencia: tope cat. {CATEGORIA_SIGUIENTE} (siguiente) — <span className="font-semibold text-gray-500">{fmtMoney(TOPE_SIGUIENTE.anual)}</span>
+                    </p>
+                )}
                 {progressMsg && (
                     <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${progressMsg.color}`}>
                         <span>{progressMsg.icon}</span>
