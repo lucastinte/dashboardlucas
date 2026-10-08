@@ -3,7 +3,7 @@ import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, Locat
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
-import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE } from '../config/monotributo';
+import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
 import { STORE_CONFIG } from '../config/storeConfig';
 import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -1528,8 +1528,17 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
         return '#10b981';
     };
     const getProgressMessage = (pct: number) => {
-        if (pct >= 100) return { icon: '\u{1F6A8}', text: `Excediste el tope categor\u00EDa ${CATEGORIA_ACTUAL}, recategoriz\u00E1 en ARCA`, color: 'bg-red-50 text-red-700' };
-        if (pct >= 85) return { icon: '\u26A0\uFE0F', text: `Cerca del tope categor\u00EDa ${CATEGORIA_ACTUAL}`, color: 'bg-amber-50 text-amber-700' };
+        if (pct >= 100) {
+            // A qu\u00E9 categor\u00EDa corresponde el facturado actual (A\u2192B\u2192C\u2192... seg\u00FAn la escala)
+            const catCorresponde = categoriaParaMonto(totalRolling);
+            const destino = catCorresponde && catCorresponde !== CATEGORIA_ACTUAL
+                ? `recategoriz\u00E1 a ${catCorresponde} en ARCA`
+                : catCorresponde === null
+                    ? 'super\u00E1s la escala cargada (cat. E) \u2014 consult\u00E1 recategorizaci\u00F3n en ARCA'
+                    : 'recategoriz\u00E1 en ARCA';
+            return { icon: '\u{1F6A8}', text: `Excediste el tope categor\u00EDa ${CATEGORIA_ACTUAL}, ${destino}`, color: 'bg-red-50 text-red-700' };
+        }
+        if (pct >= 85) return { icon: '\u26A0\uFE0F', text: `Cerca del tope categor\u00EDa ${CATEGORIA_ACTUAL} \u2014 la siguiente es ${CATEGORIA_SIGUIENTE} (${fmtMoney(TOPE_SIGUIENTE.anual)})`, color: 'bg-amber-50 text-amber-700' };
         return null;
     };
     const progressMsg = getProgressMessage(porcentajeRolling);

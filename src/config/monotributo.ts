@@ -32,3 +32,13 @@ const ORDEN: CategoriaMonotributo[] = ['A', 'B', 'C', 'D', 'E'];
 export const CATEGORIA_SIGUIENTE: CategoriaMonotributo =
     ORDEN[Math.min(ORDEN.indexOf(CATEGORIA_ACTUAL) + 1, ORDEN.length - 1)];
 export const TOPE_SIGUIENTE = TOPES_VIGENTES[CATEGORIA_SIGUIENTE];
+
+// Categoría que corresponde según el facturado rolling 12 meses:
+// la primera cuyo tope anual cubre el monto. null = supera la escala
+// cargada (E) — recategorizar más arriba o pasar al régimen general.
+export const categoriaParaMonto = (monto: number): CategoriaMonotributo | null => {
+    for (const cat of ORDEN) {
+        if (monto <= TOPES_VIGENTES[cat].anual) return cat;
+    }
+    return null;
+};
