@@ -658,9 +658,15 @@ export default function Dashboard() {
                 };
                 // Reposición de un producto que ya existió: heredar lo que falte
                 // (fotos, video, descripción, publicación) del último registro.
-                const newItemData = baseNewItem.status === 'in_stock'
+                const inherited = baseNewItem.status === 'in_stock'
                     ? { ...baseNewItem, ...inheritStoreFields(baseNewItem, findStoreDonor(items, baseNewItem.productName, baseNewItem.condition)) }
                     : baseNewItem;
+                // Si el producto ya está publicado en la tienda (alguna tanda en stock
+                // publicada), la tanda nueva también: si no, en la tienda no aparece
+                // esa sede aunque el dashboard muestre el producto como publicado.
+                const productoPublicado = inherited.status === 'in_stock' && items.some(i =>
+                    i.status === 'in_stock' && i.publicInStore && normalizeText(i.productName) === normalizeText(inherited.productName || ''));
+                const newItemData = productoPublicado ? { ...inherited, publicInStore: true } : inherited;
 
                 // Optimistic UI update (temporary ID)
                 const tempId = crypto.randomUUID();
