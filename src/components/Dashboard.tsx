@@ -373,6 +373,30 @@ export default function Dashboard() {
                 finalItems = await itemService.getItems();
             }
 
+            // Publicación pareja: si un producto tiene alguna tanda en stock publicada
+            // (el dashboard ya lo muestra como publicado), se publican también sus
+            // otras tandas en stock. La tienda solo ve las filas con el tilde, así
+            // que sin esto no aparecen las otras sedes (p. ej. Abra Pampa).
+            const publicados = new Set(
+                finalItems
+                    .filter(i => i.status === 'in_stock' && i.publicInStore && i.itemType !== 'personal')
+                    .map(i => normalizeText(i.productName))
+            );
+            const sinPublicar = finalItems.filter(i =>
+                i.status === 'in_stock' && !i.publicInStore && i.itemType !== 'personal' &&
+                publicados.has(normalizeText(i.productName)));
+            if (sinPublicar.length > 0) {
+                for (const it of sinPublicar) {
+                    try {
+                        const { publicInStore: _ignored, ...content } = hasStoreContent(it)
+                            ? {}
+                            : inheritStoreFields(it, findStoreDonor(finalItems, it.productName, it.condition, it.id));
+                        await itemService.updateItem(it.id, { ...content, publicInStore: true });
+                    } catch (e) { console.error('Error publicando tanda', e); }
+                }
+                finalItems = await itemService.getItems();
+            }
+
             setItems(finalItems);
             loadLocations(finalItems);
         } catch (err: any) {
