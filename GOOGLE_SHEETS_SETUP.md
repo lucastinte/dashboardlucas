@@ -2,7 +2,7 @@
 
 Panel dentro de **Inventario** que vuelca a una Google Sheet **solo los productos publicados en tienda**, con las columnas que ve un cliente (Producto, Descripción, Precio de venta, Cantidad, Categoría y Link a la publicación), para compartir el catálogo afuera. La app (Supabase) sigue siendo la fuente de verdad: acá **no** vuelven cambios desde la hoja.
 
-La columna **Link** apunta a `https://lepzito.vercel.app/producto/<id>` y se rearma en cada sync, así que siempre refleja lo publicado. La base de esa URL se configura en `STORE_CONFIG.storeBaseUrl` (`src/config/storeConfig.ts`).
+La columna **Link** apunta a `https://starlinkers.shop/producto/<id>` y se rearma en cada sync, así que siempre refleja lo publicado. La base de esa URL se configura en `STORE_CONFIG.storeBaseUrl` (`src/config/storeConfig.ts`).
 
 ## Setup único (~5 min)
 

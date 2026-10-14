@@ -1,12 +1,19 @@
 export const STORE_CONFIG = {
-  storeName: 'Lucas Shop',
+  storeName: 'Starlinkers',
   // Usuario de WhatsApp del negocio (no un número): WhatsApp identifica por
-  // @usuario, y es el mismo para todas las ubicaciones.
+  // @usuario, y es el mismo para todas las ubicaciones. Solo para pedidos:
+  // la info del producto (fotos, medidas, ubicación) está en la tienda.
   whatsappUser: '@lucastinte',
   // Base pública de la tienda, para armar links a productos (ej: ${storeBaseUrl}/producto/<id>).
-  // Formato actual: sin el prefijo /tienda, que quedó deprecado.
-  storeBaseUrl: 'https://lepzito.vercel.app',
+  // api/catalogo.js tiene su propia copia de este valor (no puede importar TS).
+  storeBaseUrl: 'https://starlinkers.shop',
 };
+
+/** Dominio de la tienda sin protocolo ni barra final (ej: "starlinkers.shop"), para mostrar. */
+export const STORE_DOMAIN = STORE_CONFIG.storeBaseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
+/** Link público a la página de un producto en la tienda. */
+export const productUrl = (id: string) => `${STORE_CONFIG.storeBaseUrl.replace(/\/+$/, '')}/producto/${id}`;
 
 /**
  * Normaliza un usuario de WhatsApp: deja sólo los caracteres que WhatsApp

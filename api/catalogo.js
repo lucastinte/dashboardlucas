@@ -30,8 +30,9 @@ export default async function handler(req, res) {
     }
 
     const condLabel = { nuevo: 'Nuevo', semi_uso: 'Semi uso', usado: 'Usado' };
-    const baseUrl = `https://${req.headers.host}`;
-    // La tienda vive en la raíz: el prefijo /tienda quedó deprecado.
+    // La tienda vive en su propio dominio, no en el del dashboard que sirve esta API.
+    // Debe coincidir con STORE_CONFIG.storeBaseUrl (src/config/storeConfig.ts).
+    const baseUrl = (process.env.STORE_BASE_URL || 'https://starlinkers.shop').replace(/\/+$/, '');
 
     const toVariant = (it) => ({
         nombre: it.store_variant_name || it.product_name,

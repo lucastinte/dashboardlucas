@@ -4,7 +4,7 @@ import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
-import { STORE_CONFIG } from '../config/storeConfig';
+import { STORE_CONFIG, productUrl } from '../config/storeConfig';
 import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -1409,9 +1409,10 @@ export default function Dashboard() {
                 />
             )}
 
-            {/* Placa Marketplace Modal */}
+            {/* Placa Marketplace Modal — con la versión más reciente del producto
+                (foto principal incluida), no la copia guardada al abrir el modal de tienda */}
             {placaItem && (
-                <PlacaModal item={placaItem} onClose={() => setPlacaItem(null)} />
+                <PlacaModal item={items.find(i => i.id === placaItem.id) ?? placaItem} onClose={() => setPlacaItem(null)} />
             )}
 
             {/* Modal Overlay */}
@@ -4791,6 +4792,9 @@ Aquí va la descripción
                                             storeTitle.trim() || item.productName,
                                             '',
                                             description.trim(),
+                                            '',
+                                            `📍 Fotos, medidas y ubicación: ${productUrl(item.id)}`,
+                                            `🛒 Pedidos por WhatsApp: ${STORE_CONFIG.whatsappUser}`,
                                         ].join('\n');
                                         navigator.clipboard.writeText(post).then(() => {
                                             setFbCopied(true);

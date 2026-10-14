@@ -2,30 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import qrcode from 'qrcode-generator';
 import { X, Download, Upload, Loader2, Copy, Check } from 'lucide-react';
 import type { Item } from '../types';
-import { STORE_CONFIG } from '../config/storeConfig';
+import { STORE_CONFIG, STORE_DOMAIN, productUrl } from '../config/storeConfig';
 
 // Icono de WhatsApp (SVG → imagen) para dibujar nítido en canvas
 const WA_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ffffff" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.892c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.882 11.882 0 005.71 1.454h.005c6.585 0 11.946-5.359 11.949-11.945a11.821 11.821 0 00-3.484-8.413"/></svg>`;
 
-const CONFIG_KEY = 'placa_config_v1';
-
-// El usuario de WhatsApp NO se guarda acá: sale siempre de STORE_CONFIG, así
-// no queda una copia vieja en localStorage cuando cambia el alias.
-function loadConfig(): { store: string } {
-    try {
-        const raw = localStorage.getItem(CONFIG_KEY);
-        if (raw) {
-            const cfg = JSON.parse(raw);
-            // Auto-migrar URLs viejas que apuntan a /tienda
-            if (cfg.store && cfg.store.includes('/tienda')) {
-                cfg.store = 'lepzito.vercel.app';
-                localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
-            }
-            return { store: cfg.store || 'lepzito.vercel.app' };
-        }
-    } catch { /* ignore */ }
-    return { store: 'lepzito.vercel.app' };
-}
+// Versiones anteriores guardaban acá la URL de la tienda (lepzito.vercel.app).
+// Ahora sale siempre de STORE_CONFIG: se borra la copia vieja al abrir la placa.
+const LEGACY_CONFIG_KEY = 'placa_config_v1';
 
 /** Carga una imagen intentando CORS anónimo (necesario para exportar el canvas). */
 function loadImage(url: string): Promise<{ img: HTMLImageElement; tainted: boolean }> {
@@ -99,14 +83,12 @@ function drawContain(c: CanvasRenderingContext2D, img: HTMLImageElement, x: numb
 }
 
 export default function PlacaModal({ item, onClose }: { item: Item; onClose: () => void }) {
-    const initialConfig = useRef(loadConfig());
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    // El contacto de WhatsApp es el mismo para todo el negocio, sin importar
-    // la ubicación del producto: sale de STORE_CONFIG y no se edita acá.
+    // Toda la info (fotos, medidas, ubicación) está en la página del producto:
+    // la placa empuja hacia ahí. WhatsApp queda solo para pedidos.
     const [title, setTitle] = useState('');
     const [price, setPrice] = useState('');
-    const [store, setStore] = useState(initialConfig.current.store);
     const [fmt, setFmt] = useState<{ w: number; h: number }>({ w: 1080, h: 1080 });
     const [baseImg, setBaseImg] = useState<HTMLImageElement | null>(null);
     const [tainted, setTainted] = useState(false);
@@ -152,15 +134,13 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         return () => { cancelled = true; };
     }, [selectedUrl]);
 
-    // Persistir la tienda
+    // Limpiar la URL de tienda vieja que guardaban versiones anteriores
     useEffect(() => {
-        try { localStorage.setItem(CONFIG_KEY, JSON.stringify({ store })); } catch { /* ignore */ }
-    }, [store]);
+        try { localStorage.removeItem(LEGACY_CONFIG_KEY); } catch { /* ignore */ }
+    }, []);
 
-    const storeUrl = () => /^https?:\/\//.test(store.trim()) ? store.trim() : 'https://' + store.trim();
-    // El usuario de WhatsApp se muestra tal cual (@nombre): no hay link wa.me
-    // para usuarios todavía, el comprador lo busca dentro de la app.
-    const prettyHandle = () => STORE_CONFIG.whatsappUser;
+    // El QR lleva directo a la página de ESTE producto (fotos, medidas, ubicación)
+    const qrTarget = productUrl(item.id);
 
     const render = useCallback(async () => {
         const cv = canvasRef.current;
@@ -201,12 +181,13 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         ctx.fillStyle = '#e8b15b';
         ctx.fillRect(pad, barTop + 6 * s, 54 * s, 5 * s);
 
-        // QR
-        const qrSide = 176 * s;
+        // QR (centrado en la barra contando el texto de abajo, para que no se corte)
+        const qrSide = 160 * s;
         const qrCardPad = 16 * s;
         const qrCard = qrSide + qrCardPad * 2;
+        const qrCaptionH = 34 * s;
         const qrX = W - pad - qrCard;
-        const qrY = barTop + (barH - qrCard) / 2 + 6 * s;
+        const qrY = barTop + (barH - qrCard - qrCaptionH) / 2;
 
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,.35)';
@@ -217,46 +198,46 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         ctx.restore();
 
         try {
-            const qi = await qrImage(storeUrl());
+            const qi = await qrImage(qrTarget);
             ctx.drawImage(qi, qrX + qrCardPad, qrY + qrCardPad, qrSide, qrSide);
         } catch { /* ignore */ }
 
         ctx.textAlign = 'center';
         ctx.fillStyle = '#e8b15b';
         ctx.font = `700 ${19 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText('ESCANEÁ Y MIRÁ MÁS', qrX + qrCard / 2, qrY + qrCard + 30 * s);
+        ctx.fillText('ESCANEÁ Y MIRÁ TODO', qrX + qrCard / 2, qrY + qrCard + 28 * s);
 
-        // Bloque izquierdo: WhatsApp + tienda
+        // Bloque izquierdo: la tienda es el llamado principal; WhatsApp, solo pedidos
         const leftX = pad;
-        const ly = barTop + 74 * s;
-        const icoR = 34 * s;
-        const icoCX = leftX + icoR, icoCY = ly + icoR - 6 * s;
-        const handleText = prettyHandle();
+        ctx.textAlign = 'left';
 
-        // Sin @usuario cargado no dibujamos el bloque de WhatsApp: quedaría un
-        // ícono sin texto. La tienda se dibuja igual, más arriba.
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `800 ${46 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+        ctx.fillText(STORE_DOMAIN, leftX, barTop + 78 * s);
+
+        ctx.fillStyle = '#aeb8d4';
+        ctx.font = `500 ${22 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+        ctx.fillText('Fotos, medidas y ubicación en la web', leftX, barTop + 116 * s);
+
+        const handleText = STORE_CONFIG.whatsappUser;
         if (handleText) {
+            const icoR = 19 * s;
+            const icoCX = leftX + icoR, icoCY = barTop + 170 * s;
             ctx.fillStyle = '#25d366';
             ctx.beginPath(); ctx.arc(icoCX, icoCY, icoR, 0, Math.PI * 2); ctx.fill();
             if (waIcon) {
                 const ic = icoR * 1.15;
                 ctx.drawImage(waIcon, icoCX - ic / 2, icoCY - ic / 2, ic, ic);
             }
-
-            ctx.textAlign = 'left';
+            const textX = leftX + icoR * 2 + 12 * s;
             ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${42 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-            ctx.fillText(handleText, leftX + icoR * 2 + 20 * s, icoCY + 15 * s);
-
-            ctx.fillStyle = '#aeb8d4';
-            ctx.font = `500 ${21 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-            ctx.fillText('Buscame en WhatsApp', leftX, icoCY + icoR + 40 * s);
+            ctx.font = `700 ${24 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+            ctx.fillText(handleText, textX, icoCY + 8 * s);
+            const handleW = ctx.measureText(handleText).width;
+            ctx.fillStyle = '#e8b15b';
+            ctx.font = `600 ${20 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+            ctx.fillText('· solo pedidos', textX + handleW + 10 * s, icoCY + 8 * s);
         }
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#e8b15b';
-        ctx.font = `700 ${22 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText(store.trim(), leftX, handleText ? icoCY + icoR + 74 * s : ly + 28 * s);
 
         // Título arriba
         const t = title.trim();
@@ -298,7 +279,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             blobRef.current = null;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [title, price, store, fmt, baseImg, waIcon, loadingImg]);
+    }, [title, price, qrTarget, fmt, baseImg, waIcon, loadingImg]);
 
     useEffect(() => { render(); }, [render]);
 
@@ -381,9 +362,13 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                             <button
                                                 key={url}
                                                 onClick={() => setSelectedUrl(url)}
-                                                className={`w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${selectedUrl === url ? 'border-amber-500' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${selectedUrl === url ? 'border-amber-500' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                title={url === item.imageUrl ? 'Foto principal del producto' : undefined}
                                             >
                                                 <img src={url} alt="" className="w-full h-full object-cover" />
+                                                {url === item.imageUrl && (
+                                                    <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-bold text-center leading-tight py-0.5">PRINCIPAL</span>
+                                                )}
                                             </button>
                                         ))}
                                         <label className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 hover:border-gray-400 flex items-center justify-center cursor-pointer transition-all" title="Subir otra foto">
@@ -425,24 +410,15 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Usuario de WhatsApp</p>
-                                    <div className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm font-mono text-gray-600">
-                                        {STORE_CONFIG.whatsappUser}
-                                    </div>
-                                    <p className="text-[10px] text-gray-400 mt-1">Es el mismo para todas las ubicaciones. Se cambia en la configuración.</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Tienda</p>
-                                    <input type="text" value={store} onChange={e => setStore(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
-                                </div>
-                            </div>
-
-                            <div>
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">El QR abre tu tienda</p>
-                                <p className="text-[11px] text-gray-400">El QR apunta a la tienda. El contacto es por @usuario.</p>
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-1.5">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">A dónde lleva la placa</p>
+                                <p className="text-[12px] text-gray-600">
+                                    <span className="font-semibold">QR →</span>{' '}
+                                    <span className="font-mono text-[11px] break-all">{qrTarget.replace(/^https?:\/\//, '')}</span>
+                                </p>
+                                <p className="text-[11px] text-gray-400 leading-snug">
+                                    La página del producto tiene fotos, descripción, medidas y ubicación. WhatsApp ({STORE_CONFIG.whatsappUser}) figura solo para pedidos. Se cambian en la configuración.
+                                </p>
                             </div>
 
                             <div>
