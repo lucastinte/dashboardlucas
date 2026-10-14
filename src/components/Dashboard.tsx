@@ -9,6 +9,7 @@ import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, Arr
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
+import { normalizeText, hasStoreContent, pickStoreFields, findStoreDonor, inheritStoreFields } from '../lib/storeFields';
 import { LocationsModal } from './LocationsModal';
 import StockSheetsPanel from './StockSheetsPanel';
 
@@ -54,7 +55,6 @@ const getBatchLabel = (batchRef?: string) => {
     return `N° ${Number(digits)}`;
 };
 
-const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 
 const withdrawalLabels: Record<string, { label: string; color: string; bgColor: string }> = {
     regalo: { label: 'REGALO', color: 'text-pink-700', bgColor: 'bg-pink-100' },
@@ -354,11 +354,16 @@ export default function Dashboard() {
             for (const group of stockMergeMap.values()) {
                 if (group.length > 1) {
                     try {
-                        const mainItem = group[0];
+                        // Quedarse con el registro que tenga datos de tienda y completar
+                        // lo que le falte con los demás antes de borrarlos.
+                        const mainItem = group.find(hasStoreContent) || group[0];
+                        const others = group.filter(i => i.id !== mainItem.id);
                         const totalQty = group.reduce((acc, i) => acc + i.quantity, 0);
-                        await itemService.updateItem(mainItem.id, { quantity: totalQty });
-                        for (let i = 1; i < group.length; i++) {
-                            await itemService.deleteItem(group[i].id);
+                        const storePatch = others.reduce<Partial<Item>>(
+                            (acc, o) => ({ ...acc, ...inheritStoreFields({ ...mainItem, ...acc }, o) }), {});
+                        await itemService.updateItem(mainItem.id, { quantity: totalQty, ...storePatch });
+                        for (const other of others) {
+                            await itemService.deleteItem(other.id);
                         }
                         mergedAny = true;
                     } catch (e) { console.error('Error auto-merging', e); }
@@ -427,13 +432,7 @@ export default function Dashboard() {
                         saleDate: formDateISO,
                         // Al vender las últimas unidades el registro de stock se borra:
                         // conservar los datos de tienda en la venta (ocultos) para no perderlos
-                        ...(isLastUnits ? {
-                            description: editingItem.description,
-                            storeTitle: editingItem.storeTitle,
-                            storeGroup: editingItem.storeGroup,
-                            storeImages: editingItem.storeImages,
-                            storeVideoUrl: editingItem.storeVideoUrl,
-                        } : {})
+                        ...(isLastUnits ? pickStoreFields(editingItem) : {})
                     });
 
                     const remaining = editingItem.quantity - quantity;
@@ -497,8 +496,10 @@ export default function Dashboard() {
                     );
 
                     if (existingStock) {
+                        // La venta se borra: pasar al stock los datos de tienda que le falten
                         await itemService.updateItem(existingStock.id, {
-                            quantity: existingStock.quantity + quantity
+                            quantity: existingStock.quantity + quantity,
+                            ...inheritStoreFields(existingStock, editingItem)
                         });
                         await itemService.deleteItem(editingItem.id);
                         await loadItems();
@@ -529,6 +530,15 @@ export default function Dashboard() {
                     vendedor: formData.vendedor !== undefined ? (formData.vendedor || undefined) : editingItem.vendedor,
                     cobrado: formData.cobrado !== undefined ? formData.cobrado : editingItem.cobrado
                 };
+
+                // Venta que vuelve al inventario: recuperar fotos/video/descripción
+                // (propios o del último registro del producto) y volver a publicarla.
+                if (editingItem.status === 'sold' && status === 'in_stock') {
+                    const donor = hasStoreContent(editingItem)
+                        ? editingItem
+                        : findStoreDonor(items, updates.productName || editingItem.productName, condition, editingItem.id);
+                    Object.assign(updates, inheritStoreFields({ ...editingItem, ...updates }, donor));
+                }
 
                 // Optimistic UI update
                 const updatedItem = { ...editingItem, ...updates } as Item;
@@ -625,7 +635,7 @@ export default function Dashboard() {
             } else {
                 // Create new item
                 const newItemType = (formData.itemType as ItemType) || 'resale';
-                const newItemData = {
+                const baseNewItem = {
                     productName: formData.productName || 'Producto sin nombre',
                     purchasePrice: newItemType === 'personal' ? 0 : (Number(formData.purchasePrice) || 0),
                     salePrice: Number(formData.salePrice) || 0,
@@ -640,8 +650,17 @@ export default function Dashboard() {
                     imageUrl: formData.imageUrl || '',
                     saleDate: formData.status === 'sold' ? (formData.date ? getISODate(formData.date) : new Date().toISOString()) : undefined,
                     vendedor: formData.vendedor || undefined,
-                    cobrado: formData.vendedor ? false : true
+                    cobrado: formData.vendedor ? false : true,
+                    batchRef: formData.batchRef || undefined,
+                    // Datos de tienda precargados (Volver a publicar / Agregar unidades)
+                    ...pickStoreFields(formData),
+                    publicInStore: formData.publicInStore || false,
                 };
+                // Reposición de un producto que ya existió: heredar lo que falte
+                // (fotos, video, descripción, publicación) del último registro.
+                const newItemData = baseNewItem.status === 'in_stock'
+                    ? { ...baseNewItem, ...inheritStoreFields(baseNewItem, findStoreDonor(items, baseNewItem.productName, baseNewItem.condition)) }
+                    : baseNewItem;
 
                 // Optimistic UI update (temporary ID)
                 const tempId = crypto.randomUUID();
@@ -702,15 +721,20 @@ export default function Dashboard() {
                 ? items.filter(i => i.id !== id && normalizeText(i.productName) === targetName && i.status === 'in_stock')
                 : [];
 
-            setItems(prev => prev.map(i => 
-                (i.id === id || (targetName && normalizeText(i.productName) === targetName && i.status === 'in_stock'))
-                    ? { ...i, publicInStore: value }
-                    : i
-            ));
+            // Al publicar, los registros sin fotos/descripción recuperan los del
+            // último registro del mismo producto (p. ej. la venta de la tanda anterior).
+            const patchFor = (it: Item): Partial<Item> => {
+                if (!value || hasStoreContent(it)) return { publicInStore: value };
+                const { publicInStore: _ignored, ...content } = inheritStoreFields(it, findStoreDonor(items, it.productName, it.condition, it.id));
+                return { publicInStore: value, ...content };
+            };
+            const targets = [targetItem, ...siblingItems].filter((i): i is Item => !!i);
+            const patches = new Map(targets.map(t => [t.id, patchFor(t)]));
 
-            await itemService.updateItem(id, { publicInStore: value });
-            for (const sib of siblingItems) {
-                await itemService.updateItem(sib.id, { publicInStore: value });
+            setItems(prev => prev.map(i => patches.has(i.id) ? { ...i, ...patches.get(i.id) } : i));
+
+            for (const [itemId, patch] of patches) {
+                await itemService.updateItem(itemId, patch);
             }
         } catch (err) {
             console.error('Error updating publicInStore:', err);
@@ -835,7 +859,10 @@ export default function Dashboard() {
                     location: '',
                     estimatedSalePrice: item.estimatedSalePrice,
                     publishUrls: item.publishUrls,
-                    imageUrl: item.imageUrl
+                    imageUrl: item.imageUrl,
+                    // La unidad separada es el mismo producto: mismas fotos, textos y publicación
+                    ...pickStoreFields(item),
+                    publicInStore: item.publicInStore
                 });
 
                 // 4. Update the memory map so it renders properly right away in grouped views
@@ -895,6 +922,7 @@ export default function Dashboard() {
             const itemWithStoreImgs = itemsToMerge.find(i => (i.storeImages?.length || 0) > 0);
             const itemWithStoreVideo = itemsToMerge.find(i => i.storeVideoUrl);
             const itemWithGroup = itemsToMerge.find(i => i.storeGroup);
+            const itemWithVariant = itemsToMerge.find(i => i.storeVariantName);
             const isPublicInStore = itemsToMerge.some(i => i.publicInStore);
             const resolvedBatchRef = itemsToMerge.map(getItemBatchRef).find(Boolean);
 
@@ -905,6 +933,7 @@ export default function Dashboard() {
                 estimatedSalePrice: bestSalePrice || first.estimatedSalePrice || 0,
                 storeTitle: itemWithStoreTitle?.storeTitle || first.storeTitle,
                 storeGroup: itemWithGroup?.storeGroup || first.storeGroup,
+                storeVariantName: itemWithVariant?.storeVariantName || first.storeVariantName,
                 description: itemWithDesc?.description || first.description,
                 imageUrl: itemWithImg?.imageUrl || first.imageUrl,
                 storeImages: itemWithStoreImgs?.storeImages || first.storeImages,
@@ -990,11 +1019,9 @@ export default function Dashboard() {
             estimatedSalePrice: soldItem.estimatedSalePrice || 0,
             publishUrls: '',
             imageUrl: soldItem.imageUrl || '',
-            description: soldItem.description,
-            storeTitle: soldItem.storeTitle,
-            storeGroup: soldItem.storeGroup,
-            storeImages: soldItem.storeImages,
-            storeVideoUrl: soldItem.storeVideoUrl,
+            ...pickStoreFields(soldItem),
+            // "Volver a publicar": si la venta tenía datos de tienda, vuelve publicada
+            publicInStore: hasStoreContent(soldItem),
         };
         // Open the form pre-filled so the user can adjust before saving
         setEditingItem(null);
@@ -1033,11 +1060,7 @@ export default function Dashboard() {
             location: anchor.location || defaultLoc,
             estimatedSalePrice: anchor.estimatedSalePrice || 0,
             imageUrl: anchor.imageUrl || '',
-            description: anchor.description,
-            storeTitle: anchor.storeTitle,
-            storeGroup: anchor.storeGroup,
-            storeImages: anchor.storeImages,
-            storeVideoUrl: anchor.storeVideoUrl,
+            ...pickStoreFields(anchor),
             publicInStore: anchor.publicInStore,
             batchRef: getItemBatchRef(anchor),
         });
@@ -6110,22 +6133,28 @@ function BulkPricingBoard({
                         salePrice: item.unitSalePrice,
                         condition: item.condition,
                         batchRef: batchCode,
-                        location: batchDefaultLocation || existingStock.location
+                        location: batchDefaultLocation || existingStock.location,
+                        ...inheritStoreFields(existingStock, findStoreDonor(inventoryItems, item.productName, item.condition, existingStock.id))
                     });
                     setItemBatchMap((prev) => ({ ...prev, [existingStock.id]: batchCode }));
                 } else {
-                    const created = await itemService.createItem({
+                    const newStock = {
                         productName: item.productName,
                         purchasePrice: adjustedUnitCost,
                         salePrice: item.unitSalePrice,
                         quantity: item.quantity,
                         date: nowIso,
-                        status: 'in_stock',
+                        status: 'in_stock' as ItemStatus,
                         condition: item.condition,
-                        itemType: 'resale',
+                        itemType: 'resale' as ItemType,
                         batchRef: batchCode,
                         location: batchDefaultLocation,
                         category: item.category
+                    };
+                    // Producto que ya se vendió antes: recupera fotos, video, descripción y publicación
+                    const created = await itemService.createItem({
+                        ...newStock,
+                        ...inheritStoreFields(newStock, findStoreDonor(inventoryItems, item.productName, item.condition))
                     });
                     setItemBatchMap((prev) => ({ ...prev, [created.id]: batchCode }));
                 }
