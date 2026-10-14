@@ -208,25 +208,30 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         // Bloque izquierdo: la tienda es el llamado principal; WhatsApp, solo pedidos.
         // Sin título ni precio en la placa: el precio vigente es el de la publicación
         // de Facebook, y el resto (fotos, medidas, ubicación, envíos) está en la web.
+        // Los pedidos se gestionan solo por WhatsApp o por la web (no por Messenger).
         const leftX = pad;
         ctx.textAlign = 'left';
 
         ctx.fillStyle = '#ffffff';
         ctx.font = `800 ${46 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText(STORE_DOMAIN, leftX, barTop + 70 * s);
+        ctx.fillText(STORE_DOMAIN, leftX, barTop + 62 * s);
 
         ctx.fillStyle = '#aeb8d4';
         ctx.font = `500 ${22 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText('Fotos, medidas, ubicación y envíos en la web', leftX, barTop + 106 * s);
+        ctx.fillText('Fotos, medidas, ubicación y envíos en la web', leftX, barTop + 98 * s);
 
         ctx.fillStyle = '#e8b15b';
         ctx.font = `600 ${20 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText('Precio: el de esta publicación', leftX, barTop + 140 * s);
+        ctx.fillText('Precio: el de esta publicación', leftX, barTop + 130 * s);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `600 ${20 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+        ctx.fillText('Solo respondo por WhatsApp o por la web: gestioná tu pedido', leftX, barTop + 164 * s);
 
         const handleText = STORE_CONFIG.whatsappUser;
         if (handleText) {
-            const icoR = 19 * s;
-            const icoCX = leftX + icoR, icoCY = barTop + 188 * s;
+            const icoR = 18 * s;
+            const icoCX = leftX + icoR, icoCY = barTop + 205 * s;
             ctx.fillStyle = '#25d366';
             ctx.beginPath(); ctx.arc(icoCX, icoCY, icoR, 0, Math.PI * 2); ctx.fill();
             if (waIcon) {
@@ -237,10 +242,6 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             ctx.fillStyle = '#ffffff';
             ctx.font = `700 ${24 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
             ctx.fillText(handleText, textX, icoCY + 8 * s);
-            const handleW = ctx.measureText(handleText).width;
-            ctx.fillStyle = '#e8b15b';
-            ctx.font = `600 ${20 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-            ctx.fillText('· solo pedidos', textX + handleW + 10 * s, icoCY + 8 * s);
         }
 
         // Exportar a imagen arrastrable (falla si la foto externa no permite CORS)
@@ -362,7 +363,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                     <span className="font-mono text-[11px] break-all">{qrTarget.replace(/^https?:\/\//, '')}</span>
                                 </p>
                                 <p className="text-[11px] text-gray-400 leading-snug">
-                                    La placa no lleva título ni precio: el precio vigente es el de la publicación de Facebook. Fotos, descripción, medidas, ubicación y envíos están en la página. WhatsApp ({STORE_CONFIG.whatsappUser}) figura solo para pedidos.
+                                    La placa no lleva título ni precio: el precio vigente es el de la publicación de Facebook. Fotos, descripción, medidas, ubicación y envíos están en la página. Los pedidos se gestionan solo por WhatsApp ({STORE_CONFIG.whatsappUser}) o por la web.
                                 </p>
                             </div>
 

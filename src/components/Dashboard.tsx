@@ -4794,7 +4794,7 @@ Aquí va la descripción
                                             description.trim(),
                                             '',
                                             `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
-                                            `🛒 Pedidos por WhatsApp: ${STORE_CONFIG.whatsappUser}`,
+                                            `💬 Solo respondo por WhatsApp (${STORE_CONFIG.whatsappUser}) o por la web: gestioná tu pedido ahí.`,
                                         ].join('\n');
                                         navigator.clipboard.writeText(post).then(() => {
                                             setFbCopied(true);
