@@ -4793,7 +4793,7 @@ Aquí va la descripción
                                             '',
                                             description.trim(),
                                             '',
-                                            `📍 Fotos, medidas y ubicación: ${productUrl(item.id)}`,
+                                            `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
                                             `🛒 Pedidos por WhatsApp: ${STORE_CONFIG.whatsappUser}`,
                                         ].join('\n');
                                         navigator.clipboard.writeText(post).then(() => {

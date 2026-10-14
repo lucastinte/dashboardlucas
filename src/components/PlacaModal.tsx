@@ -85,10 +85,8 @@ function drawContain(c: CanvasRenderingContext2D, img: HTMLImageElement, x: numb
 export default function PlacaModal({ item, onClose }: { item: Item; onClose: () => void }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Toda la info (fotos, medidas, ubicación) está en la página del producto:
-    // la placa empuja hacia ahí. WhatsApp queda solo para pedidos.
-    const [title, setTitle] = useState('');
-    const [price, setPrice] = useState('');
+    // Toda la info (fotos, medidas, ubicación, envíos) está en la página del
+    // producto: la placa empuja hacia ahí. WhatsApp queda solo para pedidos.
     const [fmt, setFmt] = useState<{ w: number; h: number }>({ w: 1080, h: 1080 });
     const [baseImg, setBaseImg] = useState<HTMLImageElement | null>(null);
     const [tainted, setTainted] = useState(false);
@@ -207,22 +205,28 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
         ctx.font = `700 ${19 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
         ctx.fillText('ESCANEÁ Y MIRÁ TODO', qrX + qrCard / 2, qrY + qrCard + 28 * s);
 
-        // Bloque izquierdo: la tienda es el llamado principal; WhatsApp, solo pedidos
+        // Bloque izquierdo: la tienda es el llamado principal; WhatsApp, solo pedidos.
+        // Sin título ni precio en la placa: el precio vigente es el de la publicación
+        // de Facebook, y el resto (fotos, medidas, ubicación, envíos) está en la web.
         const leftX = pad;
         ctx.textAlign = 'left';
 
         ctx.fillStyle = '#ffffff';
         ctx.font = `800 ${46 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText(STORE_DOMAIN, leftX, barTop + 78 * s);
+        ctx.fillText(STORE_DOMAIN, leftX, barTop + 70 * s);
 
         ctx.fillStyle = '#aeb8d4';
         ctx.font = `500 ${22 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-        ctx.fillText('Fotos, medidas y ubicación en la web', leftX, barTop + 116 * s);
+        ctx.fillText('Fotos, medidas, ubicación y envíos en la web', leftX, barTop + 106 * s);
+
+        ctx.fillStyle = '#e8b15b';
+        ctx.font = `600 ${20 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+        ctx.fillText('Precio: el de esta publicación', leftX, barTop + 140 * s);
 
         const handleText = STORE_CONFIG.whatsappUser;
         if (handleText) {
             const icoR = 19 * s;
-            const icoCX = leftX + icoR, icoCY = barTop + 170 * s;
+            const icoCX = leftX + icoR, icoCY = barTop + 188 * s;
             ctx.fillStyle = '#25d366';
             ctx.beginPath(); ctx.arc(icoCX, icoCY, icoR, 0, Math.PI * 2); ctx.fill();
             if (waIcon) {
@@ -239,37 +243,6 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             ctx.fillText('· solo pedidos', textX + handleW + 10 * s, icoCY + 8 * s);
         }
 
-        // Título arriba
-        const t = title.trim();
-        if (t) {
-            const tg = ctx.createLinearGradient(0, 0, 0, 150 * s);
-            tg.addColorStop(0, 'rgba(6,9,16,.82)');
-            tg.addColorStop(1, 'rgba(6,9,16,0)');
-            ctx.fillStyle = tg;
-            ctx.fillRect(0, 0, W, 170 * s);
-            ctx.textAlign = 'left';
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${40 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-            ctx.fillText(t, pad, 74 * s);
-        }
-
-        // Precio badge
-        const p = price.trim();
-        if (p) {
-            ctx.font = `800 ${34 * s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-            const tw = ctx.measureText(p).width;
-            const bw = tw + 44 * s, bh = 62 * s;
-            const bx = W - pad - bw, by = pad;
-            ctx.save();
-            ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = 18 * s; ctx.shadowOffsetY = 4 * s;
-            ctx.fillStyle = '#e8b15b';
-            roundRect(ctx, bx, by, bw, bh, 14 * s); ctx.fill();
-            ctx.restore();
-            ctx.fillStyle = '#22160a';
-            ctx.textAlign = 'center';
-            ctx.fillText(p, bx + bw / 2, by + bh / 2 + 12 * s);
-        }
-
         // Exportar a imagen arrastrable (falla si la foto externa no permite CORS)
         try {
             setPreviewUrl(cv.toDataURL('image/png'));
@@ -279,7 +252,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             blobRef.current = null;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [title, price, qrTarget, fmt, baseImg, waIcon, loadingImg]);
+    }, [qrTarget, fmt, baseImg, waIcon, loadingImg]);
 
     useEffect(() => { render(); }, [render]);
 
@@ -300,7 +273,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
             return;
         }
         const a = document.createElement('a');
-        const t = (title.trim() || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
+        const t = (item.productName || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
         a.download = `placa-${t}.png`;
         a.href = previewUrl;
         a.click();
@@ -309,7 +282,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
     // Adjuntar un archivo PNG real al arrastre: así Facebook lo recibe como
     // si viniera del explorador de archivos (la URL de imagen sola no le sirve)
     const handleDragStart = (e: React.DragEvent) => {
-        const t = (title.trim() || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
+        const t = (item.productName || 'producto').replace(/[^\w]+/g, '-').toLowerCase().slice(0, 30);
         if (blobRef.current) {
             const file = new File([blobRef.current], `placa-${t}.png`, { type: 'image/png' });
             e.dataTransfer.items.add(file);
@@ -382,34 +355,6 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                 </div>
                             )}
 
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Título (opcional)</p>
-                                    {!title && (
-                                        <button onClick={() => setTitle((item.storeTitle || item.productName).slice(0, 42))} className="text-[11px] text-amber-600 hover:text-amber-700 font-medium">
-                                            usar el del producto
-                                        </button>
-                                    )}
-                                </div>
-                                <input type="text" maxLength={42} value={title} onChange={e => setTitle(e.target.value)}
-                                    placeholder="Sin título en la placa"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
-                            </div>
-
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Precio (opcional)</p>
-                                    {!price && (item.salePrice || item.estimatedSalePrice || 0) > 0 && (
-                                        <button onClick={() => setPrice(`$ ${(item.salePrice || item.estimatedSalePrice || 0).toLocaleString('es-AR')}`)} className="text-[11px] text-amber-600 hover:text-amber-700 font-medium">
-                                            usar el del producto
-                                        </button>
-                                    )}
-                                </div>
-                                <input type="text" maxLength={18} value={price} onChange={e => setPrice(e.target.value)}
-                                    placeholder="Sin precio en la placa"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-400" />
-                            </div>
-
                             <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-1.5">
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">A dónde lleva la placa</p>
                                 <p className="text-[12px] text-gray-600">
@@ -417,7 +362,7 @@ export default function PlacaModal({ item, onClose }: { item: Item; onClose: () 
                                     <span className="font-mono text-[11px] break-all">{qrTarget.replace(/^https?:\/\//, '')}</span>
                                 </p>
                                 <p className="text-[11px] text-gray-400 leading-snug">
-                                    La página del producto tiene fotos, descripción, medidas y ubicación. WhatsApp ({STORE_CONFIG.whatsappUser}) figura solo para pedidos. Se cambian en la configuración.
+                                    La placa no lleva título ni precio: el precio vigente es el de la publicación de Facebook. Fotos, descripción, medidas, ubicación y envíos están en la página. WhatsApp ({STORE_CONFIG.whatsappUser}) figura solo para pedidos.
                                 </p>
                             </div>
 
