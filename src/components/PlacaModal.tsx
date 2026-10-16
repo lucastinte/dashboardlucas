@@ -50,35 +50,66 @@ function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number,
     c.closePath();
 }
 
-/** Dibuja la imagen completa (contain) con fondo blurred para rellenar bordes. */
+/**
+ * Dibuja la imagen completa (contain). Lo que sobra se rellena con el borde de
+ * la foto espejado hacia afuera, a la misma escala: así el fondo continúa el
+ * contenido y no queda la costura que dejaba el cover ampliado (se veía como
+ * una copia de la foto pegada al costado, con el corte bien marcado).
+ */
 function drawContain(c: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
     const ir = img.width / img.height, r = w / h;
 
-    // Primero: dibujar una versión borrosa como fondo (cover) para rellenar
-    c.save();
-    c.filter = 'blur(40px) brightness(0.5)';
-    let sw, sh, sx, sy;
-    if (ir > r) { sh = img.height; sw = sh * r; sx = (img.width - sw) / 2; sy = 0; }
-    else { sw = img.width; sh = sw / r; sx = 0; sy = (img.height - sh) / 2; }
-    // Dibujar más grande para que el blur no deje bordes transparentes
-    c.drawImage(img, sx, sy, sw, sh, x - 40, y - 40, w + 80, h + 80);
-    c.restore();
-
-    // Después: dibujar la imagen completa centrada (contain)
     let dw, dh, dx, dy;
     if (ir > r) {
-        // Imagen más ancha que el canvas: ajustar por ancho
+        // Imagen más ancha que el canvas: ajustar por ancho, sobra arriba/abajo
         dw = w;
         dh = w / ir;
         dx = x;
         dy = y + (h - dh) / 2;
     } else {
-        // Imagen más alta que el canvas: ajustar por alto
+        // Imagen más alta que el canvas: ajustar por alto, sobra a los costados
         dh = h;
         dw = h * ir;
         dx = x + (w - dw) / 2;
         dy = y;
     }
+
+    const scale = dw / img.width; // píxeles de canvas por píxel de imagen
+
+    // Fondo: el borde de la foto espejado hacia afuera, difuminado.
+    c.save();
+    c.filter = 'blur(40px)';
+    if (dx > x) {
+        const bw = dx - x, sw = Math.min(img.width, bw / scale);
+        c.save(); c.translate(dx, dy); c.scale(-1, 1);
+        c.drawImage(img, 0, 0, sw, img.height, 0, 0, bw, dh);
+        c.restore();
+        c.save(); c.translate(dx + dw, dy); c.scale(-1, 1);
+        c.drawImage(img, img.width - sw, 0, sw, img.height, -bw, 0, bw, dh);
+        c.restore();
+    } else if (dy > y) {
+        const bh = dy - y, sh = Math.min(img.height, bh / scale);
+        c.save(); c.translate(dx, dy); c.scale(1, -1);
+        c.drawImage(img, 0, 0, img.width, sh, 0, 0, dw, bh);
+        c.restore();
+        c.save(); c.translate(dx, dy + dh); c.scale(1, -1);
+        c.drawImage(img, 0, img.height - sh, img.width, sh, 0, -bh, dw, bh);
+        c.restore();
+    }
+    c.restore();
+
+    // Oscurecer las franjas. Va aparte del blur para que el fondo se distinga
+    // de la foto también donde el navegador ignora ctx.filter.
+    c.fillStyle = 'rgba(8,12,22,.45)';
+    if (dx > x) {
+        c.fillRect(x, y, dx - x, h);
+        c.fillRect(dx + dw, y, w - dw - (dx - x), h);
+    } else if (dy > y) {
+        c.fillRect(x, y, w, dy - y);
+        c.fillRect(x, dy + dh, w, h - dh - (dy - y));
+    }
+
+    // Encima, la foto entera y nítida.
     c.drawImage(img, dx, dy, dw, dh);
 }
 
