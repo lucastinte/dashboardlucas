@@ -11,7 +11,6 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import PlacaModal from './PlacaModal';
 import { normalizeText, hasStoreContent, pickStoreFields, findStoreDonor, inheritStoreFields } from '../lib/storeFields';
 import { LocationsModal } from './LocationsModal';
-import StockSheetsPanel from './StockSheetsPanel';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
@@ -1375,9 +1374,6 @@ export default function Dashboard() {
                                 </button>
                             </div>
                         </div>
-
-                        {/* Stock → Google Sheets */}
-                        <StockSheetsPanel stockItems={stockItems} />
 
                         {/* Inventory List */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
