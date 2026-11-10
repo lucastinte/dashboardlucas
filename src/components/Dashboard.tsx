@@ -11,6 +11,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import PlacaModal from './PlacaModal';
 import { normalizeText, hasStoreContent, pickStoreFields, findStoreDonor, inheritStoreFields } from '../lib/storeFields';
 import { LocationsModal } from './LocationsModal';
+import { type ArcaFactura, ARCA_PREFILL_EVENT, ARCA_WINDOW_NAME, extractNumeroFactura, modalesFacturaAbiertos, resolveArcaMessage, totalNoCoincide, ultimaVentaFacturada } from '../lib/arcaFactura';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
 
@@ -145,6 +146,47 @@ export default function Dashboard() {
     const [editingItem, setEditingItem] = useState<Item | null>(null);
     const [storeImagesItem, setStoreImagesItem] = useState<Item | null>(null);
     const [placaItem, setPlacaItem] = useState<Item | null>(null);
+    // Factura recibida de ARCA para una venta sin modal abierto: se abre acá
+    const [arcaFacturaRecibida, setArcaFacturaRecibida] = useState<{ ventaId: string; factura: ArcaFactura } | null>(null);
+    const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
+    const toastTimer = useRef<number | undefined>(undefined);
+    const showToast = (text: string, tone: 'ok' | 'warn' = 'ok') => {
+        window.clearTimeout(toastTimer.current);
+        setToast({ text, tone });
+        toastTimer.current = window.setTimeout(() => setToast(null), 6000);
+    };
+    // El listener se registra una sola vez: lee las ventas actuales por ref
+    const itemsRef = useRef<Item[]>([]);
+    itemsRef.current = items;
+
+    // Número de factura que devuelve el userscript de ARCA por postMessage
+    useEffect(() => {
+        const onMessage = (event: MessageEvent) => {
+            const action = resolveArcaMessage(event, itemsRef.current, ultimaVentaFacturada.current);
+            switch (action.kind) {
+                case 'ignorar':
+                    return;
+                case 'venta-no-encontrada':
+                    showToast(`Llegó el número ${action.factura.numero} de ARCA, pero no encontré la venta. Cargalo a mano con "Pegar".`, 'warn');
+                    return;
+                case 'ya-facturada':
+                    showToast(`Número ${action.factura.numero} recibido de ARCA, pero "${action.venta.productName}" ya tiene la factura ${action.venta.nroComprobante}. No se cambió.`, 'warn');
+                    return;
+                case 'abrir-modal': {
+                    const detail = { ...action.factura, ventaId: action.venta.id };
+                    if (modalesFacturaAbiertos.has(action.venta.id)) {
+                        window.dispatchEvent(new CustomEvent(ARCA_PREFILL_EVENT, { detail }));
+                    } else {
+                        setArcaFacturaRecibida({ ventaId: action.venta.id, factura: detail });
+                    }
+                    showToast(`Número ${action.factura.numero} recibido de ARCA`);
+                    return;
+                }
+            }
+        };
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, []);
     const [isSaving, setIsSaving] = useState(false);
     const savingRef = useRef(false);
     const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -1464,6 +1506,39 @@ export default function Dashboard() {
                 <PlacaModal item={items.find(i => i.id === placaItem.id) ?? placaItem} onClose={() => setPlacaItem(null)} />
             )}
 
+            {/* Factura recibida de ARCA cuando el modal de esa venta no estaba abierto */}
+            {arcaFacturaRecibida && (() => {
+                const venta = items.find(i => i.id === arcaFacturaRecibida.ventaId);
+                if (!venta) return null;
+                return (
+                    <FacturarModal
+                        key={`${venta.id}-${arcaFacturaRecibida.factura.numero}`}
+                        item={venta}
+                        initialStep="confirm"
+                        arcaPrefill={arcaFacturaRecibida.factura}
+                        onClose={() => setArcaFacturaRecibida(null)}
+                        onFacturado={(id, nro) => handleToggleFacturado(id, true, nro)}
+                        onUpdateEnvio={handleUpdateEnvio}
+                    />
+                );
+            })()}
+
+            {toast && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className={`fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-sm z-[70] rounded-xl px-4 py-3 shadow-2xl text-sm font-medium flex items-start gap-2 ${
+                        toast.tone === 'ok' ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-amber-950'
+                    }`}
+                >
+                    {toast.tone === 'ok' ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
+                    <span className="flex-1">{toast.text}</span>
+                    <button type="button" onClick={() => setToast(null)} className="shrink-0 opacity-80 hover:opacity-100" aria-label="Cerrar aviso">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
             {/* Modal Overlay */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/30 backdrop-blur-sm transition-opacity">
@@ -2001,7 +2076,7 @@ function formatDateDDMMAAAA(dateStr: string): string {
 }
 
 // Facturar ARCA Modal
-function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: Item; onClose: () => void; onFacturado?: (id: string, nroComprobante?: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void }) {
+function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio, initialStep = 'form', arcaPrefill }: { item: Item; onClose: () => void; onFacturado?: (id: string, nroComprobante?: string) => void; onUpdateEnvio?: (id: string, envio: { envioAplica: boolean; envioCosto: number; envioMetodo: string; formasPago?: string[]; montoEfectivo?: number; montoTransferencia?: number; montoTarjeta?: number; montoMercadoPago?: number; montoOtro?: number }) => void; initialStep?: 'form' | 'confirm'; arcaPrefill?: ArcaFactura }) {
     const [producto, setProducto] = useState(
         item.itemType === 'personal' ? `${item.productName} usado` : item.productName
     );
@@ -2057,8 +2132,47 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
     const [envioCosto, setEnvioCosto] = useState(item.envioCosto || 0);
     const [envioMetodo, setEnvioMetodo] = useState(item.envioMetodo || '');
     const [showEnvioWarning, setShowEnvioWarning] = useState(false);
-    const [step, setStep] = useState<'form' | 'confirm'>('form');
-    const [nroComprobante, setNroComprobante] = useState(item.nroComprobante || '');
+    const [step, setStep] = useState<'form' | 'confirm'>(initialStep);
+    const [nroComprobante, setNroComprobante] = useState(arcaPrefill?.numero || item.nroComprobante || '');
+    // Datos que devolvió ARCA (número, CAE, total) — se muestran, no se guardan solos
+    const [arcaData, setArcaData] = useState<ArcaFactura | null>(arcaPrefill ?? null);
+    const [pegarError, setPegarError] = useState<string | null>(null);
+    const guardarRef = useRef<HTMLButtonElement>(null);
+
+    // Registrarse como modal abierto para esta venta y recibir el número de ARCA
+    // si llega mientras está abierto (el listener vive en el Dashboard).
+    useEffect(() => {
+        modalesFacturaAbiertos.add(item.id);
+        const onArca = (e: Event) => {
+            const detail = (e as CustomEvent<ArcaFactura & { ventaId: string }>).detail;
+            if (detail?.ventaId !== item.id) return;
+            setArcaData(detail);
+            setNroComprobante(detail.numero);
+            setPegarError(null);
+            setStep('confirm');
+        };
+        window.addEventListener(ARCA_PREFILL_EVENT, onArca);
+        return () => {
+            modalesFacturaAbiertos.delete(item.id);
+            window.removeEventListener(ARCA_PREFILL_EVENT, onArca);
+        };
+    }, [item.id]);
+
+    // Con el número ya escrito, el foco va a "Guardar": confirmar es un Enter
+    useEffect(() => {
+        if (step === 'confirm' && arcaData) guardarRef.current?.focus();
+    }, [step, arcaData]);
+
+    const handlePegar = async () => {
+        setPegarError(null);
+        try {
+            const numero = extractNumeroFactura(await navigator.clipboard.readText());
+            if (numero) setNroComprobante(numero);
+            else setPegarError('No encontré un número de factura en el portapapeles');
+        } catch {
+            setPegarError('No pude leer el portapapeles. Permití el acceso o pegalo con Ctrl+V / ⌘V');
+        }
+    };
 
     const formasPago = [
         { label: 'Contado', value: 'contado' },
@@ -2130,6 +2244,8 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
         const [y, m, d] = fecha.split('-');
         const fechaFormatted = `${d}/${m}/${y}`;
         const ventaObj: any = {
+            // El userscript de ARCA lo devuelve con el número de factura generado
+            ventaId: item.id,
             fecha: fechaFormatted,
             producto,
             cantidad,
@@ -2145,7 +2261,9 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
         }
         const base64 = btoa(JSON.stringify(ventaObj));
         const url = `https://fe.afip.gob.ar/rcel/jsp/index_bis.jsp?venta=${encodeURIComponent(base64)}`;
-        window.open(url, '_blank');
+        // Sin noopener/noreferrer: el userscript de ARCA responde por window.opener
+        ultimaVentaFacturada.current = item.id;
+        window.open(url, ARCA_WINDOW_NAME);
 
         const pagoDb = multiPago ? mapMontosToDb() : {};
         onUpdateEnvio?.(item.id, { envioAplica, envioCosto: Math.round(envioCosto), envioMetodo, formasPago: formasPagoSelected, ...pagoDb });
@@ -2381,18 +2499,47 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
                                     {' = '}<span className="text-white font-semibold">${totalConEnvio.toLocaleString()}</span>
                                 </p>
                             </div>
+                            {arcaData && (
+                                <div className="rounded-xl p-3 bg-emerald-950/40 border border-emerald-800/50 text-xs text-emerald-300 space-y-0.5">
+                                    <p className="flex items-center gap-1.5 font-semibold"><CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> Número recibido de ARCA — revisalo y guardá</p>
+                                    {arcaData.cae && <p className="text-emerald-400/80">CAE: <span className="font-mono">{arcaData.cae}</span></p>}
+                                    {arcaData.archivo && <p className="text-emerald-400/80 truncate">PDF: <span className="font-mono">{arcaData.archivo}</span></p>}
+                                </div>
+                            )}
+                            {arcaData && totalNoCoincide(arcaData.total, totalConEnvio) && (
+                                <div className="rounded-xl p-3 bg-amber-950/40 border border-amber-700/50 flex items-start gap-2">
+                                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                                    <p className="text-xs text-amber-300">
+                                        El total de la factura en ARCA (${Math.round(arcaData.total ?? 0).toLocaleString('es-AR')}) no coincide con el de la venta (${totalConEnvio.toLocaleString('es-AR')}). Revisá antes de guardar.
+                                    </p>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-1.5">N° de comprobante</label>
-                                <input
-                                    type="text"
-                                    value={nroComprobante}
-                                    onChange={e => setNroComprobante(e.target.value)}
-                                    placeholder="0003-00000123"
-                                    autoFocus
-                                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={nroComprobante}
+                                        onChange={e => { setNroComprobante(e.target.value); setPegarError(null); }}
+                                        placeholder="00001-00000106"
+                                        autoFocus={!arcaData}
+                                        className="flex-1 min-w-0 px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handlePegar}
+                                        className="shrink-0 px-3 py-2.5 bg-gray-800 border border-gray-700 text-gray-300 rounded-xl hover:bg-gray-700 hover:text-white transition-colors text-sm font-medium flex items-center gap-1.5"
+                                        title="Pegar el número de factura copiado (busca el formato 00001-00000106)"
+                                    >
+                                        <ClipboardPaste className="w-4 h-4" />
+                                        Pegar
+                                    </button>
+                                </div>
+                                {pegarError && <p className="text-xs text-amber-400 mt-1.5">{pegarError}</p>}
                                 <p className="text-xs text-gray-500 mt-1.5">
-                                    Copialo del PDF que generó ARCA. Queda guardado con la venta para rastrearlo después.
+                                    {arcaData
+                                        ? 'Llegó solo desde ARCA. Si no coincide con el PDF, corregilo antes de guardar.'
+                                        : 'Llega solo desde ARCA al emitir la factura. Si no llega, copialo del PDF y tocá Pegar.'}
                                 </p>
                             </div>
                             <p className="text-sm text-gray-400 text-center">
@@ -2408,8 +2555,9 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio }: { item: It
                                 No se facturó
                             </button>
                             <button
+                                ref={guardarRef}
                                 onClick={handleConfirmFacturado}
-                                className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                                className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-gray-900"
                             >
                                 <CheckCircle className="w-4 h-4" />
                                 Sí, facturada
