@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, LocationItem } from '../types';
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
@@ -11,6 +11,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import PlacaModal from './PlacaModal';
 import { normalizeText, hasStoreContent, pickStoreFields, findStoreDonor, inheritStoreFields } from '../lib/storeFields';
 import { LocationsModal } from './LocationsModal';
+import { money, moneyCompact, percent } from '../lib/format';
 import { type ArcaFactura, ARCA_PREFILL_EVENT, ARCA_WINDOW_NAME, extractNumeroFactura, modalesFacturaAbiertos, resolveArcaMessage, totalNoCoincide, ultimaVentaFacturada } from '../lib/arcaFactura';
 
 type Tab = 'dashboard' | 'inventory' | 'pricing' | 'facturacion';
@@ -57,9 +58,9 @@ const getBatchLabel = (batchRef?: string) => {
 
 
 const withdrawalLabels: Record<string, { label: string; color: string; bgColor: string }> = {
-    regalo: { label: 'REGALO', color: 'text-pink-700', bgColor: 'bg-pink-100' },
-    uso_personal: { label: 'USO PROPIO', color: 'text-violet-700', bgColor: 'bg-violet-100' },
-    perdida: { label: 'PÉRDIDA', color: 'text-red-700', bgColor: 'bg-red-100' }
+    regalo: { label: 'REGALO', color: 'text-pink-700 dark:text-pink-200', bgColor: 'bg-pink-100 dark:bg-pink-900/60' },
+    uso_personal: { label: 'USO PROPIO', color: 'text-violet-700 dark:text-violet-200', bgColor: 'bg-violet-100 dark:bg-violet-900/60' },
+    perdida: { label: 'PÉRDIDA', color: 'text-red-700 dark:text-red-200', bgColor: 'bg-red-100 dark:bg-red-900/60' }
 };
 
 const reconcileItemBatchMap = (inventoryItems: Item[], history: Array<Partial<BatchRecord>>, currentMap: Record<string, string>) => {
@@ -979,8 +980,8 @@ export default function Dashboard() {
 
         const confirmMsg = `¿Unificar ${itemsToMerge.length} registros de "${first.productName}" en ${loc}?\n\n` +
             `• Cantidad total: ${totalQty} unidades\n` +
-            `• Costo de compra promedio: $${avgCost.toLocaleString('es-AR')}\n` +
-            (bestSalePrice > 0 ? `• Precio de venta: $${bestSalePrice.toLocaleString('es-AR')}\n` : '') +
+            `• Costo de compra promedio: ${money(avgCost)}\n` +
+            (bestSalePrice > 0 ? `• Precio de venta: ${money(bestSalePrice)}\n` : '') +
             `\nSe consolidarán en 1 sola fila limpia y se conservarán fotos y datos de tienda.`;
 
         if (!window.confirm(confirmMsg)) return;
@@ -1162,7 +1163,9 @@ export default function Dashboard() {
     const resaleRevenue = soldResale.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
     const totalProfit = resaleRevenue - totalCostSold;
     const personalIncome = soldPersonal.reduce((acc, item) => acc + ((item.salePrice || 0) * item.quantity), 0);
-    const totalUnitsSold = soldItems.reduce((acc, item) => acc + item.quantity, 0);
+    // Regalos, uso personal y pérdidas se guardan como "venta" a $0: no son unidades vendidas
+    const totalUnitsSold = soldItems.filter(i => !i.withdrawalReason).reduce((acc, item) => acc + item.quantity, 0);
+    const totalUnitsWithdrawn = soldItems.filter(i => i.withdrawalReason).reduce((acc, item) => acc + item.quantity, 0);
     const profitMargin = resaleRevenue > 0 ? (totalProfit / resaleRevenue) * 100 : 0;
 
     // Stock value (potential revenue or sunk cost)
@@ -1205,47 +1208,76 @@ export default function Dashboard() {
             <div className="max-w-7xl mx-auto space-y-5 sm:space-y-8">
 
                 {/* Header & Tabs */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 sm:gap-6">
-                    <div>
-                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">Control de Ventas</h1>
-                        <p className="text-gray-500 mt-1.5 sm:mt-2 text-sm sm:text-lg">Gestiona tu stock, ventas y ganancias en un solo lugar.</p>
+                <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 sm:gap-6">
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                        <div className="min-w-0">
+                            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-gray-900">Control de Ventas</h1>
+                            <p className="text-gray-500 mt-1 sm:mt-2 text-sm sm:text-lg">Gestiona tu stock, ventas y ganancias en un solo lugar.</p>
+                        </div>
+                        {/* Celular: tema y salir como íconos junto al título (antes ocupaban dos renglones enteros) */}
+                        <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+                                className="h-10 w-10 rounded-xl border border-gray-200 bg-white text-gray-700 active:scale-95 transition-all flex items-center justify-center shadow-sm"
+                                aria-label={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+                            >
+                                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={signOut}
+                                className="h-10 w-10 rounded-xl border border-gray-200 bg-white text-gray-700 active:scale-95 transition-all flex items-center justify-center shadow-sm"
+                                aria-label="Cerrar sesión"
+                            >
+                                <LogOut className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="w-full md:w-auto flex flex-col sm:flex-row gap-2">
                         <div className="grid grid-cols-4 bg-white p-1 rounded-xl shadow-sm border border-gray-200">
                             <button
                                 onClick={() => setActiveTab('dashboard')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
+                                aria-current={activeTab === 'dashboard' ? 'page' : undefined}
+                                className={`px-1 sm:px-3 py-1.5 sm:py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'dashboard' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
-                                <div className="flex items-center justify-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
                                     <TrendingUp className="w-4 h-4" />
+                                    <span className="sm:hidden text-[11px] leading-tight">Resumen</span>
                                     <span className="hidden sm:inline">Resumen</span>
                                 </div>
                             </button>
                             <button
                                 onClick={() => setActiveTab('inventory')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
+                                aria-current={activeTab === 'inventory' ? 'page' : undefined}
+                                className={`px-1 sm:px-3 py-1.5 sm:py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'inventory' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
-                                <div className="flex items-center justify-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
                                     <Box className="w-4 h-4" />
+                                    <span className="sm:hidden text-[11px] leading-tight">Inventario</span>
                                     <span className="hidden sm:inline">Inventario ({stockItems.length})</span>
                                 </div>
                             </button>
                             <button
                                 onClick={() => setActiveTab('pricing')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'pricing' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
+                                aria-current={activeTab === 'pricing' ? 'page' : undefined}
+                                className={`px-1 sm:px-3 py-1.5 sm:py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'pricing' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
-                                <div className="flex items-center justify-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
                                     <DollarSign className="w-4 h-4" />
+                                    <span className="sm:hidden text-[11px] leading-tight">Pedidos</span>
                                     <span className="hidden sm:inline">Pedidos</span>
                                 </div>
                             </button>
                             <button
                                 onClick={() => setActiveTab('facturacion')}
-                                className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'facturacion' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
+                                aria-current={activeTab === 'facturacion' ? 'page' : undefined}
+                                className={`px-1 sm:px-3 py-1.5 sm:py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95 ${activeTab === 'facturacion' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-gray-900 active:ring-2 active:ring-gray-300 dark:active:ring-gray-600'}`}
                             >
-                                <div className="flex items-center justify-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
                                     <Receipt className="w-4 h-4" />
+                                    <span className="sm:hidden text-[11px] leading-tight">ARCA</span>
                                     <span className="hidden sm:inline">ARCA</span>
                                 </div>
                             </button>
@@ -1254,7 +1286,7 @@ export default function Dashboard() {
                         <button
                             type="button"
                             onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
-                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-gray-900 hover:bg-gray-50 active:scale-95 active:brightness-95 transition-all flex items-center justify-center gap-2 shadow-sm"
+                            className="hidden sm:flex h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-gray-900 hover:bg-gray-50 active:scale-95 active:brightness-95 transition-all items-center justify-center gap-2 shadow-sm"
                             title={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
                         >
                             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -1264,11 +1296,11 @@ export default function Dashboard() {
                         <button
                             type="button"
                             onClick={signOut}
-                            className="h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-red-600 hover:border-red-200 hover:bg-red-50 active:scale-95 active:brightness-95 transition-all flex items-center justify-center gap-2 shadow-sm"
+                            className="hidden sm:flex h-11 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 hover:text-red-600 hover:border-red-200 hover:bg-red-50 active:scale-95 active:brightness-95 transition-all items-center justify-center gap-2 shadow-sm"
                             title="Cerrar sesión"
                         >
                             <LogOut className="w-4 h-4" />
-                            <span className="text-sm font-medium hidden sm:inline">Salir</span>
+                            <span className="text-sm font-medium">Salir</span>
                         </button>
                     </div>
                 </div>
@@ -1281,29 +1313,31 @@ export default function Dashboard() {
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                             <MetricCard
                                 title="Ganancia Reventa"
-                                value={`$${totalProfit.toLocaleString()}`}
+                                value={money(totalProfit)}
                                 icon={<TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />}
-                                trend={profitMargin > 0 ? `+${profitMargin.toFixed(1)}% margen` : '0% margen'}
-                                trendColor="emerald"
+                                trend={resaleRevenue > 0 ? `${profitMargin > 0 ? '+' : ''}${percent(profitMargin)} margen` : undefined}
+                                trendColor={profitMargin < 0 ? 'rose' : 'emerald'}
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Ingresos Totales"
-                                value={`$${totalSales.toLocaleString()}`}
+                                value={money(totalSales)}
                                 icon={<DollarSign className="w-6 h-6 text-blue-600 dark:text-blue-400" />}
-                                trend={personalIncome > 0 ? `$${personalIncome.toLocaleString()} propios` : undefined}
+                                trend={personalIncome > 0 ? `${money(personalIncome)} propios` : undefined}
                                 trendColor="violet"
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Unidades Vendidas"
-                                value={totalUnitsSold.toString()}
+                                value={totalUnitsSold.toLocaleString('es-AR')}
                                 icon={<Package className="w-6 h-6 text-violet-600 dark:text-violet-400" />}
+                                trend={totalUnitsWithdrawn > 0 ? `+${totalUnitsWithdrawn} retirada${totalUnitsWithdrawn !== 1 ? 's' : ''}` : undefined}
+                                trendColor="gray"
                                 bgColor="bg-white"
                             />
                             <MetricCard
                                 title="Valor en Stock"
-                                value={`$${totalStockValue.toLocaleString()}`}
+                                value={money(totalStockValue)}
                                 icon={<Box className="w-6 h-6 text-orange-600 dark:text-orange-400" />}
                                 bgColor="bg-white"
                             />
@@ -1314,11 +1348,11 @@ export default function Dashboard() {
                             <div className="flex flex-wrap justify-between items-baseline gap-x-3 gap-y-1 mb-4 sm:mb-6">
                                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Tendencia de Ganancias</h2>
                                 <p className="text-xs sm:text-sm text-gray-500">
-                                    Total del período: <span className="font-bold tabular-nums text-gray-900">${totalProfit.toLocaleString('es-AR')}</span>
+                                    Total del período: <span className="font-bold tabular-nums text-gray-900">{money(totalProfit)}</span>
                                 </p>
                             </div>
                             <div className="h-[240px] sm:h-[300px] w-full">
-                                <ProfitChart items={soldItems} dark={theme === 'dark'} />
+                                <ProfitChart items={soldResale} dark={theme === 'dark'} />
                             </div>
                         </div>
 
@@ -1332,7 +1366,7 @@ export default function Dashboard() {
                                         </div>
                                         <div>
                                             <h2 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100">Cobros Pendientes</h2>
-                                            <p className="text-xs text-amber-700 dark:text-amber-400">{cobrosPendientes.length} venta{cobrosPendientes.length > 1 ? 's' : ''} sin cobrar — Total: <span className="font-bold">${totalCobrosPendientes.toLocaleString()}</span></p>
+                                            <p className="text-xs text-amber-700 dark:text-amber-400">{cobrosPendientes.length} venta{cobrosPendientes.length > 1 ? 's' : ''} sin cobrar — Total: <span className="font-bold">{money(totalCobrosPendientes)}</span></p>
                                         </div>
                                     </div>
                                 </div>
@@ -1354,13 +1388,13 @@ export default function Dashboard() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3 shrink-0">
-                                                <span className="font-bold text-gray-900 dark:text-gray-100 text-sm">${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
+                                                <span className="font-bold text-gray-900 dark:text-gray-100 text-sm">{money(((item.salePrice || 0) * item.quantity))}</span>
                                                 <button
                                                     onClick={() => handleToggleCobrado(item.id, true)}
                                                     className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 active:scale-95 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
                                                 >
                                                     <Check className="w-3.5 h-3.5" />
-                                                    Cobrado
+                                                    Marcar cobrado
                                                 </button>
                                             </div>
                                         </div>
@@ -1398,21 +1432,21 @@ export default function Dashboard() {
                                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Inventario Actual</h2>
                                 <p className="text-gray-500 text-sm">Productos disponibles para la venta y control de stock.</p>
                             </div>
-                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                            <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
                                 <button
                                     type="button"
                                     onClick={() => setIsLocationsModalOpen(true)}
-                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
+                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 sm:px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
                                 >
                                     <MapPin className="w-4 h-4 text-blue-600" />
                                     <span>Ubicaciones ({locations.length})</span>
                                 </button>
                                 <button
                                     onClick={() => openNewModal('in_stock')}
-                                    className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white px-5 py-2.5 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium text-sm"
+                                    className="w-full sm:w-auto whitespace-nowrap text-sm sm:text-base bg-black hover:bg-gray-800 text-white px-3 sm:px-5 py-2.5 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium text-sm"
                                 >
-                                    <Plus className="w-5 h-5 mr-2" />
-                                    Agregar Producto
+                                    <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 shrink-0" />
+                                    Agregar<span className="hidden sm:inline">&nbsp;Producto</span>
                                 </button>
                             </div>
                         </div>
@@ -1601,7 +1635,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
     const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
     const [facturarItem, setFacturarItem] = useState<Item | null>(null);
 
-    const fmtMoney = (n: number) => '$' + Math.round(n).toLocaleString('es-AR');
+    const fmtMoney = money;
     const getItemTotal = (i: Item) => ((i.salePrice || 0) * i.quantity) + (i.envioAplica && i.envioCosto ? i.envioCosto : 0);
 
     // Cutoff: solo contar ventas desde 18/04/2026 en adelante
@@ -1703,7 +1737,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
     // barMax must account for reference lines
-    const barMax = Math.max(...monthlyTotals.map(m => m.total), TOPE.mensualTope * 1.15, 1);
+    const barMax = Math.max(...monthlyTotals.map(m => m.total), TOPE.mensualTope, 1) * 1.15;
 
     // Reference line positions as percentages
     const lineTopePercent = (TOPE.mensualTope / barMax) * 100;
@@ -1717,7 +1751,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                     <div>
                         <h2 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
                             <Receipt className="w-5 h-5 text-blue-600" />
-                            Control de Facturacion ARCA
+                            Control de Facturación ARCA
                         </h2>
                         <p className="text-gray-500 text-sm mt-1">Seguimiento de ventas facturadas — separado de ganancias e inventario.</p>
                     </div>
@@ -1735,38 +1769,38 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado este mes</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalMes)}</p>
-                    <p className="text-sm text-gray-500 mt-1">{facturadosMes.length} {facturadosMes.length === 1 ? 'venta' : 'ventas'}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100 min-w-0">
+                    <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado este mes</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1.5 sm:mt-2 tabular-nums tracking-tight">{fmtMoney(totalMes)}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">{facturadosMes.length} {facturadosMes.length === 1 ? 'venta' : 'ventas'}</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado en {selYear}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalAnio)}</p>
-                    <p className="text-sm text-gray-500 mt-1">{facturadosAnio.length} ventas facturadas</p>
+                <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100 min-w-0">
+                    <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider font-semibold">Facturado en {selYear}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1.5 sm:mt-2 tabular-nums tracking-tight">{fmtMoney(totalAnio)}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">{facturadosAnio.length} {facturadosAnio.length === 1 ? 'venta facturada' : 'ventas facturadas'}</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100 min-w-0">
                     <div className="flex items-center gap-1.5">
                         <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
-                        <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Rolling 12 meses</p>
+                        <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider font-semibold">Rolling 12 meses</p>
                     </div>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(totalRolling)}</p>
-                    <p className="text-sm text-gray-500 mt-1">{facturadosRolling.length} ventas — ultimos 365 dias</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1.5 sm:mt-2 tabular-nums tracking-tight">{fmtMoney(totalRolling)}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">{facturadosRolling.length} {facturadosRolling.length === 1 ? 'venta' : 'ventas'} — últimos 365 días</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Tope anual cat. {CATEGORIA_ACTUAL}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">{fmtMoney(TOPE.anual)}</p>
-                    <p className="text-sm text-gray-500 mt-1">{fmtMoney(Math.max(0, TOPE.anual - totalRolling))} restante</p>
+                <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100 min-w-0">
+                    <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider font-semibold">Tope anual cat. {CATEGORIA_ACTUAL}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1.5 sm:mt-2 tabular-nums tracking-tight">{fmtMoney(TOPE.anual)}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">{fmtMoney(Math.max(0, TOPE.anual - totalRolling))} restante</p>
                 </div>
             </div>
 
             {/* Progress bar — rolling 12 meses */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                <div className="flex justify-between items-center mb-3">
+            <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex justify-between items-center gap-3 mb-3">
                     <p className="text-sm font-semibold text-gray-700">Progreso rolling 12 meses vs tope cat. {CATEGORIA_ACTUAL}</p>
                     <p className="text-sm font-bold" style={{ color: getProgressColor(porcentajeRolling) }}>
-                        {porcentajeRolling.toFixed(1)}%
+                        {percent(porcentajeRolling)}
                     </p>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
@@ -1795,60 +1829,69 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                 )}
             </div>
 
-            {/* Monthly bar chart with reference lines */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                <p className="text-sm font-semibold text-gray-700 mb-4">Facturado por mes — {selYear}</p>
-                <div className="relative">
-                    {/* Reference lines */}
-                    <div
-                        className="absolute left-0 right-0 border-t-2 border-dashed border-gray-300 z-10 pointer-events-none"
-                        style={{ bottom: `${lineTopePercent}%` }}
-                    >
-                        <span className="absolute right-0 -top-4 text-[9px] text-gray-400 font-medium bg-white px-1">
-                            {fmtMoney(TOPE.mensualTope)} tope
-                        </span>
+            {/* Facturado por mes, con las líneas de tope y de margen holgado.
+                El área de dibujo tiene alto fijo y las barras se posicionan dentro en
+                porcentaje: con las barras dentro de una columna flex sin alto, el
+                porcentaje se resolvía a 0 y no se dibujaba ninguna. */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-5">
+                    <p className="text-sm font-semibold text-gray-700">Facturado por mes — {selYear}</p>
+                    <div className="flex items-center gap-3 text-[10px] sm:text-[11px] text-gray-500">
+                        <span className="inline-flex items-center gap-1"><span className="w-3 border-t-2 border-dashed border-gray-400 dark:border-slate-500" /> Tope {moneyCompact(TOPE.mensualTope)}</span>
+                        <span className="inline-flex items-center gap-1"><span className="w-3 border-t-2 border-dashed border-emerald-400" /> Holgado {moneyCompact(TOPE.mensualSeguro)}</span>
                     </div>
-                    <div
-                        className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-400 z-10 pointer-events-none"
-                        style={{ bottom: `${lineSeguroPercent}%` }}
-                    >
-                        <span className="absolute right-0 -top-4 text-[9px] text-emerald-500 font-medium bg-white px-1">
-                            {fmtMoney(TOPE.mensualSeguro)} holgado
-                        </span>
-                    </div>
-                    <div className="flex items-end gap-1 sm:gap-2 h-44">
+                </div>
+                <div className="relative h-44">
+                    <div className="absolute inset-x-0 border-t-2 border-dashed border-gray-300 dark:border-slate-500 pointer-events-none" style={{ bottom: `${lineTopePercent}%` }} />
+                    <div className="absolute inset-x-0 border-t-2 border-dashed border-emerald-400 pointer-events-none" style={{ bottom: `${lineSeguroPercent}%` }} />
+                    <div className="absolute inset-0 flex items-end gap-1 sm:gap-2">
                         {monthlyTotals.map(m => {
+                            const selected = m.month === selMonth - 1;
                             const barColor = m.total > TOPE.mensualTope
                                 ? 'bg-red-500'
                                 : m.total > TOPE.mensualSeguro
                                     ? 'bg-amber-400'
-                                    : m.month === selMonth - 1
+                                    : selected
                                         ? 'bg-blue-600'
-                                        : m.total > 0
-                                            ? 'bg-blue-200 hover:bg-blue-300'
-                                            : 'bg-gray-100';
+                                        : 'bg-blue-300 group-hover:bg-blue-400';
+                            const h = m.total > 0 ? Math.max((m.total / barMax) * 100, 3) : 0;
                             return (
-                                <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                                    <span className="text-[10px] text-gray-500 font-medium">
-                                        {m.total > 0 ? `$${(m.total / 1000).toFixed(0)}k` : ''}
-                                    </span>
-                                    <div
-                                        className={`w-full rounded-t-md transition-all duration-500 cursor-pointer ${barColor}`}
-                                        style={{ height: `${Math.max((m.total / barMax) * 100, m.total > 0 ? 4 : 1)}%` }}
-                                        title={`${monthNames[m.month]}: ${fmtMoney(m.total)} (${m.count} ventas)`}
-                                        onClick={() => setSelectedMonth(`${selYear}-${String(m.month + 1).padStart(2, '0')}`)}
+                                <button
+                                    key={m.month}
+                                    type="button"
+                                    className="group relative flex-1 h-full cursor-pointer"
+                                    title={`${monthNames[m.month]}: ${fmtMoney(m.total)} (${m.count} ${m.count === 1 ? 'venta' : 'ventas'})`}
+                                    aria-label={`${monthNames[m.month]}: ${fmtMoney(m.total)}, ${m.count} ${m.count === 1 ? 'venta' : 'ventas'}`}
+                                    aria-pressed={selected}
+                                    onClick={() => setSelectedMonth(`${selYear}-${String(m.month + 1).padStart(2, '0')}`)}
+                                >
+                                    {m.total > 0 && (
+                                        <span
+                                            className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] sm:text-[10px] font-semibold tabular-nums ${selected ? 'text-blue-600' : 'text-gray-500'}`}
+                                            style={{ bottom: `calc(${h}% + 3px)` }}
+                                        >
+                                            {moneyCompact(m.total)}
+                                        </span>
+                                    )}
+                                    <span
+                                        className={`absolute bottom-0 inset-x-0 transition-all duration-500 ${m.total > 0 ? `rounded-t-md ${barColor}` : 'bg-gray-200 dark:bg-slate-700'}`}
+                                        style={{ height: m.total > 0 ? `${h}%` : '2px' }}
                                     />
-                                    <span className={`text-[10px] font-medium ${m.month === selMonth - 1 ? 'text-blue-600' : 'text-gray-400'}`}>
-                                        {m.label}
-                                    </span>
-                                </div>
+                                </button>
                             );
                         })}
                     </div>
                 </div>
+                <div className="flex gap-1 sm:gap-2 mt-1.5">
+                    {monthlyTotals.map(m => (
+                        <span key={m.month} className={`flex-1 text-center text-[10px] font-medium ${m.month === selMonth - 1 ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>
+                            {m.label}
+                        </span>
+                    ))}
+                </div>
                 {/* Sugerencia de tope mensual */}
                 <p className="mt-4 text-xs text-gray-400 text-center">
-                    Para mantenerte holgado en cat. {CATEGORIA_ACTUAL}, no factures mas de <span className="font-semibold text-gray-600">{fmtMoney(TOPE.mensualSeguro)}/mes</span> (tope anual / 12 x 0.85).
+                    Para mantenerte holgado en cat. {CATEGORIA_ACTUAL}, no factures más de <span className="font-semibold text-gray-600">{fmtMoney(TOPE.mensualSeguro)}/mes</span> (tope anual ÷ 12 × 0,85).
                 </p>
             </div>
 
@@ -1979,7 +2022,7 @@ function FacturacionTab({ items, onToggleFacturado, onToggleNoFacturar, onUpdate
                                 <AlertTriangle className="w-4 h-4" />
                                 Ventas sin facturar ({sinFacturar.length})
                             </h3>
-                            <p className="text-sm text-amber-600 mt-1">Estas ventas aun no fueron marcadas como facturadas.</p>
+                            <p className="text-sm text-amber-600 mt-1">Estas ventas aún no fueron marcadas como facturadas.</p>
                         </div>
                         <div className="hidden sm:block overflow-x-auto">
                             <table className="w-full text-left text-sm text-gray-600">
@@ -2386,11 +2429,11 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio, initialStep 
                                                 : 'bg-gray-800/50 border border-gray-700/50 text-gray-400'
                                     }`}>
                                         {sumaMontos === totalConEnvio ? (
-                                            <><CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> Montos verificados: ${sumaMontos.toLocaleString()}</>
+                                            <><CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> Montos verificados: {money(sumaMontos)}</>
                                         ) : sumaMontos > 0 ? (
-                                            <><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> Suma ${sumaMontos.toLocaleString()} ≠ Total ${totalConEnvio.toLocaleString()}</>
+                                            <><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> Suma {money(sumaMontos)} ≠ Total {money(totalConEnvio)}</>
                                         ) : (
-                                            <span>Ingresá los montos por forma de pago (total: ${totalConEnvio.toLocaleString()})</span>
+                                            <span>Ingresá los montos por forma de pago (total: {money(totalConEnvio)})</span>
                                         )}
                                     </div>
                                 )}
@@ -2446,18 +2489,18 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio, initialStep 
 
                             <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 space-y-1">
                                 <div className="flex justify-between text-xs text-gray-400">
-                                    <span>Producto ({cantidad} x ${Math.round(precio).toLocaleString()})</span>
-                                    <span className="text-gray-300">${totalProducto.toLocaleString()}</span>
+                                    <span>Producto ({cantidad} x {money(Math.round(precio))})</span>
+                                    <span className="text-gray-300">{money(totalProducto)}</span>
                                 </div>
                                 {envioAplica && envioCosto > 0 && (
                                     <div className="flex justify-between text-xs text-gray-400">
                                         <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Envío{envioMetodo ? ` (${envioMetodo})` : ''}</span>
-                                        <span className="text-gray-300">${Math.round(envioCosto).toLocaleString()}</span>
+                                        <span className="text-gray-300">{money(Math.round(envioCosto))}</span>
                                     </div>
                                 )}
                                 <div className="flex justify-between pt-1 border-t border-gray-700/50">
                                     <span className="text-xs text-gray-400">Total a facturar</span>
-                                    <span className="text-white font-semibold text-sm">${totalConEnvio.toLocaleString()}</span>
+                                    <span className="text-white font-semibold text-sm">{money(totalConEnvio)}</span>
                                 </div>
                             </div>
                         </div>
@@ -2494,9 +2537,9 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio, initialStep 
                             <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
                                 <p className="text-sm text-gray-300 font-medium">{producto}</p>
                                 <p className="text-xs text-gray-500 mt-1">
-                                    {cantidad} x ${Math.round(precio).toLocaleString()}
-                                    {envioAplica && envioCosto > 0 ? ` + envío $${Math.round(envioCosto).toLocaleString()}` : ''}
-                                    {' = '}<span className="text-white font-semibold">${totalConEnvio.toLocaleString()}</span>
+                                    {cantidad} x {money(Math.round(precio))}
+                                    {envioAplica && envioCosto > 0 ? ` + envío ${money(Math.round(envioCosto))}` : ''}
+                                    {' = '}<span className="text-white font-semibold">{money(totalConEnvio)}</span>
                                 </p>
                             </div>
                             {arcaData && (
@@ -2510,7 +2553,7 @@ function FacturarModal({ item, onClose, onFacturado, onUpdateEnvio, initialStep 
                                 <div className="rounded-xl p-3 bg-amber-950/40 border border-amber-700/50 flex items-start gap-2">
                                     <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                                     <p className="text-xs text-amber-300">
-                                        El total de la factura en ARCA (${Math.round(arcaData.total ?? 0).toLocaleString('es-AR')}) no coincide con el de la venta (${totalConEnvio.toLocaleString('es-AR')}). Revisá antes de guardar.
+                                        El total de la factura en ARCA ({money(Math.round(arcaData.total ?? 0))}) no coincide con el de la venta ({money(totalConEnvio)}). Revisá antes de guardar.
                                     </p>
                                 </div>
                             )}
@@ -2592,153 +2635,140 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
     return (
         <>
             {facturarItem && <FacturarModal item={facturarItem} onClose={() => setFacturarItem(null)} onFacturado={(id, nro) => onToggleFacturado(id, true, nro)} onUpdateEnvio={onUpdateEnvio} />}
-            <div className="sm:hidden p-3 space-y-3">
+            {/* Celular: tarjeta compacta — datos en una línea, importes en una franja y acciones en una fila */}
+            <div className="sm:hidden p-3 space-y-2.5">
                 {items.map((item) => {
-                    const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
+                    const isPersonal = item.itemType === 'personal';
+                    const total = (item.salePrice || 0) * item.quantity;
+                    const profit = total - (item.purchasePrice * item.quantity);
                     const isPositive = profit >= 0;
+                    const unitHint = item.quantity > 1 ? ' c/u' : '';
+                    const iconBtn = 'h-10 w-10 shrink-0 rounded-xl border flex items-center justify-center transition-all active:scale-95 active:brightness-95';
+                    const meta = [
+                        item.saleDate ? formatDateDDMMAAAA(item.saleDate) : null,
+                        resolveBatchRef(item) || 'Venta directa',
+                        conditionLabelMap[item.condition || 'nuevo'],
+                        item.location || null,
+                    ].filter(Boolean).join(' · ');
 
                     return (
-                        <div key={item.id} className={`rounded-2xl border p-4 shadow-sm ${item.itemType === 'personal' ? 'border-violet-200 bg-violet-50/30' : 'border-gray-200 bg-white'}`}>
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                    {item.imageUrl && (
-                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                            <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
-                                        </div>
-                                    )}
-                                    <div>
-                                        <h3 className="font-semibold text-gray-900 leading-tight">{item.productName}</h3>
-                                        <div className="flex gap-1 flex-wrap mt-0.5">
-                                            {item.itemType === 'personal' && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded inline-block">PROPIO</span>}
+                        <div key={item.id} className={`rounded-2xl border p-3.5 shadow-sm ${isPersonal ? 'border-violet-200 bg-violet-50/30 dark:border-violet-800/50 dark:bg-violet-950/25' : 'border-gray-200 bg-white'}`}>
+                            <div className="flex items-start gap-3">
+                                {item.imageUrl && (
+                                    <div className="w-11 h-11 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                        <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-semibold text-gray-900 leading-snug text-[15px] line-clamp-2">{item.productName}</h3>
+                                    <p className="text-xs text-gray-500 mt-0.5">{meta}</p>
+                                    {(isPersonal || item.withdrawalReason) && (
+                                        <div className="flex gap-1 flex-wrap mt-1">
+                                            {isPersonal && <span className="text-[10px] font-bold bg-violet-100 text-violet-600 dark:bg-violet-900/60 dark:text-violet-200 px-1.5 py-0.5 rounded inline-block">PROPIO</span>}
                                             {item.withdrawalReason && (() => { const w = withdrawalLabels[item.withdrawalReason]; return w ? <span className={`text-[10px] font-bold ${w.bgColor} ${w.color} px-1.5 py-0.5 rounded inline-block`}>{w.label}</span> : null; })()}
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
-                                <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0">
+                                <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-semibold shrink-0 tabular-nums">
                                     x{item.quantity}
                                 </span>
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                                {item.itemType !== 'personal' && (
-                                    <div>
-                                        <p className="text-gray-400 text-xs">Compra</p>
-                                        <p className="font-medium text-gray-700">${item.purchasePrice.toLocaleString()}</p>
+
+                            <div className={`mt-3 grid ${isPersonal ? 'grid-cols-2' : 'grid-cols-3'} gap-2 rounded-xl bg-gray-50 px-3 py-2.5`}>
+                                {!isPersonal && (
+                                    <div className="min-w-0">
+                                        <p className="text-gray-400 text-[11px]">Compra{unitHint}</p>
+                                        <p className="font-medium text-gray-700 text-sm tabular-nums truncate">{money(item.purchasePrice)}</p>
                                     </div>
                                 )}
-                                <div>
-                                    <p className="text-gray-400 text-xs">Venta</p>
-                                    <p className="font-medium text-gray-900">${item.salePrice?.toLocaleString()}</p>
+                                <div className="min-w-0">
+                                    <p className="text-gray-400 text-[11px]">Venta{unitHint}</p>
+                                    <p className="font-medium text-gray-900 text-sm tabular-nums truncate">{money(item.salePrice)}</p>
                                 </div>
-                                <div>
-                                    <p className="text-gray-400 text-xs">{item.itemType === 'personal' ? 'Ingreso' : 'Ganancia'}</p>
-                                    {item.itemType === 'personal' ? (
-                                        <p className="font-bold text-violet-600">${((item.salePrice || 0) * item.quantity).toLocaleString()}</p>
+                                <div className="min-w-0 text-right">
+                                    <p className="text-gray-400 text-[11px]">{isPersonal ? 'Ingreso' : 'Ganancia'}{item.quantity > 1 ? ' total' : ''}</p>
+                                    {isPersonal ? (
+                                        <p className="font-bold text-violet-600 text-sm tabular-nums truncate">{money(total)}</p>
                                     ) : (
-                                        <p className={`font-bold flex items-center gap-1 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                            ${Math.abs(profit).toLocaleString()}
-                                        </p>
+                                        <p className={`font-bold text-sm tabular-nums truncate ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>{money(profit)}</p>
                                     )}
                                 </div>
-                                <div>
-                                    <p className="text-gray-400 text-xs">Fecha</p>
-                                    <p className="font-medium text-gray-700">{item.saleDate ? formatDateDDMMAAAA(item.saleDate) : '-'}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Estado</p>
-                                    <p className="font-medium text-gray-700">{conditionLabelMap[item.condition || 'nuevo']}</p>
-                                </div>
-                                <div className="col-span-1">
-                                    <p className="text-gray-400 text-xs">Ubicación</p>
-                                    <p className="font-medium text-gray-700">{item.location || '-'}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-gray-400 text-xs">Tanda</p>
-                                    <p className="font-medium text-gray-700">{resolveBatchRef(item) || 'Venta directa'}</p>
-                                </div>
-                                {item.vendedor && (
-                                    <div className="col-span-2">
-                                        <p className="text-gray-400 text-xs">Vendedor</p>
-                                        <div className="flex items-center gap-2">
-                                            <p className="font-medium text-gray-700">{item.vendedor}</p>
-                                            {item.cobrado === false ? (
-                                                <button
-                                                    onClick={() => onToggleCobrado(item.id, true)}
-                                                    className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all active:scale-95"
-                                                >
-                                                    PENDIENTE
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => onToggleCobrado(item.id, false)}
-                                                    className="text-[10px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400 transition-all active:scale-95"
-                                                >
-                                                    COBRADO
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
-                            <div className="mt-4 grid grid-cols-2 gap-2">
-                                <button
-                                    onClick={() => onEdit(item)}
-                                    className="h-11 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
-                                >
-                                    <Edit2 className="w-4 h-4" />
-                                    Editar
-                                </button>
-                                <button
-                                    onClick={() => onRepublish(item)}
-                                    className="h-11 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
-                                >
-                                    <RotateCcw className="w-4 h-4" />
-                                    Republicar
-                                </button>
-                                <button
-                                    onClick={() => onDelete(item.id)}
-                                    className="h-11 rounded-xl border border-rose-100 bg-rose-50 text-rose-700 text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:brightness-95"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                    Eliminar
-                                </button>
+
+                            {item.facturado && item.nroComprobante && (
+                                <p className="mt-2 text-[11px] text-gray-500">Comprobante <span className="font-mono text-gray-700">{item.nroComprobante}</span></p>
+                            )}
+
+                            {item.vendedor && (
+                                <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-gray-500 truncate">Vendedor: <span className="font-medium text-gray-700">{item.vendedor}</span></span>
+                                    {item.cobrado === false ? (
+                                        <button
+                                            onClick={() => onToggleCobrado(item.id, true)}
+                                            className="shrink-0 text-[11px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
+                                        >
+                                            PENDIENTE DE COBRO
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => onToggleCobrado(item.id, false)}
+                                            className="shrink-0 text-[11px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
+                                        >
+                                            COBRADO
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mt-3 flex items-center gap-2">
                                 {item.facturado ? (
                                     <button
                                         onClick={() => onToggleFacturado(item.id, false)}
-                                        className="h-11 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-green-800"
+                                        className="flex-1 min-w-0 h-10 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-all active:scale-95 active:bg-green-800"
+                                        title={item.nroComprobante ? `Comprobante ${item.nroComprobante} — tocá para desmarcar` : 'Facturada — tocá para desmarcar'}
                                     >
-                                        <CheckCircle className="w-4 h-4" />
+                                        <CheckCircle className="w-4 h-4 shrink-0" />
                                         Facturada
                                     </button>
                                 ) : item.noFacturar ? (
                                     <button
                                         onClick={() => onToggleNoFacturar(item.id, false)}
-                                        className="h-11 rounded-xl bg-gray-400 hover:bg-gray-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-gray-600"
+                                        className="flex-1 min-w-0 h-10 rounded-xl bg-gray-400 hover:bg-gray-500 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-all active:scale-95 active:bg-gray-600"
+                                        title="Excluida de facturación — tocá para volver a incluirla"
                                     >
-                                        <XCircle className="w-4 h-4" />
-                                        Excluida
+                                        <XCircle className="w-4 h-4 shrink-0" />
+                                        No se factura
                                     </button>
                                 ) : canFacturar(item) ? (
-                                    <div className="col-span-2 flex gap-2">
+                                    <>
                                         <button
                                             onClick={() => setFacturarItem(item)}
-                                            className="flex-1 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 active:bg-blue-800"
+                                            className="flex-1 min-w-0 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-all active:scale-95 active:bg-blue-800"
                                         >
-                                            <FileText className="w-4 h-4" />
+                                            <FileText className="w-4 h-4 shrink-0" />
                                             Facturar
                                         </button>
                                         <button
                                             onClick={() => onToggleNoFacturar(item.id, true)}
-                                            aria-label="No facturar"
-                                            title="No facturar"
-                                            className="h-11 px-3 rounded-xl border border-gray-200 text-gray-400 flex items-center justify-center transition-all hover:border-red-200 hover:text-red-500 active:scale-95 active:brightness-95 dark:hover:bg-white/10"
+                                            aria-label="No facturar esta venta"
+                                            title="No facturar esta venta"
+                                            className={`${iconBtn} border-gray-200 text-gray-400`}
                                         >
-                                            <X className="w-4 h-4" />
+                                            <Ban className="w-4 h-4" />
                                         </button>
-                                    </div>
+                                    </>
                                 ) : (
-                                    <span className="h-11 rounded-xl text-gray-500 text-sm font-medium flex items-center justify-center">—</span>
+                                    <div className="flex-1" />
                                 )}
+                                <button onClick={() => onEdit(item)} aria-label="Editar venta" title="Editar" className={`${iconBtn} border-blue-100 bg-blue-50 text-blue-700`}>
+                                    <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => onRepublish(item)} aria-label="Volver a publicar" title="Volver a publicar (reponer stock)" className={`${iconBtn} border-emerald-100 bg-emerald-50 text-emerald-700`}>
+                                    <RotateCcw className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => onDelete(item.id)} aria-label="Eliminar venta" title="Eliminar" className={`${iconBtn} border-rose-100 bg-rose-50 text-rose-700`}>
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
                     );
@@ -2768,7 +2798,7 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                             const profit = ((item.salePrice || 0) * item.quantity) - (item.purchasePrice * item.quantity);
                             const isPositive = profit >= 0;
                             return (
-                                <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors group ${item.itemType === 'personal' ? 'bg-violet-50/30' : ''}`}>
+                                <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors group ${item.itemType === 'personal' ? 'bg-violet-50/30 dark:bg-violet-950/25' : ''}`}>
                                     <td className="px-2 py-2">
                                         {item.imageUrl ? (
                                             <div className="w-8 h-8 rounded-md overflow-hidden border border-gray-100">
@@ -2783,22 +2813,22 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                                     <td className="px-2 py-2 font-medium text-gray-900 max-w-[200px]">
                                         <div className="flex items-center gap-1.5 truncate">
                                             <span className="truncate" title={item.productName}>{item.productName}</span>
-                                            {item.itemType === 'personal' && <span className="text-[9px] font-bold bg-violet-100 text-violet-600 px-1 py-0.5 rounded shrink-0">PROPIO</span>}
+                                            {item.itemType === 'personal' && <span className="text-[9px] font-bold bg-violet-100 text-violet-600 dark:bg-violet-900/60 dark:text-violet-200 px-1 py-0.5 rounded shrink-0">PROPIO</span>}
                                             {item.withdrawalReason && (() => { const w = withdrawalLabels[item.withdrawalReason]; return w ? <span className={`text-[9px] font-bold ${w.bgColor} ${w.color} px-1 py-0.5 rounded shrink-0`}>{w.label}</span> : null; })()}
                                         </div>
                                     </td>
                                     <td className="px-2 py-2 text-center">
                                         <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[11px] font-semibold">{item.quantity}</span>
                                     </td>
-                                    <td className="px-2 py-2 text-right font-mono text-gray-500 whitespace-nowrap">{item.itemType === 'personal' ? <span className="text-violet-400">-</span> : `$${item.purchasePrice.toLocaleString()}`}</td>
-                                    <td className="px-2 py-2 text-right font-mono font-medium text-gray-900 whitespace-nowrap">${item.salePrice?.toLocaleString()}</td>
+                                    <td className="px-2 py-2 text-right font-mono text-gray-500 whitespace-nowrap">{item.itemType === 'personal' ? <span className="text-violet-400">-</span> : `${money(item.purchasePrice)}`}</td>
+                                    <td className="px-2 py-2 text-right font-mono font-medium text-gray-900 whitespace-nowrap">{money(item.salePrice)}</td>
                                     <td className={`px-2 py-2 text-right font-bold whitespace-nowrap ${item.itemType === 'personal' ? 'text-violet-600' : isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
                                         {item.itemType === 'personal' ? (
-                                            <span>${((item.salePrice || 0) * item.quantity).toLocaleString()}</span>
+                                            <span>{money(((item.salePrice || 0) * item.quantity))}</span>
                                         ) : (
                                             <span className="inline-flex items-center gap-0.5">
                                                 {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                                ${Math.abs(profit).toLocaleString()}
+                                                {money(profit)}
                                             </span>
                                         )}
                                     </td>
@@ -3181,7 +3211,7 @@ function QtyRow({ item, onUpdateQuantity, onDelete }: {
             >
                 {item.location || 'Sin ubicación'}
             </span>
-            <span className="font-mono text-[10px] text-gray-400">${item.purchasePrice.toLocaleString('es-AR')}</span>
+            <span className="font-mono text-[10px] text-gray-400">{money(item.purchasePrice)}</span>
             <div className="flex shrink-0 items-center gap-0.5">
                 <button
                     type="button"
@@ -3538,7 +3568,7 @@ function InventoryTable({
                             </span>
                         ) : (
                             <>
-                                {productGroups.length} productos en venta · {forSaleItems.reduce((a, i) => a + i.quantity, 0)} unidades en stock · ${forSaleItems.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0).toLocaleString('es-AR')} invertido
+                                {productGroups.length} productos en venta · {forSaleItems.reduce((a, i) => a + i.quantity, 0)} unidades en stock · {money(forSaleItems.reduce((a, i) => a + (i.purchasePrice || 0) * i.quantity, 0))} invertido
                                 {personalTotalQty > 0 && (
                                     <button
                                         type="button"
@@ -3650,7 +3680,7 @@ function InventoryTable({
                                                 )}
                                                 <div>
                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                        <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
+                                                        <h3 className="font-semibold text-gray-900 text-[15px] leading-snug">{grp.name}</h3>
                                                         {(() => {
                                                             const status = getBatchStatus(grp.batches);
                                                             if (!status) return null;
@@ -3687,8 +3717,8 @@ function InventoryTable({
                                             </div>
                                         </div>
                                         <div className="mt-2 flex gap-4 text-xs text-gray-500">
-                                            <span>Prom: ${grp.avgCost.toLocaleString('es-AR')}/u</span>
-                                            <span>Total: ${grp.totalValue.toLocaleString('es-AR')}</span>
+                                            <span>Prom: {money(grp.avgCost)}/u</span>
+                                            <span>Total: {money(grp.totalValue)}</span>
                                             <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
                                         </div>
                                     </div>
@@ -3765,7 +3795,7 @@ function InventoryTable({
                                                     <div key={`merge-m-${locName}`} className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex flex-col gap-2">
                                                         <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
                                                             <Merge className="w-4 h-4 text-indigo-600 shrink-0" />
-                                                            <span><b>{lItems.length} registros</b> en <b>{locName}</b> ({totalQty} u. · Costo prom: <b>${avgCost.toLocaleString('es-AR')}</b>)</span>
+                                                            <span><b>{lItems.length} registros</b> en <b>{locName}</b> ({totalQty} u. · Costo prom: <b>{money(avgCost)}</b>)</span>
                                                         </div>
                                                         {onMerge && (
                                                             <button
@@ -3791,7 +3821,7 @@ function InventoryTable({
                                                     <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
                                                 </div>
                                                 <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                                                    <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                    <span>Costo: {money(item.purchasePrice)}/u</span>
                                                     <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                                 </div>
                                                 <div className="flex gap-2 mt-2 flex-wrap">
@@ -3833,7 +3863,7 @@ function InventoryTable({
                                         {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                     </div>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                                <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · {money(grp.totalValue)}</p>
                             </button>
                             {expandedGroups.has(grp.key) && (
                                 <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
@@ -3843,7 +3873,7 @@ function InventoryTable({
                                                 <span className="font-medium text-gray-900">{prod.name}</span>
                                                 <span className="text-xs font-semibold text-gray-600">×{prod.qty}</span>
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-1">Costo prom: ${prod.avgCost.toLocaleString('es-AR')}/u</p>
+                                            <p className="text-xs text-gray-500 mt-1">Costo prom: {money(prod.avgCost)}/u</p>
                                             <div className="flex gap-2 mt-2 flex-wrap">
                                                 {prod.items.length > 1 && onMerge && (
                                                     <button
@@ -3881,7 +3911,7 @@ function InventoryTable({
                                         {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                     </div>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">{grp.children.length} items · ${grp.totalValue.toLocaleString('es-AR')}</p>
+                                <p className="text-xs text-gray-400 mt-1">{grp.children.length} items · {money(grp.totalValue)}</p>
                             </button>
                             {expandedGroups.has(grp.key) && (
                                 <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
@@ -3892,7 +3922,7 @@ function InventoryTable({
                                                 <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
                                             </div>
                                             <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                                                <span>Costo: ${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                <span>Costo: {money(item.purchasePrice)}/u</span>
                                                 <span>{item.location || 'Sin ubicación'}</span>
                                                 <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                             </div>
@@ -3966,7 +3996,7 @@ function InventoryTable({
                                                 </div>
                                                 <div className="flex gap-4 text-xs text-gray-500 mt-1">
                                                     <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
-                                                    {item.salePrice && <span className="text-emerald-600 font-bold">Venta: ${item.salePrice.toLocaleString('es-AR')}</span>}
+                                                    {item.salePrice && <span className="text-emerald-600 font-bold">Venta: {money(item.salePrice)}</span>}
                                                 </div>
                                                 <div className="flex gap-2 mt-2 flex-wrap">
                                                     <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
@@ -4026,7 +4056,7 @@ function InventoryTable({
                                     const photoBroken = [repItem?.imageUrl, ...(repItem?.storeImages || [])].some(u => !!u && brokenMedia.has(u));
 
                                     return (
-                                        <>
+                                        <Fragment key={grp.key}>
                                             <tr
                                                 key={grp.key}
                                                 onClick={() => toggleGroup(grp.key)}
@@ -4086,10 +4116,10 @@ function InventoryTable({
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-sm">
-                                                    <span className="text-gray-700">${grp.avgCost.toLocaleString('es-AR')}</span>
+                                                    <span className="text-gray-700">{money(grp.avgCost)}</span>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono">
-                                                    <span className="font-bold text-gray-900 text-sm">${grp.totalValue.toLocaleString('es-AR')}</span>
+                                                    <span className="font-bold text-gray-900 text-sm">{money(grp.totalValue)}</span>
                                                 </td>
                                                 <td className="px-3 py-3 text-center">
                                                     <div className="flex flex-wrap justify-center gap-1">
@@ -4176,7 +4206,7 @@ function InventoryTable({
                                                                     <div className="flex items-center justify-between gap-3">
                                                                         <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
                                                                             <Merge className="w-4 h-4 text-indigo-600 shrink-0" />
-                                                                            <span>Hay <b>{lItems.length} registros individuales</b> en <b>{locName}</b> ({totalQty} unidades · Costo prom: <b>${avgCost.toLocaleString('es-AR')}</b>)</span>
+                                                                            <span>Hay <b>{lItems.length} registros individuales</b> en <b>{locName}</b> ({totalQty} unidades · Costo prom: <b>{money(avgCost)}</b>)</span>
                                                                         </div>
                                                                         {onMerge && (
                                                                             <button
@@ -4223,11 +4253,11 @@ function InventoryTable({
                                                     <span className="text-sm font-bold text-gray-700">×{item.quantity}</span>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-xs text-gray-600">
-                                                    ${item.purchasePrice.toLocaleString('es-AR')}
+                                                    {money(item.purchasePrice)}
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-xs">
-                                                    <span className="font-semibold text-gray-800">${(item.purchasePrice * item.quantity).toLocaleString('es-AR')}</span>
-                                                    {item.salePrice && <span className="block text-emerald-600 text-[10px]">→ ${item.salePrice.toLocaleString('es-AR')}/u</span>}
+                                                    <span className="font-semibold text-gray-800">{money((item.purchasePrice * item.quantity))}</span>
+                                                    {item.salePrice && <span className="block text-emerald-600 text-[10px]">→ {money(item.salePrice)}/u</span>}
                                                 </td>
                                                 <td className="px-3 py-3" colSpan={2}>
                                                     <div className="flex items-center gap-1">
@@ -4274,7 +4304,7 @@ function InventoryTable({
                                         ))}
                                             </>
                                         )}
-                                    </>
+                                    </Fragment>
                                 );
                             })}
                             </tbody>
@@ -4293,7 +4323,7 @@ function InventoryTable({
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {locationGroups.map((grp) => (
-                                <>{/* Fragment key on first tr */}
+                                <Fragment key={grp.key}>
                                     <tr
                                         key={grp.key}
                                         onClick={() => toggleGroup(grp.key)}
@@ -4310,14 +4340,14 @@ function InventoryTable({
                                         <td className="px-4 py-3 text-center">
                                             <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">${grp.totalValue.toLocaleString('es-AR')}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">{money(grp.totalValue)}</td>
                                     </tr>
                                     {expandedGroups.has(grp.key) && grp.products.map(prod => (
                                         <tr key={prod.name} className="bg-blue-50/30 border-l-2 border-blue-200">
                                             <td className="px-4 py-2"></td>
                                             <td className="px-4 py-2 text-gray-700 font-medium text-xs">{prod.name}</td>
                                             <td className="px-4 py-2 text-center text-xs text-gray-400">
-                                                prom: ${prod.avgCost.toLocaleString('es-AR')}/u
+                                                prom: {money(prod.avgCost)}/u
                                             </td>
                                             <td className="px-4 py-2 text-center text-xs font-semibold">{prod.qty}</td>
                                             <td className="px-4 py-2 text-right">
@@ -4345,7 +4375,7 @@ function InventoryTable({
                                             </td>
                                         </tr>
                                     ))}
-                                </>
+                                </Fragment>
                             ))}
                         </tbody>
                     </table>
@@ -4363,7 +4393,7 @@ function InventoryTable({
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {batchGroups.map((grp) => (
-                                <>{/* Fragment */}
+                                <Fragment key={grp.key}>
                                     <tr
                                         key={grp.key}
                                         onClick={() => toggleGroup(grp.key)}
@@ -4387,7 +4417,7 @@ function InventoryTable({
                                         <td className="px-4 py-3 text-center">
                                             <span className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs font-semibold">{grp.totalQty}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">${grp.totalValue.toLocaleString('es-AR')}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-gray-900">{money(grp.totalValue)}</td>
                                     </tr>
                                     {expandedGroups.has(grp.key) && grp.children.map(item => (
                                         <tr key={item.id} className="bg-blue-50/30 border-l-2 border-blue-200">
@@ -4404,7 +4434,7 @@ function InventoryTable({
                                             <td className="px-4 py-2 text-center text-xs font-semibold">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">
                                                 <div className="flex justify-end items-center gap-1">
-                                                    <span className="text-xs font-mono mr-2">${item.purchasePrice.toLocaleString('es-AR')}/u</span>
+                                                    <span className="text-xs font-mono mr-2">{money(item.purchasePrice)}/u</span>
                                                     <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
                                                         className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-0.5">
                                                         <DollarSign className="w-3 h-3" /> Vender
@@ -4434,7 +4464,7 @@ function InventoryTable({
                                             </td>
                                         </tr>
                                     ))}
-                                </>
+                                </Fragment>
                             ))}
                         </tbody>
                     </table>
@@ -4457,7 +4487,7 @@ function InventoryTable({
                             </thead>
                             <tbody className="divide-y divide-violet-100/60">
                                 {personalGroups.map((grp) => (
-                                    <>{/* Fragment key on first tr */}
+                                    <Fragment key={grp.key}>
                                         <tr
                                             key={grp.key}
                                             onClick={() => toggleGroup(grp.key)}
@@ -4504,7 +4534,7 @@ function InventoryTable({
                                             <td className="px-3 py-3 text-right font-mono text-xs text-gray-500">
                                                 {grp.children.some(c => c.salePrice) ? (
                                                     <span className="text-emerald-700 font-bold">
-                                                        ${Math.max(...grp.children.map(c => c.salePrice || 0)).toLocaleString('es-AR')}/u
+                                                        {money(Math.max(...grp.children.map(c => c.salePrice || 0)))}/u
                                                     </span>
                                                 ) : (
                                                     <span className="text-gray-400">A convenir</span>
@@ -4544,7 +4574,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-xs">
                                                     {item.salePrice ? (
-                                                        <span className="font-bold text-emerald-600">${item.salePrice.toLocaleString('es-AR')}</span>
+                                                        <span className="font-bold text-emerald-600">{money(item.salePrice)}</span>
                                                     ) : (
                                                         <span className="text-gray-400">—</span>
                                                     )}
@@ -4600,7 +4630,7 @@ function InventoryTable({
                                                 </td>
                                             </tr>
                                         ))}
-                                    </>
+                                    </Fragment>
                                 ))}
                             </tbody>
                         </table>
@@ -5512,7 +5542,7 @@ function ProductForm({
                 <button
                     type="button"
                     onClick={() => setFormData({ ...formData, status: 'in_stock' })}
-                    className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${formData.status === 'in_stock' ? 'bg-white text-black shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                    className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${formData.status === 'in_stock' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
                 >
                     Stock
                 </button>
@@ -5830,7 +5860,7 @@ function BulkPricingBoard({
         const estimatedUnitCost = Math.round(pricingItem.listedUnitPrice * allocationFactor);
 
         // Making it "directo": Only one confirmation with the estimated refund.
-        const confirmTotal = confirm(`¿Confirmar DEVOLUCIÓN TOTAL de "${pricingItem.productName}" (${qtyToReturn} unidades)?\n\nSe descontarán de la tanda y del inventario.\nReembolso estimado: $${(qtyToReturn * estimatedUnitCost).toLocaleString('es-AR')}`);
+        const confirmTotal = confirm(`¿Confirmar DEVOLUCIÓN TOTAL de "${pricingItem.productName}" (${qtyToReturn} unidades)?\n\nSe descontarán de la tanda y del inventario.\nReembolso estimado: ${money((qtyToReturn * estimatedUnitCost))}`);
         if (!confirmTotal) return;
 
         const refundPerUnit = estimatedUnitCost;
@@ -6494,8 +6524,8 @@ function BulkPricingBoard({
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">Pedido por Tanda (descuento global)</h2>
                 <p className="text-sm text-gray-500 mt-1">Cada producto puede ser para vender o para quedártelo. El margen se calcula automáticamente.</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-                    <div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
+                    <div className="col-span-2 md:col-span-1">
                         <label className="block text-xs font-semibold text-gray-600 mb-1">Total pagado del pedido</label>
                         <input
                             type="text"
@@ -6512,11 +6542,11 @@ function BulkPricingBoard({
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2">
                         <p className="text-xs text-gray-500">Subtotal precios de lista</p>
-                        <p className="font-semibold text-gray-900">${listedSubtotal.toLocaleString('es-AR')}</p>
+                        <p className="font-semibold text-gray-900">{money(listedSubtotal)}</p>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2">
                         <p className="text-xs text-gray-500">Factor de ajuste</p>
-                        <p className="font-semibold text-gray-900">{allocationFactor.toFixed(4)}x</p>
+                        <p className="font-semibold text-gray-900">{allocationFactor.toLocaleString('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}x</p>
                     </div>
                     <div className="md:col-span-3">
                         <label className="block text-xs font-semibold text-gray-600 mb-1">Ubicación para toda esta tanda (opcional)</label>
@@ -6551,7 +6581,7 @@ function BulkPricingBoard({
                         </div>
                         <div>
                             <label className="block text-xs text-gray-500 mb-1">Crédito aplicado</label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2">
                                 <input
                                     type="text"
                                     inputMode="numeric"
@@ -6562,13 +6592,13 @@ function BulkPricingBoard({
                                         setCreditAmount(value);
                                     }}
                                     placeholder="Ej: 2.049"
-                                    className="flex-1 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                                    className="flex-1 min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                                 />
-                                <div className="flex rounded-xl border border-gray-200 overflow-hidden text-xs font-medium">
+                                <div className="flex shrink-0 rounded-xl border border-gray-200 overflow-hidden text-xs font-medium">
                                     <button
                                         type="button"
                                         onClick={() => setCreditMode('already_applied')}
-                                        className={`px-3 py-2 transition-colors ${creditMode === 'already_applied' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                                        className={`flex-1 sm:flex-none whitespace-nowrap px-3 py-2 transition-colors ${creditMode === 'already_applied' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
                                         title="El crédito ya fue descontado por Temu en el total pagado"
                                     >
                                         Ya aplicado
@@ -6576,7 +6606,7 @@ function BulkPricingBoard({
                                     <button
                                         type="button"
                                         onClick={() => setCreditMode('manual')}
-                                        className={`px-3 py-2 transition-colors ${creditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                                        className={`flex-1 sm:flex-none whitespace-nowrap px-3 py-2 transition-colors ${creditMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
                                         title="El crédito lo pagaste vos, se suma al total invertido"
                                     >
                                         Lo pagué yo
@@ -6585,7 +6615,7 @@ function BulkPricingBoard({
                             </div>
                             {creditMode === 'manual' && creditAmount > 0 && (
                                 <p className="text-xs text-blue-600 mt-1">
-                                    Costo efectivo: ${Math.round(effectiveTotalPaid).toLocaleString('es-AR')} (${Math.round(totalPaid).toLocaleString('es-AR')} + ${Math.round(creditAmount).toLocaleString('es-AR')} de crédito propio)
+                                    Costo efectivo: {money(Math.round(effectiveTotalPaid))} ({money(Math.round(totalPaid))} + {money(Math.round(creditAmount))} de crédito propio)
                                 </p>
                             )}
                             {creditMode === 'already_applied' && creditAmount > 0 && (
@@ -6600,13 +6630,14 @@ function BulkPricingBoard({
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
                 <h3 className="text-base font-bold text-gray-800 mb-3">Agregar producto al pedido</h3>
-                <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-2.5 sm:gap-3">
                     <input
                         type="text"
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                         placeholder="Nombre del producto"
-                        className="md:col-span-2 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        aria-label="Nombre del producto"
+                        className="col-span-2 min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
                     <input
                         type="text"
@@ -6614,7 +6645,8 @@ function BulkPricingBoard({
                         value={newCategory}
                         onChange={(e) => setNewCategory(e.target.value)}
                         placeholder="Categoría"
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        aria-label="Categoría"
+                        className="col-span-2 md:col-span-1 min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
                     <datalist id="category-suggestions">
                         {Array.from(new Set([
@@ -6628,7 +6660,9 @@ function BulkPricingBoard({
                         value={newQty}
                         onChange={(e) => setNewQty(e.target.value)}
                         placeholder="Cantidad"
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        aria-label="Cantidad"
+                        title="Cantidad"
+                        className="min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
                     <input
                         type="text"
@@ -6639,12 +6673,14 @@ function BulkPricingBoard({
                             setNewListedPrice(formatMoney(value));
                         }}
                         placeholder="Precio lista unit."
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        aria-label="Precio de lista por unidad"
+                        className="min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     />
                     <select
                         value={newDisposition}
                         onChange={(e) => setNewDisposition(e.target.value as 'sell' | 'keep')}
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
+                        aria-label="Destino del producto"
+                        className="min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none"
                     >
                         <option value="sell">Para vender</option>
                         <option value="keep">Me lo quedo</option>
@@ -6659,7 +6695,8 @@ function BulkPricingBoard({
                         }}
                         placeholder={newDisposition === 'keep' ? 'No aplica' : 'Venta unit.'}
                         disabled={newDisposition === 'keep'}
-                        className="px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none disabled:opacity-50"
+                        aria-label="Precio de venta por unidad"
+                        className="min-w-0 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none disabled:opacity-50"
                     />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -6788,10 +6825,10 @@ function BulkPricingBoard({
                                                                 {p.historyMatch && (
                                                                     <div className="flex flex-wrap gap-2 mt-1 text-[10px] text-gray-500">
                                                                         {p.historyMatch.totalSold > 0 && (
-                                                                            <span>Vendidos: {p.historyMatch.totalSold} u. a ~${p.historyMatch.avgSalePrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</span>
+                                                                            <span>Vendidos: {p.historyMatch.totalSold} u. a ~{money(p.historyMatch.avgSalePrice)}</span>
                                                                         )}
                                                                         {p.historyMatch.lastSalePrice > 0 && (
-                                                                            <span className="text-green-600 font-medium">Últ. venta: ${p.historyMatch.lastSalePrice.toLocaleString('es-AR')}</span>
+                                                                            <span className="text-green-600 font-medium">Últ. venta: {money(p.historyMatch.lastSalePrice)}</span>
                                                                         )}
                                                                         {p.historyMatch.inStock > 0 && (
                                                                             <span className="text-blue-600 font-medium">{p.historyMatch.inStock} en stock</span>
@@ -6800,7 +6837,7 @@ function BulkPricingBoard({
                                                                 )}
                                                             </td>
                                                             <td className="px-3 py-2 text-center">{p.cantidad}</td>
-                                                            <td className="px-3 py-2 text-right">${p.precio_unit_final.toLocaleString('es-AR')}</td>
+                                                            <td className="px-3 py-2 text-right">{money(p.precio_unit_final)}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -6809,15 +6846,15 @@ function BulkPricingBoard({
                                         <div className="grid grid-cols-3 gap-3 text-sm">
                                             <div className="bg-gray-50 rounded-xl px-3 py-2">
                                                 <p className="text-xs text-gray-500">Total del JSON</p>
-                                                <p className="font-semibold">${importPreview.total_pagado.toLocaleString('es-AR')}</p>
+                                                <p className="font-semibold">{money(importPreview.total_pagado)}</p>
                                             </div>
                                             <div className="bg-gray-50 rounded-xl px-3 py-2">
                                                 <p className="text-xs text-gray-500">Crédito</p>
-                                                <p className="font-semibold">{importPreview.credito > 0 ? `$${importPreview.credito.toLocaleString('es-AR')}` : 'No aplica'}</p>
+                                                <p className="font-semibold">{importPreview.credito > 0 ? `${money(importPreview.credito)}` : 'No aplica'}</p>
                                             </div>
                                             <div className="bg-gray-50 rounded-xl px-3 py-2">
                                                 <p className="text-xs text-gray-500">Cargo importación</p>
-                                                <p className="font-semibold">{importPreview.cargo_importacion > 0 ? `$${importPreview.cargo_importacion.toLocaleString('es-AR')}` : 'No aplica'}</p>
+                                                <p className="font-semibold">{importPreview.cargo_importacion > 0 ? `${money(importPreview.cargo_importacion)}` : 'No aplica'}</p>
                                             </div>
                                         </div>
                                         {importPreview.credito > 0 && (
@@ -6841,8 +6878,8 @@ function BulkPricingBoard({
                                                 </div>
                                                 <p className="text-xs text-gray-500">
                                                     {importCreditMode === 'already_applied'
-                                                        ? `Costo efectivo: $${importPreview.total_pagado.toLocaleString('es-AR')} (el crédito ya fue restado por Temu)`
-                                                        : `Costo efectivo: $${(importPreview.total_pagado + importPreview.credito).toLocaleString('es-AR')} ($${importPreview.total_pagado.toLocaleString('es-AR')} + $${importPreview.credito.toLocaleString('es-AR')} de crédito pagado por vos)`
+                                                        ? `Costo efectivo: ${money(importPreview.total_pagado)} (el crédito ya fue restado por Temu)`
+                                                        : `Costo efectivo: ${money((importPreview.total_pagado + importPreview.credito))} (${money(importPreview.total_pagado)} + ${money(importPreview.credito)} de crédito pagado por vos)`
                                                     }
                                                 </p>
                                             </div>
@@ -6869,8 +6906,14 @@ function BulkPricingBoard({
                 )}
             </div>
 
+            {normalizedItems.length === 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm border border-dashed border-gray-200 px-4 py-8 text-center">
+                    <p className="text-sm font-medium text-gray-600">Todavía no hay productos en este pedido</p>
+                    <p className="text-xs text-gray-400 mt-1">Agregalos con el formulario de arriba o con "Importar JSON".</p>
+                </div>
+            ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
-                <table className="w-full text-sm text-gray-700">
+                <table className="w-full min-w-[920px] text-sm text-gray-700">
                     <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-600">
                         <tr>
                             <th className="px-4 py-3 text-left">Producto</th>
@@ -6924,14 +6967,14 @@ function BulkPricingBoard({
                                         />
                                     </td>
                                     <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                    <td className="px-4 py-3 text-right">${Math.round(item.listedUnitPrice).toLocaleString('es-AR')}</td>
+                                    <td className="px-4 py-3 text-right">{money(Math.round(item.listedUnitPrice))}</td>
                                     <td className="px-4 py-3 text-right">
-                                        <span className="font-semibold">${Math.round(adjustedUnitCost).toLocaleString('es-AR')}</span>
+                                        <span className="font-semibold">{money(Math.round(adjustedUnitCost))}</span>
                                         {importCharges > 0 && (
                                             <div className="text-xs text-gray-400 leading-tight mt-0.5">
-                                                <span>Base: ${Math.round(baseCostUnit).toLocaleString('es-AR')}</span>
+                                                <span>Base: {money(Math.round(baseCostUnit))}</span>
                                                 <span className="mx-1">·</span>
-                                                <span className="text-amber-600">Import: ${Math.round(importShareUnit).toLocaleString('es-AR')}</span>
+                                                <span className="text-amber-600">Import: {money(Math.round(importShareUnit))}</span>
                                             </div>
                                         )}
                                     </td>
@@ -6964,12 +7007,12 @@ function BulkPricingBoard({
                                         />
                                     </td>
                                     <td className="px-4 py-3 text-center font-semibold text-gray-700">
-                                        {item.disposition === 'keep' ? '-' : (Number.isFinite(marginPercent) ? `${marginPercent.toFixed(1)}%` : '0%')}
+                                        {item.disposition === 'keep' ? '-' : (Number.isFinite(marginPercent) ? percent(marginPercent) : '0%')}
                                     </td>
                                     <td className={`px-4 py-3 text-right font-semibold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                         {item.disposition === 'keep'
-                                            ? `Retenido: $${Math.round(adjustedUnitCost * item.quantity).toLocaleString('es-AR')}`
-                                            : `$${Math.round(totalProfit).toLocaleString('es-AR')}`}
+                                            ? `Retenido: ${money(Math.round(adjustedUnitCost * item.quantity))}`
+                                            : `${money(Math.round(totalProfit))}`}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         {hasSoldCopies ? (
@@ -6989,41 +7032,42 @@ function BulkPricingBoard({
                     </tbody>
                 </table>
             </div>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="col-span-2 sm:col-span-1 bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Total invertido</p>
-                    <p className="text-lg font-bold text-gray-900">${Math.round(effectiveTotalPaid).toLocaleString('es-AR')}</p>
+                    <p className="text-base sm:text-lg tabular-nums font-bold text-gray-900">{money(Math.round(effectiveTotalPaid))}</p>
                     {importCharges > 0 && (
                         <div className="text-xs text-gray-400 mt-1 space-y-0.5">
-                            <div>Productos: ${Math.round(effectiveTotalPaid - importCharges).toLocaleString('es-AR')}</div>
-                            <div className="text-amber-600">Importación: ${Math.round(importCharges).toLocaleString('es-AR')}</div>
+                            <div>Productos: {money(Math.round(effectiveTotalPaid - importCharges))}</div>
+                            <div className="text-amber-600">Importación: {money(Math.round(importCharges))}</div>
                         </div>
                     )}
                     {creditMode === 'manual' && creditAmount > 0 && (
-                        <p className="text-xs text-blue-500 mt-1">Crédito propio descontado: −${Math.round(creditAmount).toLocaleString('es-AR')}</p>
+                        <p className="text-xs text-blue-500 mt-1">Crédito propio descontado: −{money(Math.round(creditAmount))}</p>
                     )}
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Costo a recuperar con ventas</p>
-                    <p className="text-lg font-bold text-gray-900">${Math.round(effectiveCostToRecover).toLocaleString('es-AR')}</p>
+                    <p className="text-base sm:text-lg tabular-nums font-bold text-gray-900">{money(Math.round(effectiveCostToRecover))}</p>
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Ganancia monetaria esperada</p>
-                    <p className={`text-lg font-bold ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        ${Math.round(expectedProfit).toLocaleString('es-AR')}
+                    <p className={`text-base sm:text-lg tabular-nums font-bold ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {money(Math.round(expectedProfit))}
                     </p>
                 </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Valor de productos que te quedas</p>
-                    <p className="text-lg font-bold text-blue-700">${Math.round(retainedValue).toLocaleString('es-AR')}</p>
+                    <p className="text-base sm:text-lg tabular-nums font-bold text-blue-700">{money(Math.round(retainedValue))}</p>
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                     <p className="text-xs text-gray-500">Resultado económico total (cash + retenido)</p>
-                    <p className={`text-lg font-bold ${totalEconomicValue >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        ${Math.round(totalEconomicValue).toLocaleString('es-AR')}
+                    <p className={`text-base sm:text-lg tabular-nums font-bold ${totalEconomicValue >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {money(Math.round(totalEconomicValue))}
                     </p>
                 </div>
             </div>
@@ -7054,15 +7098,15 @@ function BulkPricingBoard({
                                             }`}>
                                                 {record.batchStatus === 'en_camino' ? 'En camino' : record.batchStatus === 'recibido' ? 'Recibido' : 'Completado'}
                                             </span>
-                                            <span className="text-xs text-gray-400">{new Date(record.createdAt).toLocaleDateString('es-AR')} - {record.itemsCount} productos</span>
+                                            <span className="text-xs text-gray-400">{new Date(record.createdAt).toLocaleDateString('es-AR')} · {record.itemsCount} {record.itemsCount === 1 ? 'producto' : 'productos'}</span>
                                         </div>
-                                        <p className="text-xs text-gray-500">Invertido: ${safeMoney(record.totalPaid).toLocaleString('es-AR')} | Venta esperada: ${safeMoney(record.totalSellRevenue).toLocaleString('es-AR')} | Retenido: ${safeMoney(record.retainedValue).toLocaleString('es-AR')}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">Invertido: {money(safeMoney(record.totalPaid))} · Venta esperada: {money(safeMoney(record.totalSellRevenue))}{safeMoney(record.retainedValue) > 0 ? ` · Retenido: ${money(safeMoney(record.retainedValue))}` : ''}</p>
                                     </div>
                                 </button>
-                                <div className="flex items-center gap-3">
-                                    <div className="flex flex-col items-end gap-1">
-                                        <p className={`font-bold ${record.cashProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            Est: ${safeMoney(record.cashProfit).toLocaleString('es-AR')}
+                                <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap">
+                                    <div className="flex flex-col items-start sm:items-end gap-0.5 tabular-nums">
+                                        <p className={`font-bold whitespace-nowrap ${record.cashProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            Est: {money(safeMoney(record.cashProfit))}
                                         </p>
                                         {(() => {
                                             const relatedItems = inventoryItems.filter((i: Item) => (i.batchRef || itemBatchMap[i.id]) === record.batchCode);
@@ -7073,8 +7117,8 @@ function BulkPricingBoard({
                                                 return acc;
                                             }, 0);
                                             return (
-                                                <p className={`text-xs font-bold ${actualProfit >= record.cashProfit ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                                    Real: ${Math.round(actualProfit).toLocaleString('es-AR')}
+                                                <p className={`text-xs font-bold whitespace-nowrap ${actualProfit >= record.cashProfit ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                                    Real: {money(Math.round(actualProfit))}
                                                 </p>
                                             );
                                         })()}
@@ -7240,10 +7284,10 @@ function BulkPricingBoard({
                                                         {(() => { const wItems = actual.matches.filter((m: Item) => m.withdrawalReason); return wItems.map((m: Item) => { const w = withdrawalLabels[m.withdrawalReason!]; return w ? <span key={m.id} className={`ml-1.5 text-[10px] font-bold ${w.color}`}>{w.label}</span> : null; }); })()}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">{item.quantity}</td>
-                                                    <td className="px-3 py-2 text-right text-gray-600">${safeMoney(unitCost).toLocaleString('es-AR')}</td>
-                                                    <td className="px-3 py-2 text-right font-medium">${safeMoney(totalCost).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2 text-right text-gray-600">{money(safeMoney(unitCost))}</td>
+                                                    <td className="px-3 py-2 text-right font-medium">{money(safeMoney(totalCost))}</td>
                                                     <td className="px-3 py-2 text-right text-gray-500">
-                                                        {item.disposition === 'sell' ? `$${safeMoney(expectedRevenue).toLocaleString('es-AR')}` : '—'}
+                                                        {item.disposition === 'sell' ? `${money(safeMoney(expectedRevenue))}` : '—'}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">
                                                         {actual.totalSoldQty > 0 || actual.totalInStockQty > 0 ? (
@@ -7261,16 +7305,16 @@ function BulkPricingBoard({
                                                     </td>
                                                     <td className="px-3 py-2 text-right">
                                                         {actual.totalSoldQty > 0 ? (
-                                                            <span className="font-semibold text-emerald-700">${safeMoney(actual.totalSoldRevenue).toLocaleString('es-AR')}</span>
+                                                            <span className="font-semibold text-emerald-700">{money(safeMoney(actual.totalSoldRevenue))}</span>
                                                         ) : (
                                                             <span className="text-gray-400">—</span>
                                                         )}
                                                         {actual.totalSoldQty > 0 && actual.avgSalePrice > 0 && (
-                                                            <span className="block text-[10px] text-gray-400">prom: ${safeMoney(actual.avgSalePrice).toLocaleString('es-AR')}/u</span>
+                                                            <span className="block text-[10px] text-gray-400">prom: {money(safeMoney(actual.avgSalePrice))}/u</span>
                                                         )}
                                                     </td>
                                                     <td className={`px-3 py-2 text-right font-bold ${actual.totalSoldQty > 0 ? (realProfit >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-300'}`}>
-                                                        {actual.totalSoldQty > 0 ? `$${safeMoney(realProfit).toLocaleString('es-AR')}` : '—'}
+                                                        {actual.totalSoldQty > 0 ? `${money(safeMoney(realProfit))}` : '—'}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">
                                                         <div className="flex items-center justify-center gap-1 flex-wrap">
@@ -7354,14 +7398,14 @@ function BulkPricingBoard({
                                             <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                                                 <tr className="text-xs font-bold uppercase tracking-wider">
                                                     <td className="px-3 py-2.5 text-gray-700" colSpan={3}>Totales</td>
-                                                    <td className="px-3 py-2.5 text-right text-gray-900">${safeMoney(grandTotalCost).toLocaleString('es-AR')}</td>
-                                                    <td className="px-3 py-2.5 text-right text-gray-500">${safeMoney(grandTotalExpectedRevenue).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2.5 text-right text-gray-900">{money(safeMoney(grandTotalCost))}</td>
+                                                    <td className="px-3 py-2.5 text-right text-gray-500">{money(safeMoney(grandTotalExpectedRevenue))}</td>
                                                     <td className="px-3 py-2.5 text-center text-emerald-600">
                                                         {rows.reduce((a, r) => a + r.actual.totalSoldQty, 0)} / {selectedRecordItems.reduce((a, i) => a + i.quantity, 0)}
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-emerald-700">${safeMoney(grandTotalRevenue).toLocaleString('es-AR')}</td>
+                                                    <td className="px-3 py-2.5 text-right text-emerald-700">{money(safeMoney(grandTotalRevenue))}</td>
                                                     <td className={`px-3 py-2.5 text-right font-bold ${grandTotalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        ${safeMoney(grandTotalProfit).toLocaleString('es-AR')}
+                                                        {money(safeMoney(grandTotalProfit))}
                                                     </td>
                                                     <td />
                                                 </tr>
@@ -7432,7 +7476,7 @@ function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title:
                     {icon}
                 </div>
                 {trend && (
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${getBadgeStyle()}`}>
+                    <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1 rounded-lg whitespace-nowrap ${getBadgeStyle()}`}>
                         {trend}
                     </span>
                 )}
@@ -7445,15 +7489,6 @@ function MetricCard({ title, value, icon, trend, trendColor, bgColor }: { title:
     );
 }
 
-/* Formato compacto para el eje Y: "$1,2M" en vez de "$1234567", que en celular
-   se come el área de dibujo. */
-function formatCompactCurrency(value: number): string {
-    const abs = Math.abs(value);
-    if (abs >= 1_000_000) return `$${(value / 1_000_000).toLocaleString('es-AR', { maximumFractionDigits: 1 })}M`;
-    if (abs >= 1_000) return `$${(value / 1_000).toLocaleString('es-AR', { maximumFractionDigits: 0 })}k`;
-    return `$${value.toLocaleString('es-AR')}`;
-}
-
 /* Los colores de recharts van como props, no como clases de Tailwind, así que el
    modo oscuro se resuelve con la prop `dark` en vez de con variantes `dark:`. */
 function ProfitChart({ items, dark = false }: { items: Item[]; dark?: boolean }) {
@@ -7464,17 +7499,26 @@ function ProfitChart({ items, dark = false }: { items: Item[]; dark?: boolean })
     // Use saleDate for profit charting, or generic date if saleDate missing (fallback)
     const sortedItems = [...items].sort((a, b) => new Date(a.saleDate || a.date).getTime() - new Date(b.saleDate || b.date).getTime());
 
+    // Se agrupa por día completo (con año): agrupando solo por "día y mes", dos
+    // ventas del mismo día de años distintos se sumaban en un mismo punto.
+    const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const years = new Set<number>();
     sortedItems.forEach(item => {
-        const dateKey = item.saleDate || item.date;
-        const date = new Date(dateKey).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+        const d = new Date(item.saleDate || item.date);
+        if (isNaN(d.getTime())) return;
+        years.add(d.getFullYear());
         const profit = ((item.salePrice || 0) - item.purchasePrice) * item.quantity;
-        dataMap.set(date, (dataMap.get(date) || 0) + profit);
+        dataMap.set(dayKey(d), (dataMap.get(dayKey(d)) || 0) + profit);
     });
 
-    const data = Array.from(dataMap.entries()).map(([date, profit]) => ({
-        date,
-        profit
-    }));
+    const multiYear = years.size > 1;
+    const data = Array.from(dataMap.entries()).map(([key, profit]) => {
+        const [y, m, d] = key.split('-').map(Number);
+        const date = new Date(y, m - 1, d).toLocaleDateString('es-AR', multiYear
+            ? { day: '2-digit', month: 'short', year: '2-digit' }
+            : { day: '2-digit', month: 'short' }).replace(/-/g, ' ');
+        return { date, profit: Math.round(profit) };
+    });
 
     if (data.length === 0) {
         return <div className="h-full w-full flex items-center justify-center text-gray-400">Sin datos suficientes para graficar</div>;
@@ -7515,7 +7559,7 @@ function ProfitChart({ items, dark = false }: { items: Item[]; dark?: boolean })
                     tickLine={false}
                     tick={{ fill: tickColor, fontSize: 12 }}
                     width={52}
-                    tickFormatter={formatCompactCurrency}
+                    tickFormatter={moneyCompact}
                 />
                 <Tooltip
                     contentStyle={{
@@ -7526,7 +7570,7 @@ function ProfitChart({ items, dark = false }: { items: Item[]; dark?: boolean })
                         color: dark ? '#f8fafc' : '#111827',
                     }}
                     labelStyle={{ color: dark ? '#9fb0c7' : '#6b7280' }}
-                    formatter={(value) => [`$${Number(value).toLocaleString('es-AR')}`, 'Ganancia'] as [string, string]}
+                    formatter={(value) => [money(Number(value)), 'Ganancia'] as [string, string]}
                     cursor={{ stroke: '#10b981', strokeWidth: 2 }}
                 />
                 <Area
