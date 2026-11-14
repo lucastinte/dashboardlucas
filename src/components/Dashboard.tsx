@@ -1,11 +1,12 @@
 import { Fragment, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, LocationItem } from '../types';
 import { itemService } from '../services/itemService';
 import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
 import { STORE_CONFIG, productUrl } from '../config/storeConfig';
-import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Split, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play } from 'lucide-react';
+import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -897,73 +898,51 @@ export default function Dashboard() {
         }
     };
 
-    const handleSplitItem = async (item: Item) => {
-        if (item.quantity <= 1) return;
-        if (savingRef.current) return;
-        if (confirm(`¿Separar 1 unidad de "${item.productName}" para mover a otra ubicación?`)) {
-            savingRef.current = true;
-            try {
-                // Optimistic UI updates
-                const tempId = crypto.randomUUID();
-                const newItem = { ...item, id: tempId, quantity: 1, location: '' };
-                const updatedItem = { ...item, quantity: item.quantity - 1 };
-
-                // First, update the visual array: replace the old item with the reduced one, and add the new one.
-                setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i).concat(newItem as Item));
-
-                // 1. Update the original item in the DB
-                await itemService.updateItem(item.id, { quantity: updatedItem.quantity });
-
-                // 2. Extract parent batchRef to prevent orphaning
-                const bRef = getItemBatchRef(item);
-
-                // 3. Create the new separated item in the DB
-                const created = await itemService.createItem({
-                    productName: item.productName,
-                    purchasePrice: item.purchasePrice,
-                    salePrice: item.salePrice,
-                    quantity: 1,
-                    date: item.date,
-                    status: item.status,
-                    condition: item.condition,
-                    itemType: item.itemType || 'resale',
-                    batchRef: bRef,
-                    location: '',
-                    estimatedSalePrice: item.estimatedSalePrice,
-                    publishUrls: item.publishUrls,
-                    imageUrl: item.imageUrl,
-                    // La unidad separada es el mismo producto: mismas fotos, textos y publicación
-                    ...pickStoreFields(item),
-                    publicInStore: item.publicInStore
-                });
-
-                // 4. Update the memory map so it renders properly right away in grouped views
-                if (bRef) {
-                    setItemBatchMap(prev => {
-                        const next = { ...prev, [created.id]: bRef };
-                        localStorage.setItem('item_batch_map_v2', JSON.stringify(next));
-                        return next;
+    // Mover unidades a otra ubicación (se toca el lugar en el inventario).
+    // Si se mueve el lote entero solo cambia su ubicación; si se mueve una parte,
+    // se descuenta del lote y se crea otro igual en el destino, con sus datos de tienda.
+    const handleMoveUnits = async (lots: Item[], qty: number, to: string) => {
+        const destino = to.trim();
+        if (!destino || qty < 1 || savingRef.current) return;
+        savingRef.current = true;
+        let pendientes = qty;
+        try {
+            for (const lot of lots) {
+                if (pendientes <= 0) break;
+                const mover = Math.min(lot.quantity, pendientes);
+                if (mover >= lot.quantity) {
+                    await itemService.updateItem(lot.id, { location: destino });
+                } else {
+                    await itemService.updateItem(lot.id, { quantity: lot.quantity - mover });
+                    await itemService.createItem({
+                        productName: lot.productName,
+                        purchasePrice: lot.purchasePrice,
+                        salePrice: lot.salePrice,
+                        quantity: mover,
+                        date: lot.date,
+                        status: 'in_stock',
+                        condition: lot.condition,
+                        itemType: lot.itemType || 'resale',
+                        batchRef: getItemBatchRef(lot),
+                        location: destino,
+                        estimatedSalePrice: lot.estimatedSalePrice,
+                        publishUrls: lot.publishUrls,
+                        imageUrl: lot.imageUrl,
+                        category: lot.category,
+                        ...pickStoreFields(lot),
+                        publicInStore: lot.publicInStore,
                     });
                 }
-
-                // Replace the temporary optimistic new item with the real one from DB
-                setItems(prev => prev.map(i => i.id === tempId ? created : i));
-
-                // Open the modal to edit the newly separated item
-                setEditingItem(created);
-                setFormData({
-                    ...created,
-                    status: 'in_stock',
-                    date: created.date.split('T')[0]
-                });
-                setIsModalOpen(true);
-            } catch (err) {
-                console.error('Error splitting:', err);
-                alert('Error al separar la unidad.');
-                loadItems();
-            } finally {
-                savingRef.current = false;
+                pendientes -= mover;
             }
+            const movidas = qty - pendientes;
+            showToast(`${movidas} ${movidas === 1 ? 'unidad movida' : 'unidades movidas'} a ${destino}`);
+        } catch (err) {
+            console.error('Error moving units:', err);
+            alert('No se pudo mover de ubicación. Intentá de nuevo.');
+        } finally {
+            savingRef.current = false;
+            await loadItems();
         }
     };
 
@@ -1462,7 +1441,7 @@ export default function Dashboard() {
                                 onEdit={startEdit} 
                                 onDelete={handleDeleteItem} 
                                 resolveBatchRef={getItemBatchRef} 
-                                onSplit={handleSplitItem} 
+                                onMoveUnits={handleMoveUnits}
                                 onWithdraw={handleWithdraw} 
                                 onTogglePublicInStore={handleTogglePublicInStore} 
                                 onManageImages={setStoreImagesItem} 
@@ -3153,34 +3132,37 @@ function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen, videoB
         { label: 'Fotos', done: photoCount > 0, doneText: `${photoCount} foto${photoCount > 1 ? 's' : ''}`, missingText: 'Sin fotos', broken: Boolean(photoCount > 0 && photoBroken), brokenText: 'Algún link de foto ya no carga — click para reemplazarlo' },
     ];
     const doneCount = segments.filter(s => s.done && !s.broken).length;
+    const pendientes = segments.filter(s => s.broken || (!s.done && s.label !== 'Video'));
+    const resumen = segments.map(s => `${s.label}: ${s.broken ? s.brokenText : s.done ? s.doneText : s.missingText}`).join(' · ');
     return (
-        <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1 px-1.5 py-1 rounded-full bg-gray-100/90 dark:bg-slate-800/90">
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpen(); }}
+            title={`Editar publicación de la tienda — ${resumen}`}
+            aria-label={`Editar publicación de la tienda. ${resumen}`}
+            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100/90 dark:bg-slate-800/90 hover:bg-gray-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+        >
+            <Edit2 className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
+            <span className="flex items-center gap-1" aria-hidden="true">
                 {segments.map(seg => (
-                    <button
+                    <span
                         key={seg.label}
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpen(); }}
-                        title={seg.broken
-                            ? `${seg.label}: ${seg.brokenText}`
-                            : seg.done ? `${seg.label}: ${seg.doneText}` : `${seg.label}: ${seg.missingText} — click para completar`}
-                        aria-label={`${seg.label}: ${seg.broken ? seg.brokenText : seg.done ? seg.doneText : seg.missingText}`}
-                        className={`h-1.5 w-4 rounded-full transition-all duration-200 hover:w-5 hover:h-2.5 hover:shadow-sm ${
+                        className={`h-1.5 w-3.5 rounded-full ${
                             seg.broken
-                                ? 'bg-red-500 hover:bg-red-400 dark:bg-red-500'
+                                ? 'bg-red-500'
                                 : seg.done
-                                    ? 'bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-400'
+                                    ? 'bg-emerald-500 dark:bg-emerald-400'
                                     : seg.label === 'Video'
-                                        ? 'bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500'
-                                        : 'bg-amber-400 hover:bg-amber-500 dark:bg-amber-500 dark:hover:bg-amber-400'
+                                        ? 'bg-slate-300 dark:bg-slate-600'
+                                        : 'bg-amber-400 dark:bg-amber-500'
                         }`}
                     />
                 ))}
-            </div>
-            <span className={`text-[10px] font-bold tabular-nums ${doneCount === segments.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'}`}>
+            </span>
+            <span className={`text-[10px] font-bold tabular-nums ${pendientes.some(s => s.broken) ? 'text-red-500' : doneCount === segments.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'}`}>
                 {doneCount}/{segments.length}
             </span>
-        </div>
+        </button>
     );
 }
 
@@ -3288,6 +3270,210 @@ function QtyEditorPanel({ items, anchor, onUpdateQuantity, onDelete, onAddUnits,
     );
 }
 
+/* ── Acciones de un lote de stock ────────────────────────────────────────────
+   Antes cada lote mostraba cinco botones (Vender, Editar, Separar, Dar de baja,
+   Eliminar). Queda "Vender" a la vista y el resto en un menú. El menú se dibuja
+   en un portal con posición fija para que no lo recorte el scroll de la tabla. */
+function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages }: {
+    item: Item;
+    onSell: (i: Item) => void;
+    onEdit: (i: Item) => void;
+    onWithdraw: (item: Item, reason: WithdrawalReason) => void;
+    onDelete: (id: string) => void;
+    onManageImages?: (i: Item) => void;
+}) {
+    const [menu, setMenu] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+    const btnRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!menu) return;
+        const close = () => setMenu(null);
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+        // El menú tiene posición fija respecto de la pantalla: mientras está
+        // abierto se bloquea el desplazamiento de la página para que no quede
+        // despegado de su botón. (Cerrarlo al detectar scroll fallaba: la inercia
+        // del dedo lo abría y cerraba al instante.)
+        const prevOverflow = document.documentElement.style.overflow;
+        document.documentElement.style.overflow = 'hidden';
+        window.addEventListener('resize', close);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            document.documentElement.style.overflow = prevOverflow;
+            window.removeEventListener('resize', close);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [menu]);
+
+    const toggle = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (menu) { setMenu(null); return; }
+        const r = btnRef.current?.getBoundingClientRect();
+        if (!r) return;
+        const right = Math.max(8, window.innerWidth - r.right);
+        // Si no entra abajo, se abre hacia arriba
+        setMenu(window.innerHeight - r.bottom < 260 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+    };
+    const run = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); setMenu(null); fn(); };
+    const itemCls = 'w-full text-left px-3.5 py-2.5 text-sm flex items-center gap-2.5 transition-colors';
+
+    return (
+        <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <button
+                type="button"
+                onClick={run(() => onSell(item))}
+                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3 h-8 rounded-lg text-xs font-bold shadow-sm transition-all"
+            >
+                <DollarSign className="w-3.5 h-3.5" /> Vender
+            </button>
+            <button
+                ref={btnRef}
+                type="button"
+                onClick={toggle}
+                aria-haspopup="menu"
+                aria-expanded={!!menu}
+                aria-label="Más acciones"
+                title="Más acciones: editar, dar de baja, eliminar"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 active:scale-95 transition-all"
+            >
+                <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {menu && createPortal(
+                <>
+                    <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); setMenu(null); }} />
+                    <div
+                        role="menu"
+                        className="fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 overflow-hidden"
+                        style={menu}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button role="menuitem" type="button" onClick={run(() => onEdit(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
+                            <Edit2 className="w-4 h-4 text-blue-600" /> Editar
+                        </button>
+                        {onManageImages && (
+                            <button role="menuitem" type="button" onClick={run(() => onManageImages(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
+                                <ImageIcon className="w-4 h-4 text-violet-600" /> Fotos y tienda
+                            </button>
+                        )}
+                        <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Dar de baja como…</p>
+                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'regalo'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
+                            <Gift className="w-4 h-4 text-pink-600" /> Regalo
+                        </button>
+                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'uso_personal'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
+                            <User className="w-4 h-4 text-violet-600" /> Uso personal
+                        </button>
+                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'perdida'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
+                            <Ban className="w-4 h-4 text-red-600" /> Pérdida
+                        </button>
+                        <button role="menuitem" type="button" onClick={run(() => onDelete(item.id))} className={`${itemCls} text-rose-600 hover:bg-rose-50 border-t border-gray-100 mt-1`}>
+                            <Trash2 className="w-4 h-4" /> Eliminar
+                        </button>
+                    </div>
+                </>,
+                document.body
+            )}
+        </div>
+    );
+}
+
+/* El lugar es un botón: se toca y se elige a dónde mover las unidades. */
+function LocationChip({ label, qty, onClick, className = '' }: { label: string; qty?: number; onClick: () => void; className?: string }) {
+    const empty = !label || label === 'Sin ubicación';
+    return (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+            title="Tocá para mover a otra ubicación"
+            className={`inline-flex items-center gap-1 max-w-full text-[11px] font-semibold px-2 py-1 rounded-full border transition-all active:scale-95 ${empty
+                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'} ${className}`}
+        >
+            <MapPin className="w-3 h-3 shrink-0" />
+            <span className="truncate">{empty ? 'Sin ubicación' : label}</span>
+            {qty !== undefined && <span className="tabular-nums opacity-70">×{qty}</span>}
+            <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
+        </button>
+    );
+}
+
+function MoveLocationDialog({ name, from, total, locations, onClose, onMove }: {
+    name: string;
+    from: string;
+    total: number;
+    locations: string[];
+    onClose: () => void;
+    onMove: (to: string, qty: number) => void;
+}) {
+    const [qty, setQty] = useState(total);
+    const [custom, setCustom] = useState('');
+    const destinos = locations.filter(l => normalizeText(l) !== normalizeText(from));
+    const fromLabel = from || 'Sin ubicación';
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    const go = (to: string) => {
+        const dest = to.trim();
+        if (!dest || normalizeText(dest) === normalizeText(from)) return;
+        onMove(dest, Math.min(total, Math.max(1, qty)));
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto ring-1 ring-black/5" role="dialog" aria-label="Mover a otra ubicación" onClick={(e) => e.stopPropagation()}>
+                <div className="p-4 border-b border-gray-100 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <h2 className="text-base font-bold text-gray-800">Mover de lugar</h2>
+                        <p className="text-xs text-gray-500 truncate">{name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Ahora en <span className="font-semibold text-gray-700">{fromLabel}</span> · {total} {total === 1 ? 'unidad' : 'unidades'}</p>
+                    </div>
+                    <button type="button" onClick={onClose} aria-label="Cerrar" className="h-8 w-8 shrink-0 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                <div className="p-4 space-y-4">
+                    {total > 1 && (
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-medium text-gray-700">¿Cuántas muevo?</span>
+                            <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => setQty(q => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Una menos" className="h-9 w-9 rounded-lg border border-gray-200 bg-white text-gray-700 flex items-center justify-center disabled:opacity-40 active:scale-95"><Minus className="w-4 h-4" /></button>
+                                <span className="w-16 text-center text-sm font-bold tabular-nums text-gray-900">{qty === total ? `Todas (${total})` : qty}</span>
+                                <button type="button" onClick={() => setQty(q => Math.min(total, q + 1))} disabled={qty >= total} aria-label="Una más" className="h-9 w-9 rounded-lg border border-gray-200 bg-white text-gray-700 flex items-center justify-center disabled:opacity-40 active:scale-95"><Plus className="w-4 h-4" /></button>
+                            </div>
+                        </div>
+                    )}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">¿A dónde?</p>
+                        <div className="space-y-2">
+                            {destinos.map(loc => (
+                                <button key={loc} type="button" onClick={() => go(loc)} className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-800 hover:border-blue-400 hover:bg-blue-50 active:scale-[0.99] transition-all text-left">
+                                    <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <span className="truncate">{loc}</span>
+                                </button>
+                            ))}
+                            {destinos.length === 0 && <p className="text-xs text-gray-400">No hay otras ubicaciones cargadas. Escribí una abajo.</p>}
+                        </div>
+                    </div>
+                    <form onSubmit={(e) => { e.preventDefault(); go(custom); }} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={custom}
+                            onChange={(e) => setCustom(e.target.value)}
+                            placeholder="Otra ubicación…"
+                            aria-label="Otra ubicación"
+                            className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-blue-400 focus:bg-white"
+                        />
+                        <button type="submit" disabled={!custom.trim()} className="shrink-0 px-4 rounded-xl bg-black text-white text-sm font-medium disabled:opacity-40">Mover</button>
+                    </form>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
 function InventoryTable({
     items, 
     allItems, 
@@ -3295,7 +3481,7 @@ function InventoryTable({
     onDelete, 
     onSell, 
     resolveBatchRef, 
-    onSplit, 
+    onMoveUnits,
     onWithdraw, 
     onTogglePublicInStore, 
     onManageImages,
@@ -3312,7 +3498,7 @@ function InventoryTable({
     onDelete: (id: string) => void,
     onSell: (i: Item) => void,
     resolveBatchRef: (item: Item) => string | undefined,
-    onSplit: (i: Item) => void,
+    onMoveUnits?: (lots: Item[], qty: number, to: string) => void,
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     onTogglePublicInStore: (id: string, value: boolean) => void,
     onManageImages: (item: Item) => void,
@@ -3327,7 +3513,14 @@ function InventoryTable({
     const [viewMode, setViewMode] = useState<ViewMode>('products');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
-    const [withdrawMenuId, setWithdrawMenuId] = useState<string | null>(null);
+    // Lotes cuyo lugar se tocó para mover (null = diálogo cerrado)
+    const [moveTarget, setMoveTarget] = useState<{ name: string; from: string; lots: Item[] } | null>(null);
+    const locationNames = Array.from(new Map(
+        [...locations.map(l => l.name), ...allItems.map(i => i.location || '')]
+            .filter(Boolean)
+            .map(n => [normalizeText(n), n] as [string, string])
+    ).values()).sort((a, b) => a.localeCompare(b));
+    const askMove = (name: string, from: string, lots: Item[]) => setMoveTarget({ name, from: from === 'Sin ubicación' ? '' : from, lots });
     const [qtyEditorKey, setQtyEditorKey] = useState<string | null>(null);
 
     // Verificar que los links de fotos/videos de tienda sigan vivos
@@ -3559,6 +3752,16 @@ function InventoryTable({
 
     return (
         <>
+            {moveTarget && (
+                <MoveLocationDialog
+                    name={moveTarget.name}
+                    from={moveTarget.from}
+                    total={moveTarget.lots.reduce((acc, l) => acc + l.quantity, 0)}
+                    locations={locationNames}
+                    onClose={() => setMoveTarget(null)}
+                    onMove={(to, qty) => { onMoveUnits?.(moveTarget.lots, qty, to); setMoveTarget(null); }}
+                />
+            )}
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-gray-500">
@@ -3663,8 +3866,8 @@ function InventoryTable({
                                     <div
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => toggleGroup(grp.key)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(grp.key); } }}
+                                        onClick={() => { if (grp.children.length > 1) toggleGroup(grp.key); }}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (grp.children.length > 1) toggleGroup(grp.key); } }}
                                         className="w-full cursor-pointer p-4 text-left"
                                     >
                                         <div className="flex items-start justify-between gap-3">
@@ -3678,7 +3881,7 @@ function InventoryTable({
                                                         <Package className="w-4 h-4 text-gray-400" />
                                                     </div>
                                                 )}
-                                                <div>
+                                                <div className="min-w-0 flex-1">
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         <h3 className="font-semibold text-gray-900 text-[15px] leading-snug">{grp.name}</h3>
                                                         {(() => {
@@ -3687,9 +3890,11 @@ function InventoryTable({
                                                             return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>;
                                                         })()}
                                                     </div>
-                                                    <p className="text-xs text-gray-400 mt-0.5">
-                                                        {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
-                                                    </p>
+                                                    <div className="flex flex-wrap gap-1 mt-1.5">
+{grp.locations.map(l => (
+<LocationChip key={l.loc} label={l.loc} qty={l.qty} onClick={() => askMove(grp.name, l.loc, grp.children.filter(c => normalizeText(c.location || 'Sin ubicación') === normalizeText(l.loc)))} />
+))}
+</div>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -3702,25 +3907,25 @@ function InventoryTable({
                                                 >
                                                     {grp.totalQty}
                                                 </button>
-                                                {onAddUnits && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onAddUnits(repItem)}
-                                                        title="Agregar otra tanda con distinto precio u otra ubicación"
-                                                        aria-label="Agregar otra tanda con distinto precio u otra ubicación"
-                                                        className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:bg-blue-100 hover:border-blue-300 active:scale-95"
-                                                    >
-                                                        <Plus className="w-3.5 h-3.5" />
-                                                    </button>
-                                                )}
-                                                {expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                                {grp.children.length > 1 && (expandedGroups.has(grp.key) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />)}
                                             </div>
                                         </div>
-                                        <div className="mt-2 flex gap-4 text-xs text-gray-500">
-                                            <span>Prom: {money(grp.avgCost)}/u</span>
-                                            <span>Total: {money(grp.totalValue)}</span>
-                                            <span>{grp.batches.map(b => getBatchLabel(b)).join(', ') || 'Directa'}</span>
-                                        </div>
+                                        {(() => {
+                                            // Un solo número a la vista: el precio de venta. El costo queda en el detalle de cada lote.
+                                            const precios = Array.from(new Set(grp.children.map(c => c.salePrice || 0).filter(v => v > 0)));
+                                            return (
+                                                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
+                                                    <span>
+                                                        {precios.length === 0
+                                                            ? <span className="text-amber-600 font-medium">Sin precio de venta</span>
+                                                            : <>Venta <span className="text-sm font-bold text-gray-900 tabular-nums">{precios.length > 1 ? 'desde ' : ''}{money(Math.min(...precios))}</span></>}
+                                                    </span>
+                                                    {grp.children.length === 1
+                                                        ? <LotActions item={grp.children[0]} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                        : <span className="shrink-0 text-blue-600 font-semibold">{grp.children.length} lotes · ver</span>}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
 
                                     {qtyEditorKey === grp.key && (
@@ -3754,18 +3959,7 @@ function InventoryTable({
                                                 <span className={`w-1.5 h-1.5 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400 dark:bg-slate-500'}`} />
                                                 {isPublic ? 'Publicado' : 'No publicado'}
                                             </button>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onManageImages(repItem);
-                                                }}
-                                                className="p-1 text-violet-600 hover:bg-violet-100 dark:text-violet-400 dark:hover:bg-violet-950/50 rounded-md transition-all"
-                                                title="Editar tienda"
-                                            >
-                                                <Edit2 className="w-3 h-3" />
-                                            </button>
-                                        </div>
+                                            </div>
                                         <div className="flex items-center gap-1 flex-nowrap overflow-x-auto">
                                             <StoreProgress
                                                 hasTitle={hasStoreTitle}
@@ -3778,7 +3972,7 @@ function InventoryTable({
                                             />
                                         </div>
                                     </div>
-                                {expandedGroups.has(grp.key) && (
+                                {expandedGroups.has(grp.key) && grp.children.length > 1 && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
                                         {(() => {
                                             const locMap = new Map<string, Item[]>();
@@ -3812,34 +4006,14 @@ function InventoryTable({
                                         })()}
                                         {grp.children.map(item => (
                                             <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-3">
-                                                <div className="flex justify-between items-center text-sm">
-                                                    <div>
-                                                        <span className="text-gray-700 font-medium">{getBatchLabel(resolveBatchRef(item))}</span>
-                                                        <span className="text-gray-400 mx-2">·</span>
-                                                        <span className="text-gray-500">{item.location || 'Sin ubicación'}</span>
-                                                    </div>
-                                                    <span className="text-xs font-semibold text-gray-600">×{item.quantity}</span>
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <LocationChip label={item.location || ''} onClick={() => askMove(item.productName, item.location || '', [item])} />
+                                                    <span className="text-sm font-bold text-gray-700 tabular-nums shrink-0">×{item.quantity}</span>
                                                 </div>
-                                                <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                                                    <span>Costo: {money(item.purchasePrice)}/u</span>
-                                                    <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
-                                                </div>
-                                                <div className="flex gap-2 mt-2 flex-wrap">
-                                                    <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
-                                                    <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                    {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
-                                                    <div className="relative">
-                                                        <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
-                                                        {withdrawMenuId === item.id && (
-                                                            <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                                <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                                <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                                <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
-                                                </div>
+                                                <p className="text-xs text-gray-500 mt-1.5">
+                                                    {[getBatchLabel(resolveBatchRef(item)), conditionLabelMap[item.condition || 'nuevo'], `costo ${money(item.purchasePrice)}`].join(' · ')}
+                                                </p>
+                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -3926,22 +4100,7 @@ function InventoryTable({
                                                 <span>{item.location || 'Sin ubicación'}</span>
                                                 <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                             </div>
-                                            <div className="flex gap-2 mt-2 flex-wrap">
-                                                <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
-                                                <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
-                                                <div className="relative">
-                                                    <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
-                                                    {withdrawMenuId === item.id && (
-                                                        <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                            <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                            <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                            <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
-                                            </div>
+                                            <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
                                         </div>
                                     ))}
                                 </div>
@@ -3972,9 +4131,11 @@ function InventoryTable({
                                                     <h3 className="font-semibold text-gray-900 leading-tight">{grp.name}</h3>
                                                     <span className="text-[10px] font-bold bg-violet-200 text-violet-800 px-1.5 py-0.5 rounded">PROPIO</span>
                                                 </div>
-                                                <p className="text-xs text-gray-500 mt-0.5">
-                                                    {grp.locations.map(l => `${l.loc} (${l.qty})`).join(' · ')}
-                                                </p>
+                                                <div className="flex flex-wrap gap-1 mt-1.5">
+{grp.locations.map(l => (
+<LocationChip key={l.loc} label={l.loc} qty={l.qty} onClick={() => askMove(grp.name, l.loc, grp.children.filter(c => normalizeText(c.location || 'Sin ubicación') === normalizeText(l.loc)))} />
+))}
+</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
@@ -3991,30 +4152,14 @@ function InventoryTable({
                                         {grp.children.map(item => (
                                             <div key={item.id} className="bg-white rounded-xl border border-violet-100 p-3 shadow-xs">
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="inline-flex items-center gap-1 text-gray-600 font-medium"><MapPin className="w-3 h-3 text-violet-400" />{item.location || 'Sin ubicación'}</span>
+                                                    <LocationChip label={item.location || ''} onClick={() => askMove(item.productName, item.location || '', [item])} />
                                                     <span className="text-xs font-bold text-violet-700">×{item.quantity}</span>
                                                 </div>
                                                 <div className="flex gap-4 text-xs text-gray-500 mt-1">
                                                     <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                                     {item.salePrice && <span className="text-emerald-600 font-bold">Venta: {money(item.salePrice)}</span>}
                                                 </div>
-                                                <div className="flex gap-2 mt-2 flex-wrap">
-                                                    <button onClick={() => onSell(item)} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">Vender</button>
-                                                    <button onClick={() => onEdit(item)} className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-md">Editar</button>
-                                                    <button onClick={() => onManageImages(item)} className="inline-flex items-center gap-1 text-[10px] font-bold bg-violet-50 text-violet-700 px-2 py-1 rounded-md" title="Fotos y video de tienda"><ImageIcon className="w-3 h-3" />Fotos</button>
-                                                    {item.quantity > 1 && <button onClick={() => onSplit(item)} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-md">Separar</button>}
-                                                    <div className="relative">
-                                                        <button onClick={() => setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id)} className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">Dar de baja</button>
-                                                        {withdrawMenuId === item.id && (
-                                                            <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                                <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                                <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                                <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <button onClick={() => onDelete(item.id)} className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-md">Eliminar</button>
-                                                </div>
+                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onManageImages={onManageImages} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -4102,18 +4247,7 @@ function InventoryTable({
                                                         >
                                                             {grp.totalQty}
                                                         </button>
-                                                        {onAddUnits && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => onAddUnits(repItem)}
-                                                                title="Agregar otra tanda con distinto precio u otra ubicación"
-                                                                aria-label="Agregar otra tanda con distinto precio u otra ubicación"
-                                                                className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:bg-blue-100 hover:border-blue-300 active:scale-95"
-                                                            >
-                                                                <Plus className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                        </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-mono text-sm">
                                                     <span className="text-gray-700">{money(grp.avgCost)}</span>
@@ -4124,9 +4258,7 @@ function InventoryTable({
                                                 <td className="px-3 py-3 text-center">
                                                     <div className="flex flex-wrap justify-center gap-1">
                                                         {grp.locations.map(l => (
-                                                            <span key={l.loc} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                                                                {l.loc} ×{l.qty}
-                                                            </span>
+                                                            <LocationChip key={l.loc} label={l.loc} qty={l.qty} onClick={() => askMove(grp.name, l.loc, grp.children.filter(c => normalizeText(c.location || 'Sin ubicación') === normalizeText(l.loc)))} />
                                                         ))}
                                                     </div>
                                                 </td>
@@ -4150,15 +4282,7 @@ function InventoryTable({
                                                                 <span className={`w-2 h-2 rounded-full ${isPublic ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400 dark:bg-slate-500'}`} />
                                                                 {isPublic ? 'Publicado' : 'No publicado'}
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => onManageImages(repItem)}
-                                                                className="p-1 text-violet-600 hover:text-violet-800 hover:bg-violet-50 dark:text-violet-400 dark:hover:text-violet-300 dark:hover:bg-violet-950/50 rounded-lg transition-all"
-                                                                title="Editar título, descripción, fotos y video de tienda"
-                                                            >
-                                                                <Edit2 className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        </div>
+                                                            </div>
                                                         {/* Completitud de la publicación (segmentos clicables) */}
                                                         <div className="flex items-center justify-center py-0.5">
                                                             <StoreProgress
@@ -4241,12 +4365,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center gap-1.5">
-                                                        {item.location && (
-                                                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                                                <MapPin className="w-2.5 h-2.5" />
-                                                                {item.location}
-                                                            </span>
-                                                        )}
+                                                        <LocationChip label={item.location || ''} onClick={() => askMove(item.productName, item.location || '', [item])} />
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-center">
@@ -4261,43 +4380,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3" colSpan={2}>
                                                     <div className="flex items-center gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
-                                                            <DollarSign className="w-3 h-3" /> Vender
-                                                        </button>
-
-                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                        <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
-                                                            <Edit2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        {item.quantity > 1 && (
-                                                            <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
-                                                                className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
-                                                                <Split className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        )}
-
-                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                        <div className="relative">
-                                                            <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
-                                                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
-                                                                <Ban className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            {withdrawMenuId === item.id && (
-                                                                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
-                                                                    <button onClick={() => { onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3.5 h-3.5" />Regalo</button>
-                                                                    <button onClick={() => { onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3.5 h-3.5" />Uso personal</button>
-                                                                    <button onClick={() => { onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3.5 h-3.5" />Pérdida</button>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                                                            className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -4363,12 +4446,7 @@ function InventoryTable({
                                                     )}
                                                     {prod.items.map(item => (
                                                         <div key={item.id} className="flex gap-0.5">
-                                                            <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">Vender</button>
-                                                            <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                                className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Editar">
-                                                                <Edit2 className="w-3 h-3" />
-                                                            </button>
+                                                            <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
                                                         </div>
                                                     ))}
                                                 </div>
@@ -4435,31 +4513,7 @@ function InventoryTable({
                                             <td className="px-4 py-2 text-right">
                                                 <div className="flex justify-end items-center gap-1">
                                                     <span className="text-xs font-mono mr-2">{money(item.purchasePrice)}/u</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-0.5">
-                                                        <DollarSign className="w-3 h-3" /> Vender
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all" title="Editar">
-                                                        <Edit2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <div className="relative">
-                                                        <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
-                                                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all" title="Dar de baja">
-                                                            <Ban className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        {withdrawMenuId === item.id && (
-                                                            <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2"><Gift className="w-3 h-3" />Regalo</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2"><User className="w-3 h-3" />Uso personal</button>
-                                                                <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2"><Ban className="w-3 h-3" />Pérdida</button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                                                        className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all" title="Eliminar">
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
+                                                    <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
                                                 </div>
                                             </td>
                                         </tr>
@@ -4524,10 +4578,7 @@ function InventoryTable({
                                             <td className="px-3 py-3 text-center">
                                                 <div className="flex flex-wrap justify-center gap-1">
                                                     {grp.locations.map(l => (
-                                                        <span key={l.loc} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full">
-                                                            <MapPin className="w-2.5 h-2.5" />
-                                                            {l.loc} ×{l.qty}
-                                                        </span>
+                                                        <LocationChip key={l.loc} label={l.loc} qty={l.qty} onClick={() => askMove(grp.name, l.loc, grp.children.filter(c => normalizeText(c.location || 'Sin ubicación') === normalizeText(l.loc)))} />
                                                     ))}
                                                 </div>
                                             </td>
@@ -4560,10 +4611,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
-                                                            <MapPin className="w-2.5 h-2.5" />
-                                                            {item.location || 'Sin ubicación'}
-                                                        </span>
+                                                        <LocationChip label={item.location || ''} onClick={() => askMove(item.productName, item.location || '', [item])} />
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-center">
@@ -4581,51 +4629,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); onSell(item); }}
-                                                            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all">
-                                                            <DollarSign className="w-3 h-3" /> Vender
-                                                        </button>
-
-                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                        <button onClick={(e) => { e.stopPropagation(); onEdit(item); }}
-                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
-                                                            <Edit2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onManageImages(item); }}
-                                                            className="relative p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-all" title="Fotos y video de tienda">
-                                                            <ImageIcon className="w-3.5 h-3.5" />
-                                                            {(item.storeImages?.length || 0) > 0 && (
-                                                                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 text-white rounded-full text-[8px] flex items-center justify-center font-bold">{item.storeImages!.length}</span>
-                                                            )}
-                                                        </button>
-                                                        {item.quantity > 1 && (
-                                                            <button onClick={(e) => { e.stopPropagation(); onSplit(item); }}
-                                                                className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-all" title="Separar">
-                                                                <Split className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        )}
-
-                                                        <div className="w-px h-5 bg-gray-200 mx-0.5" />
-
-                                                        <div className="relative">
-                                                            <button onClick={(e) => { e.stopPropagation(); setWithdrawMenuId(withdrawMenuId === item.id ? null : item.id); }}
-                                                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all" title="Dar de baja">
-                                                                <Ban className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            {withdrawMenuId === item.id && (
-                                                                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
-                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'regalo'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-pink-50 text-pink-700 flex items-center gap-2 font-medium"><Gift className="w-3 h-3" />Regalo</button>
-                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'uso_personal'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 text-violet-700 flex items-center gap-2 font-medium"><User className="w-3 h-3" />Uso personal</button>
-                                                                    <button onClick={(e) => { e.stopPropagation(); onWithdraw(item, 'perdida'); setWithdrawMenuId(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 font-medium"><Ban className="w-3 h-3" />Pérdida</button>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                                                            className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onManageImages={onManageImages} />
                                                     </div>
                                                 </td>
                                             </tr>
