@@ -18,6 +18,21 @@ const isRichest = (a: LocationItem, b: LocationItem) => {
     return score(a) >= score(b);
 };
 
+// Qué variante del nombre conviene mostrar entre homónimos. El orden que
+// buscamos es "Ari" > "ARI" > "ari": las dos primeras tienen mayúsculas, pero
+// sólo la primera no está gritada entera. Sin esto quedaba el nombre del
+// registro que llegara primero, que solía ser el todo-minúscula.
+const displayNameScore = (name: string) => {
+    const t = name.trim();
+    if (!t) return 0;
+    const hasUpper = t !== t.toLowerCase();
+    const isAllUpper = t === t.toUpperCase();
+    return (hasUpper ? 2 : 0) + (isAllUpper ? 0 : 1);
+};
+
+const bestDisplayName = (a: string, b: string) =>
+    displayNameScore(b) > displayNameScore(a) ? b.trim() : a.trim();
+
 // Une los duplicados que sólo difieren en mayúsculas/espacios, completando
 // los campos que falten con los del otro registro.
 const dedupeLocations = (locs: LocationItem[]): LocationItem[] => {
@@ -37,6 +52,7 @@ const dedupeLocations = (locs: LocationItem[]): LocationItem[] => {
 
         byKey.set(key, {
             ...keep,
+            name: bestDisplayName(prev.name, loc.name),
             phone: keep.phone || other.phone,
             address: keep.address || other.address,
             isDefault: keep.isDefault || other.isDefault,

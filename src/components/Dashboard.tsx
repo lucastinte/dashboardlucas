@@ -6,7 +6,8 @@ import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
 import { STORE_CONFIG, productUrl } from '../config/storeConfig';
-import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal } from 'lucide-react';
+import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal, Mic } from 'lucide-react';
+import VoiceSetupModal from './VoiceSetupModal';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -193,6 +194,7 @@ export default function Dashboard() {
     const savingRef = useRef(false);
     const [locations, setLocations] = useState<LocationItem[]>([]);
     const [isLocationsModalOpen, setIsLocationsModalOpen] = useState(false);
+    const [isVoiceSetupOpen, setIsVoiceSetupOpen] = useState(false);
     const [batchTotalPaid, setBatchTotalPaid] = useState(0);
     const [batchItems, setBatchItems] = useState<PricingItem[]>([]);
     const [itemBatchMap, setItemBatchMap] = useState<Record<string, string>>({});
@@ -226,6 +228,18 @@ export default function Dashboard() {
     const handleSaveLocation = async (locData: { id?: string; name: string; phone?: string; address?: string; isDefault?: boolean }) => {
         await locationService.saveLocation(locData);
         await loadLocations();
+    };
+
+    // Alta rápida para el chip "+ Nueva" del formulario: si ya existe una
+    // ubicación con ese nombre (sin distinguir mayúsculas) devuelve esa.
+    const handleQuickAddLocation = async (name: string): Promise<LocationItem | null> => {
+        const trimmed = name.trim();
+        if (!trimmed) return null;
+        const existing = locations.find(l => l.name.toLowerCase() === trimmed.toLowerCase());
+        if (existing) return existing;
+        const created = await locationService.saveLocation({ name: trimmed });
+        await loadLocations();
+        return created;
     };
 
     const handleDeleteLocation = async (id: string) => {
@@ -1118,9 +1132,9 @@ export default function Dashboard() {
         setIsModalOpen(true);
     };
 
-    const openNewModal = (initialStatus: ItemStatus = 'in_stock') => {
+    const openNewModal = (initialStatus: ItemStatus = 'in_stock', presets?: Partial<Item>) => {
         resetForm();
-        setFormData(prev => ({ ...prev, status: initialStatus }));
+        setFormData(prev => ({ ...prev, status: initialStatus, ...presets }));
         setIsModalOpen(true);
     };
 
@@ -1414,6 +1428,15 @@ export default function Dashboard() {
                             <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
                                 <button
                                     type="button"
+                                    onClick={() => setIsVoiceSetupOpen(true)}
+                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
+                                    title="Configurar el atajo de Siri para cargar productos hablando"
+                                >
+                                    <Mic className="w-4 h-4 text-violet-600" />
+                                    <span className="hidden md:inline">Agregar por voz</span>
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={() => setIsLocationsModalOpen(true)}
                                     className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 sm:px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
                                 >
@@ -1438,6 +1461,7 @@ export default function Dashboard() {
                                 batchHistory={batchHistory} 
                                 locations={locations}
                                 onOpenLocationsModal={() => setIsLocationsModalOpen(true)}
+                                onAddProductAtLocation={(loc) => openNewModal('in_stock', { location: loc })}
                                 onEdit={startEdit} 
                                 onDelete={handleDeleteItem} 
                                 resolveBatchRef={getItemBatchRef} 
@@ -1498,6 +1522,9 @@ export default function Dashboard() {
                 onDeleteLocation={handleDeleteLocation}
                 items={items}
             />
+
+            {/* Voice Shortcut Setup Modal */}
+            {isVoiceSetupOpen && <VoiceSetupModal onClose={() => setIsVoiceSetupOpen(false)} />}
 
             {/* Store Images Modal */}
             {storeImagesItem && (
@@ -1590,6 +1617,7 @@ export default function Dashboard() {
                             suggestedNames={Array.from(new Set(items.map(i => i.productName))).filter(Boolean).sort()}
                             locations={locations}
                             onOpenLocationsModal={() => setIsLocationsModalOpen(true)}
+                            onQuickAddLocation={handleQuickAddLocation}
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             existingImages={Array.from(new Map(items.filter(i => i.imageUrl).map(i => [i.imageUrl!, { url: i.imageUrl!, name: i.productName }])).values())}
                             isSaving={isSaving}
@@ -3490,7 +3518,8 @@ function InventoryTable({
     onAddUnits,
     batchHistory,
     locations = [],
-    onOpenLocationsModal
+    onOpenLocationsModal,
+    onAddProductAtLocation
 }: {
     items: Item[],
     allItems: Item[],
@@ -3507,7 +3536,8 @@ function InventoryTable({
     onAddUnits?: (anchor: Item) => void,
     batchHistory: BatchRecord[],
     locations?: LocationItem[],
-    onOpenLocationsModal?: () => void
+    onOpenLocationsModal?: () => void,
+    onAddProductAtLocation?: (location: string) => void
 }) {
     type ViewMode = 'products' | 'locations' | 'batches' | 'personal';
     const [viewMode, setViewMode] = useState<ViewMode>('products');
@@ -4039,6 +4069,16 @@ function InventoryTable({
                                 </div>
                                 <p className="text-xs text-gray-400 mt-1">{grp.products.length} productos · {money(grp.totalValue)}</p>
                             </button>
+                            {onAddProductAtLocation && grp.location !== 'Sin ubicación' && (
+                                <button
+                                    type="button"
+                                    onClick={() => onAddProductAtLocation(grp.location)}
+                                    className="w-full flex items-center justify-center gap-1 py-1.5 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border-t border-gray-100 transition-colors active:bg-blue-100"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Agregar producto aquí
+                                </button>
+                            )}
                             {expandedGroups.has(grp.key) && (
                                 <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-2">
                                     {grp.products.map((prod) => (
@@ -4418,6 +4458,16 @@ function InventoryTable({
                                         <td className="px-4 py-3 font-bold text-gray-900 flex items-center gap-2">
                                             <MapPin className="w-4 h-4 text-blue-500" />
                                             {grp.location}
+                                            {onAddProductAtLocation && grp.location !== 'Sin ubicación' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); onAddProductAtLocation(grp.location); }}
+                                                    className="p-1 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors cursor-pointer"
+                                                    title="Agregar producto en esta ubicación"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-center text-xs font-semibold">{grp.products.length}</td>
                                         <td className="px-4 py-3 text-center">
@@ -5460,19 +5510,20 @@ function ComboboxInput({ value, onChange, suggestions, placeholder, className, r
     );
 }
 
-function ProductForm({ 
-    formData, 
-    setFormData, 
-    onSubmit, 
-    onCancel, 
-    isEditing, 
-    editingItemStatus, 
-    suggestedNames = [], 
+function ProductForm({
+    formData,
+    setFormData,
+    onSubmit,
+    onCancel,
+    isEditing,
+    editingItemStatus,
+    suggestedNames = [],
     locations = [],
     onOpenLocationsModal,
-    batchCodes = [], 
-    existingImages = [], 
-    isSaving = false 
+    onQuickAddLocation,
+    batchCodes = [],
+    existingImages = [],
+    isSaving = false
 }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
@@ -5483,6 +5534,7 @@ function ProductForm({
     suggestedNames?: string[],
     locations?: LocationItem[],
     onOpenLocationsModal?: () => void,
+    onQuickAddLocation?: (name: string) => Promise<LocationItem | null>,
     batchCodes?: string[],
     existingImages?: { url: string; name: string }[],
     isSaving?: boolean
@@ -5491,6 +5543,27 @@ function ProductForm({
     const [purchasePriceInput, setPurchasePriceInput] = useState('');
     const [salePriceInput, setSalePriceInput] = useState('');
     const [quantityInput, setQuantityInput] = useState('1');
+    const [newLocOpen, setNewLocOpen] = useState(false);
+    const [newLocName, setNewLocName] = useState('');
+    const [creatingLoc, setCreatingLoc] = useState(false);
+
+    // Alta rápida de ubicación desde el propio formulario: sin pasar por el
+    // modal de gestión. Si ya existe (case-insensitive) se elige esa.
+    const handleCreateLocation = async () => {
+        const name = newLocName.trim();
+        if (!name || !onQuickAddLocation || creatingLoc) return;
+        setCreatingLoc(true);
+        try {
+            const created = await onQuickAddLocation(name);
+            if (created) {
+                setFormData(prev => ({ ...prev, location: created.name }));
+                setNewLocOpen(false);
+                setNewLocName('');
+            }
+        } finally {
+            setCreatingLoc(false);
+        }
+    };
 
     const formatMoney = (value?: number) => {
         const numeric = Number(value || 0);
@@ -5687,33 +5760,78 @@ function ProductForm({
                             </button>
                         )}
                     </div>
-                    <div className="flex gap-1.5">
-                        <select
-                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700 font-medium"
-                            value={formData.location || ''}
-                            onChange={e => setFormData({ ...formData, location: e.target.value })}
+                    <div className="max-h-32 overflow-y-auto flex flex-wrap gap-1.5 p-2 rounded-xl border border-gray-200 bg-gray-50">
+                        <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, location: '' })}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 ${!formData.location ? 'bg-gray-800 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-400'}`}
                         >
-                            <option value="">Seleccionar ubicación...</option>
-                            {locations.map(loc => (
-                                <option key={loc.id} value={loc.name}>
-                                    📍 {loc.name} {loc.isDefault ? '(Predeterminada)' : ''}
-                                </option>
-                            ))}
-                            {formData.location && !locations.some(l => l.name === formData.location) && (
-                                <option value={formData.location}>
-                                    📍 {formData.location} (Ubicación actual)
-                                </option>
-                            )}
-                        </select>
-                        {onOpenLocationsModal && (
+                            Sin ubicación
+                        </button>
+                        {locations.map(loc => (
+                            <button
+                                key={loc.id}
+                                type="button"
+                                onClick={() => setFormData({ ...formData, location: loc.name })}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 flex items-center gap-1 ${formData.location && formData.location.toLowerCase() === loc.name.toLowerCase() ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:border-blue-300'}`}
+                                title={loc.isDefault ? 'Ubicación predeterminada' : undefined}
+                            >
+                                📍 {loc.name}{loc.isDefault ? ' ★' : ''}
+                            </button>
+                        ))}
+                        {formData.location && !locations.some(l => l.name.toLowerCase() === formData.location!.toLowerCase()) && (
                             <button
                                 type="button"
-                                onClick={onOpenLocationsModal}
-                                className="p-2 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-600 transition-colors shrink-0"
-                                title="Agregar o editar ubicaciones"
+                                onClick={() => setFormData({ ...formData, location: '' })}
+                                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 transition-all active:scale-95 flex items-center gap-1"
+                                title="Ubicación que ya venía en el producto — tocá para sacarla"
                             >
-                                <Plus className="w-4 h-4 text-blue-600" />
+                                📍 {formData.location} (actual)
                             </button>
+                        )}
+                        {newLocOpen ? (
+                            <div className="flex items-center gap-1">
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    placeholder="Nombre del lugar…"
+                                    value={newLocName}
+                                    onChange={e => setNewLocName(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') { e.preventDefault(); handleCreateLocation(); }
+                                        if (e.key === 'Escape') { setNewLocOpen(false); setNewLocName(''); }
+                                    }}
+                                    className="px-3 py-1.5 rounded-full text-xs border border-blue-400 bg-white outline-none w-36 focus:ring-1 focus:ring-blue-400"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleCreateLocation}
+                                    disabled={!newLocName.trim() || creatingLoc}
+                                    className="p-1.5 rounded-full bg-blue-600 text-white disabled:opacity-40 active:scale-90 transition-all"
+                                    title="Crear y asignar"
+                                >
+                                    {creatingLoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setNewLocOpen(false); setNewLocName(''); }}
+                                    className="p-1.5 rounded-full bg-gray-200 text-gray-600 active:scale-90 transition-all"
+                                    title="Cancelar"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ) : (
+                            onQuickAddLocation && (
+                                <button
+                                    type="button"
+                                    onClick={() => setNewLocOpen(true)}
+                                    className="px-3 py-1.5 rounded-full text-xs font-bold text-blue-700 bg-blue-50 border border-dashed border-blue-300 hover:bg-blue-100 transition-all active:scale-95 flex items-center gap-1"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Nueva
+                                </button>
+                            )
                         )}
                     </div>
                     <p className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
