@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Mic, X, Copy, Check, ExternalLink } from 'lucide-react';
 
-// Guía para armar el Atajo de Siri que carga productos por voz.
+// Guía para armar el Atajo de Siri que carga productos por voz y foto.
 // Se abre desde el botón "Agregar por voz" del inventario. Muestra la URL del
 // endpoint de este deploy y los pasos del lado del iPhone; los env vars se
 // configuran en Vercel, no acá.
@@ -19,7 +19,7 @@ export default function VoiceSetupModal({ onClose }: { onClose: () => void }) {
         }
     };
 
-    const bodyExample = JSON.stringify({ texto: 'compré 3 parlantes jbl a 15 lucas, quedan en el depósito' }, null, 2);
+    const bodyExample = JSON.stringify({ texto: 'compré 3 parlantes jbl a 15 lucas, quedan en el depósito', foto: '(Texto codificado en Base64)' }, null, 2);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
@@ -30,7 +30,7 @@ export default function VoiceSetupModal({ onClose }: { onClose: () => void }) {
                 <div className="sticky top-0 flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-t-2xl">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Mic className="w-5 h-5 text-violet-600" />
-                        Agregar productos por voz
+                        Agregar productos por voz y foto
                     </h3>
                     <button
                         type="button"
@@ -48,7 +48,7 @@ export default function VoiceSetupModal({ onClose }: { onClose: () => void }) {
                         <ul className="list-disc pl-5 space-y-1 font-mono text-xs">
                             <li><b>QUICK_ADD_TOKEN</b> — una clave secreta inventada (ej: una frase larga)</li>
                             <li><b>SUPABASE_SERVICE_ROLE_KEY</b> — en Supabase → Settings → API</li>
-                            <li><b>GROQ_API_KEY</b> — <i>(opcional)</i> para que la IA interprete el dictado</li>
+                            <li><b>GROQ_API_KEY</b> — para que la IA interprete el dictado y reconozca el producto en la foto (gratis en console.groq.com)</li>
                         </ul>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                             Después de guardarlas, hacé un redeploy para que tomen efecto.
@@ -57,20 +57,28 @@ export default function VoiceSetupModal({ onClose }: { onClose: () => void }) {
 
                     <div>
                         <p className="font-semibold text-gray-900 dark:text-white mb-2">2. Crear el Atajo en el iPhone</p>
+                        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">En Atajos podés buscar cada acción escribiendo la palabra en negrita.</p>
                         <ol className="list-decimal pl-5 space-y-1.5">
                             <li>App <b>Atajos</b> → <b>+</b> para crear uno nuevo</li>
-                            <li>Agregá la acción <b>«Dictar texto»</b> (idioma: español)</li>
-                            <li>Agregá <b>«Obtener contenido de la URL»</b>:
+                            <li><b>Tomar foto</b> <i>(o <b>Seleccionar fotos</b> si la querés elegir de la galería)</i></li>
+                            <li><b>Cambiar tamaño</b> de la imagen → ancho <b>1024</b> <i>(una foto entera del iPhone es demasiado pesada)</i></li>
+                            <li><b>Convertir imagen</b> → formato <b>JPEG</b> <i>(el iPhone saca en HEIC, que no se ve en la web)</i></li>
+                            <li><b>Base64</b> → acción «Codificar», saltos de línea: <b>Ninguno</b></li>
+                            <li><b>Dictar texto</b> (idioma: español)</li>
+                            <li><b>Obtener contenido de la URL</b>:
                                 <ul className="list-disc pl-5 mt-1 space-y-1 text-xs">
                                     <li>Método: <b>POST</b></li>
                                     <li>URL: la de abajo</li>
                                     <li>Encabezados: <code className="font-mono">Authorization</code> = <code className="font-mono">Bearer TU_TOKEN</code></li>
-                                    <li>Cuerpo JSON: campo <code className="font-mono">texto</code> = <code className="font-mono">Texto dictado</code></li>
+                                    <li>Cuerpo JSON: campo <code className="font-mono">texto</code> = <code className="font-mono">Texto dictado</code> y campo <code className="font-mono">foto</code> = <code className="font-mono">Texto codificado</code></li>
                                 </ul>
                             </li>
-                            <li>Agregá <b>«Mostrar alerta»</b> con <code className="font-mono">Contenido de la URL</code> para ver la confirmación</li>
+                            <li><b>Mostrar alerta</b> con <code className="font-mono">Contenido de la URL</code> para ver la confirmación</li>
                             <li>Tocá el nombre del atajo → <b>«Agregar a Siri»</b> y poné una frase como <i>«Cargar producto»</i></li>
                         </ol>
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            La foto es opcional: si no la mandás, carga solo con el dictado. Y si mandás solo la foto, la IA intenta reconocer el producto. Lo que no entienda queda <b>«para revisar»</b>, nunca se pierde.
+                        </p>
                     </div>
 
                     <div>
@@ -99,7 +107,7 @@ export default function VoiceSetupModal({ onClose }: { onClose: () => void }) {
 
                     <div className="rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 p-3 text-xs text-violet-800 dark:text-violet-300">
                         <p className="font-semibold mb-1">Probalo en el momento</p>
-                        <p>Mantené apretado el atajo o decí <b>«Hey Siri, cargar producto»</b>, dictá <i>«compré 2 cables HDMI a 5 lucas, en casa»</i> y el producto aparece en el inventario.</p>
+                        <p>Decí <b>«Oye Siri, cargar producto»</b>, sacale la foto, dictá <i>«compré 2 cables HDMI a 5 lucas, en casa»</i> y el producto aparece en el inventario con su foto.</p>
                     </div>
 
                     <a

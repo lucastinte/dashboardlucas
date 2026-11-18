@@ -1429,26 +1429,27 @@ export default function Dashboard() {
                                 <button
                                     type="button"
                                     onClick={() => setIsVoiceSetupOpen(true)}
-                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
+                                    className="order-2 sm:order-none w-full sm:w-auto whitespace-nowrap bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
                                     title="Configurar el atajo de Siri para cargar productos hablando"
                                 >
-                                    <Mic className="w-4 h-4 text-violet-600" />
+                                    <Mic className="w-4 h-4 text-violet-600 shrink-0" />
+                                    <span className="md:hidden">Por voz</span>
                                     <span className="hidden md:inline">Agregar por voz</span>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setIsLocationsModalOpen(true)}
-                                    className="w-full sm:w-auto bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 sm:px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
+                                    className="order-3 sm:order-none w-full sm:w-auto whitespace-nowrap bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 sm:px-4 py-2.5 rounded-xl flex items-center justify-center shadow-sm transition-all font-medium text-sm gap-2"
                                 >
-                                    <MapPin className="w-4 h-4 text-blue-600" />
+                                    <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
                                     <span>Ubicaciones ({locations.length})</span>
                                 </button>
                                 <button
                                     onClick={() => openNewModal('in_stock')}
-                                    className="w-full sm:w-auto whitespace-nowrap text-sm sm:text-base bg-black hover:bg-gray-800 text-white px-3 sm:px-5 py-2.5 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium text-sm"
+                                    className="order-1 col-span-2 sm:order-none sm:col-span-1 w-full sm:w-auto whitespace-nowrap text-sm sm:text-base bg-black hover:bg-gray-800 text-white px-3 sm:px-5 py-2.5 rounded-xl flex items-center justify-center shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 font-medium text-sm"
                                 >
                                     <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 shrink-0" />
-                                    Agregar<span className="hidden sm:inline">&nbsp;Producto</span>
+                                    Agregar producto
                                 </button>
                             </div>
                         </div>
