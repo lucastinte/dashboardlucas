@@ -1587,11 +1587,13 @@ export default function Dashboard() {
                                         : 'Nuevo Registro'}
                                 </h2>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    {formData.status === 'in_stock' ? 'Añadir al inventario' : 'Registrar una venta realizada'}
+                                    {editingItem
+                                        ? (formData.status === 'in_stock' ? 'Modificá los datos del producto' : 'Modificá los datos de la venta')
+                                        : (formData.status === 'in_stock' ? 'Añadir al inventario' : 'Registrar una venta realizada')}
                                 </p>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="h-9 w-9 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
-                                <span className="text-2xl leading-none">&times;</span>
+                            <button type="button" onClick={() => setIsModalOpen(false)} aria-label="Cerrar" className="h-9 w-9 shrink-0 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center">
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
@@ -1607,7 +1609,6 @@ export default function Dashboard() {
                             onOpenLocationsModal={() => setIsLocationsModalOpen(true)}
                             onQuickAddLocation={handleQuickAddLocation}
                             batchCodes={batchHistory.map(b => b.batchCode)}
-                            existingImages={Array.from(new Map(items.filter(i => i.imageUrl).map(i => [i.imageUrl!, { url: i.imageUrl!, name: i.productName }])).values())}
                             isSaving={isSaving}
                         />
                     </div>
@@ -5289,12 +5290,11 @@ Aquí va la descripción
     );
 }
 
-function ImageUploadField({ currentUrl, onUploaded, existingImages = [] }: { currentUrl: string, onUploaded: (url: string) => void, existingImages?: { url: string; name: string }[] }) {
+function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUploaded: (url: string) => void }) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [urlInput, setUrlInput] = useState('');
     const [showUrlInput, setShowUrlInput] = useState(false);
-    const [showGallery, setShowGallery] = useState(false);
 
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -5340,14 +5340,12 @@ function ImageUploadField({ currentUrl, onUploaded, existingImages = [] }: { cur
                     <div className="w-14 h-14 rounded-lg border border-gray-200 overflow-hidden shrink-0 bg-white">
                         <img src={currentUrl} alt="Producto" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = 'https://placehold.co/100x100?text=Error')} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-500 truncate">{currentUrl.length > 50 ? '...' + currentUrl.slice(-45) : currentUrl}</p>
-                    </div>
+                    <p className="flex-1 min-w-0 text-xs text-gray-500">Foto cargada</p>
                     <div className="flex gap-1 shrink-0">
                         <label className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all ${uploading ? 'bg-blue-100 text-blue-600' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
                             {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
                             Cambiar
-                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+                            <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
                         </label>
                         <button type="button" onClick={() => onUploaded('')}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Quitar imagen">
@@ -5364,20 +5362,13 @@ function ImageUploadField({ currentUrl, onUploaded, existingImages = [] }: { cur
                             ) : (
                                 <><Upload className="w-4 h-4 text-gray-400" /><span className="text-sm text-gray-500">Subir foto</span></>
                             )}
-                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+                            <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
                         </label>
                         <button type="button" onClick={() => setShowUrlInput(!showUrlInput)}
                             className={`flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed transition-all ${showUrlInput ? 'border-black bg-gray-100' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
                             <ImageIcon className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-500">Pegar link</span>
+                            <span className="text-sm text-gray-500 whitespace-nowrap">Pegar link</span>
                         </button>
-                        {existingImages.length > 0 && (
-                            <button type="button" onClick={() => { setShowGallery(!showGallery); setShowUrlInput(false); }}
-                                className={`flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed transition-all ${showGallery ? 'border-black bg-gray-100' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
-                                <Layers className="w-4 h-4 text-gray-400" />
-                                <span className="text-sm text-gray-500">Existente</span>
-                            </button>
-                        )}
                     </div>
 
                     {showUrlInput && (
@@ -5399,24 +5390,6 @@ function ImageUploadField({ currentUrl, onUploaded, existingImages = [] }: { cur
                         </div>
                     )}
 
-                    {showGallery && existingImages.length > 0 && (
-                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 p-2 rounded-xl border border-gray-200 bg-gray-50 max-h-40 overflow-y-auto">
-                            {existingImages.map((img, idx) => (
-                                <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => { onUploaded(img.url); setShowGallery(false); }}
-                                    className="group relative aspect-square rounded-lg border-2 border-transparent hover:border-black overflow-hidden bg-white transition-all"
-                                    title={img.name}
-                                >
-                                    <img src={img.url} alt={img.name} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = 'https://placehold.co/80x80?text=?')} />
-                                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <p className="text-[9px] text-white truncate">{img.name}</p>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -5510,7 +5483,6 @@ function ProductForm({
     onOpenLocationsModal,
     onQuickAddLocation,
     batchCodes = [],
-    existingImages = [],
     isSaving = false
 }: {
     formData: Partial<Item>,
@@ -5524,7 +5496,6 @@ function ProductForm({
     onOpenLocationsModal?: () => void,
     onQuickAddLocation?: (name: string) => Promise<LocationItem | null>,
     batchCodes?: string[],
-    existingImages?: { url: string; name: string }[],
     isSaving?: boolean
 }) {
 
@@ -5711,15 +5682,18 @@ function ProductForm({
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                    <select
-                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
-                        value={(formData.condition as ItemCondition) || 'nuevo'}
-                        onChange={e => setFormData({ ...formData, condition: e.target.value as ItemCondition })}
-                    >
-                        <option value="nuevo">Nuevo</option>
-                        <option value="semi_uso">Semi uso</option>
-                        <option value="usado">Usado</option>
-                    </select>
+                    <div className="relative">
+                        <select
+                            className="appearance-none w-full h-[42px] pl-4 pr-10 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                            value={(formData.condition as ItemCondition) || 'nuevo'}
+                            onChange={e => setFormData({ ...formData, condition: e.target.value as ItemCondition })}
+                        >
+                            <option value="nuevo">Nuevo</option>
+                            <option value="semi_uso">Semi uso</option>
+                            <option value="usado">Usado</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    </div>
                 </div>
             </div>
 
@@ -5729,7 +5703,8 @@ function ProductForm({
                     <input
                         type="date"
                         required
-                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-600"
+                        lang="es-AR"
+                        className="w-full h-[42px] px-4 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-600"
                         value={formData.date}
                         onChange={e => setFormData({ ...formData, date: e.target.value })}
                     />
@@ -5849,21 +5824,23 @@ function ProductForm({
             {isEditing && batchCodes.length > 0 && (
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tanda</label>
-                    <select
-                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
-                        value={formData.batchRef || ''}
-                        onChange={e => setFormData({ ...formData, batchRef: e.target.value || undefined })}
-                    >
-                        <option value="">Sin tanda (Directa)</option>
-                        {batchCodes.map(code => <option key={code} value={code}>{code}</option>)}
-                    </select>
+                    <div className="relative">
+                        <select
+                            className="appearance-none w-full h-[42px] pl-4 pr-10 rounded-xl border border-gray-200 focus:border-black focus:ring-1 focus:ring-black outline-none transition-all bg-gray-50 focus:bg-white text-gray-700"
+                            value={formData.batchRef || ''}
+                            onChange={e => setFormData({ ...formData, batchRef: e.target.value || undefined })}
+                        >
+                            <option value="">Sin tanda (Directa)</option>
+                            {batchCodes.map(code => <option key={code} value={code}>{code}</option>)}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    </div>
                 </div>
             )}
 
             <ImageUploadField
                 currentUrl={formData.imageUrl || ''}
                 onUploaded={(url) => setFormData({ ...formData, imageUrl: url })}
-                existingImages={existingImages}
             />
 
             <div className="pt-3 sm:pt-4 flex flex-col-reverse sm:flex-row gap-3">
