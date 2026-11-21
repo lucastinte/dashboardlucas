@@ -6,7 +6,7 @@ import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
 import { STORE_CONFIG, productUrl } from '../config/storeConfig';
-import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal } from 'lucide-react';
+import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -4708,8 +4708,13 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [dragOver, setDragOver] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [fbCopied, setFbCopied] = useState(false);
+    const [copied, setCopied] = useState<'link' | 'fb' | null>(null);
     const [showVideo, setShowVideo] = useState(false);
+    const copy = (kind: 'link' | 'fb', text: string) => navigator.clipboard.writeText(text).then(() => {
+        setCopied(kind);
+        setTimeout(() => setCopied(null), 2000);
+    });
+    const actionCls = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all';
 
     useEffect(() => { onBusyChange(uploading > 0); }, [uploading, onBusyChange]);
 
@@ -4849,31 +4854,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
 
             {/* ── DESCRIPCIÓN ── */}
             <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-700">Descripción</p>
-                    {(draft.description || '').trim() && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const post = [
-                                    title,
-                                    '',
-                                    (draft.description || '').trim(),
-                                    '',
-                                    `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
-                                    `💬 Solo respondo por WhatsApp (${STORE_CONFIG.whatsappUser}) o por la web: gestioná tu pedido ahí.`,
-                                ].join('\n');
-                                navigator.clipboard.writeText(post).then(() => {
-                                    setFbCopied(true);
-                                    setTimeout(() => setFbCopied(false), 2000);
-                                });
-                            }}
-                            className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
-                        >
-                            {fbCopied ? '✓ Copiado' : '📋 Copiar para Facebook'}
-                        </button>
-                    )}
-                </div>
+                <p className="text-sm font-medium text-gray-700">Descripción</p>
                 <textarea
                     value={draft.description || ''}
                     onChange={e => { const v = e.target.value; update(() => ({ description: v })); }}
@@ -4907,6 +4888,22 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
             {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
             <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => copy('link', productUrl(item.id))} className={`${actionCls} ${copied === 'link' ? 'border-emerald-300 text-emerald-600' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}>
+                    {copied === 'link' ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />} {copied === 'link' ? 'Link copiado' : 'Copiar link'}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => copy('fb', [
+                        title,
+                        '',
+                        ...((draft.description || '').trim() ? [(draft.description || '').trim(), ''] : []),
+                        `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
+                        `💬 Solo respondo por WhatsApp (${STORE_CONFIG.whatsappUser}) o por la web: gestioná tu pedido ahí.`,
+                    ].join('\n'))}
+                    className={`${actionCls} ${copied === 'fb' ? 'border-emerald-300 text-emerald-600' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                >
+                    {copied === 'fb' ? <Check className="w-3.5 h-3.5" /> : <ClipboardPaste className="w-3.5 h-3.5" />} {copied === 'fb' ? 'Copiado' : 'Copiar para Facebook'}
+                </button>
                 <button type="button" onClick={onGeneratePlaca} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all">
                     🪧 Placa para Marketplace
                 </button>
