@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { Item, ItemCondition, ItemStatus, ItemType, WithdrawalReason, LocationItem } from '../types';
 import { itemService } from '../services/itemService';
@@ -146,7 +146,10 @@ export default function Dashboard() {
     });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
-    const [storeImagesItem, setStoreImagesItem] = useState<Item | null>(null);
+    // Datos de tienda que se editan dentro de "Editar" (solo para ese lote)
+    const [storeEdit, setStoreEdit] = useState<{ id: string; draft: StoreDraft; orig: StoreDraft } | null>(null);
+    const [storeBusy, setStoreBusy] = useState(false);
+    const setStoreDraft = useCallback((fn: (d: StoreDraft) => StoreDraft) => setStoreEdit(prev => prev ? { ...prev, draft: fn(prev.draft) } : prev), []);
     const [placaItem, setPlacaItem] = useState<Item | null>(null);
     // Factura recibida de ARCA para una venta sin modal abierto: se abre acá
     const [arcaFacturaRecibida, setArcaFacturaRecibida] = useState<{ ventaId: string; factura: ArcaFactura } | null>(null);
@@ -609,6 +612,14 @@ export default function Dashboard() {
                 // Sync state with DB response to detect if columns were dropped by fallback
                 setItems(prev => prev.map(i => i.id === editingItem.id ? savedItem : i));
 
+                // Datos de tienda editados en el mismo formulario (se copian a los lotes del producto)
+                if (storeEdit && storeEdit.id === editingItem.id && status === 'in_stock') {
+                    const clean = cleanStoreDraft(storeEdit.draft);
+                    if (JSON.stringify(clean) !== JSON.stringify(cleanStoreDraft(storeEdit.orig))) {
+                        await handleUpdateStoreImages(editingItem.id, clean);
+                    }
+                }
+
                 // Sync name AND price changes to batch record
                 const oldName = editingItem.productName;
                 const newName = updates.productName || oldName;
@@ -831,8 +842,8 @@ export default function Dashboard() {
         }
     };
 
-    const handleClearStoreData = async (target: Item) => {
-        if (!confirm(`¿Eliminar todos los datos de tienda de "${target.productName}"?\n\nSe borran: título, descripción, grupo, fotos adicionales y video. Los archivos que ningún otro producto use también se eliminan del servidor para liberar espacio.\n\nLa foto principal y el producto en sí NO se tocan.`)) return;
+    const handleClearStoreData = async (target: Item): Promise<boolean> => {
+        if (!confirm(`¿Eliminar todos los datos de tienda de "${target.productName}"?\n\nSe borran: título, descripción, grupo, fotos adicionales y video. Los archivos que ningún otro producto use también se eliminan del servidor para liberar espacio.\n\nLa foto principal y el producto en sí NO se tocan.`)) return false;
         try {
             // Archivos candidatos a borrar del Storage (fotos de tienda + video)
             const candidates = [...(target.storeImages || []), target.storeVideoUrl].filter((u): u is string => !!u);
@@ -852,12 +863,13 @@ export default function Dashboard() {
             const patch: Partial<Item> = { storeImages: [], storeVideoUrl: '', description: '', storeTitle: '', storeGroup: '', publicInStore: false };
             setItems(prev => prev.map(i => i.id === target.id ? { ...i, ...patch } : i));
             await itemService.updateItem(target.id, patch);
-            setStoreImagesItem(null);
+            return true;
         } catch (err) {
             console.error('Error clearing store data:', err);
             alert('Error al eliminar los datos de tienda.');
             loadItems();
         }
+        return false;
     };
 
     const handleToggleNoFacturar = async (id: string, value: boolean) => {
@@ -1017,6 +1029,15 @@ export default function Dashboard() {
     const startEdit = (item: Item) => {
         const resolvedBatchRef = getItemBatchRef(item);
         setEditingItem({ ...item, batchRef: resolvedBatchRef });
+        // Tienda: los datos pueden estar guardados en otro lote del mismo producto
+        if (item.status === 'in_stock' && item.itemType !== 'personal') {
+            const src = hasStoreContent(item) ? item : (findStoreDonor(items.filter(i => i.status === 'in_stock'), item.productName, item.condition, item.id) ?? item);
+            const d = storeDraftFrom({ ...src, storeVariantName: item.storeVariantName || src.storeVariantName });
+            setStoreEdit({ id: item.id, draft: d, orig: d });
+        } else {
+            setStoreEdit(null);
+        }
+        setStoreBusy(false);
         setFormData({
             ...item,
             batchRef: resolvedBatchRef,
@@ -1426,7 +1447,6 @@ export default function Dashboard() {
                                 onMoveUnits={handleMoveUnits}
                                 onWithdraw={handleWithdraw} 
                                 onTogglePublicInStore={handleTogglePublicInStore} 
-                                onManageImages={setStoreImagesItem} 
                                 onMerge={handleMergeItems}
                                 onUpdateQuantity={handleUpdateQuantity}
                                 onAddUnits={handleAddUnits}
@@ -1468,27 +1488,6 @@ export default function Dashboard() {
                 items={items}
             />
 
-            {/* Voice Shortcut Setup Modal */}
-
-            {/* Store Images Modal */}
-            {storeImagesItem && (
-                <StoreImagesModal
-                    item={storeImagesItem}
-                    onClose={() => setStoreImagesItem(null)}
-                    onSave={async (id, patch) => {
-                        await handleUpdateStoreImages(id, patch);
-                        setStoreImagesItem(prev => prev ? { ...prev, ...patch } : null);
-                    }}
-                    onClearAll={() => handleClearStoreData(storeImagesItem)}
-                    onGeneratePlaca={() => setPlacaItem(storeImagesItem)}
-                />
-            )}
-
-            {/* Placa Marketplace Modal — con la versión más reciente del producto
-                (foto principal incluida), no la copia guardada al abrir el modal de tienda */}
-            {placaItem && (
-                <PlacaModal item={items.find(i => i.id === placaItem.id) ?? placaItem} onClose={() => setPlacaItem(null)} />
-            )}
 
             {/* Factura recibida de ARCA cuando el modal de esa venta no estaba abierto */}
             {arcaFacturaRecibida && (() => {
@@ -1527,7 +1526,7 @@ export default function Dashboard() {
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/30 backdrop-blur-sm transition-opacity">
                     <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] sm:max-h-[88vh] overflow-y-auto transform transition-all scale-100 ring-1 ring-black/5 animate-in zoom-in-95 duration-200">
-                        <div className="p-4 sm:p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center sticky top-0 z-10">
+                        <div className="p-4 sm:p-6 border-b border-gray-100 bg-white flex justify-between items-center gap-3 sticky top-0 z-10">
                             <div>
                                 <h2 className="text-lg sm:text-xl font-bold text-gray-800">
                                     {editingItem
@@ -1538,7 +1537,7 @@ export default function Dashboard() {
                                                     ? 'Registrar Venta de Stock'
                                                     : editingItem.status === 'sold'
                                                         ? 'Editar Venta'
-                                                        : 'Editar Stock'
+                                                        : 'Editar producto'
                                         )
                                         : 'Nuevo Registro'}
                                 </h2>
@@ -1566,9 +1565,31 @@ export default function Dashboard() {
                             onQuickAddLocation={handleQuickAddLocation}
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             isSaving={isSaving}
+                            busy={storeBusy}
+                            extra={editingItem && storeEdit?.id === editingItem.id && formData.status === 'in_stock' ? (
+                                <StoreFields
+                                    item={editingItem}
+                                    draft={storeEdit.draft}
+                                    setDraft={setStoreDraft}
+                                    onBusyChange={setStoreBusy}
+                                    onClearAll={async () => {
+                                        if (await handleClearStoreData(editingItem)) {
+                                            setStoreDraft(() => storeDraftFrom({}));
+                                            setEditingItem(prev => prev ? { ...prev, ...storeDraftFrom({}), publicInStore: false } : prev);
+                                        }
+                                    }}
+                                    onGeneratePlaca={() => setPlacaItem(editingItem)}
+                                />
+                            ) : undefined}
                         />
                     </div>
                 </div>
+            )}
+
+            {/* Placa Marketplace Modal — con la versión más reciente del producto
+                (foto principal incluida), no la copia guardada al abrir el modal de tienda */}
+            {placaItem && (
+                <PlacaModal item={items.find(i => i.id === placaItem.id) ?? placaItem} onClose={() => setPlacaItem(null)} />
             )}
         </div>
     );
@@ -3089,56 +3110,6 @@ function useBrokenMedia(checks: MediaCheck[]): Set<string> {
     return broken;
 }
 
-function StoreProgress({ hasTitle, hasDesc, hasVideo, photoCount, onOpen, videoBroken, photoBroken }: {
-    hasTitle: boolean;
-    hasDesc: boolean;
-    hasVideo: boolean;
-    photoCount: number;
-    onOpen: () => void;
-    videoBroken?: boolean;
-    photoBroken?: boolean;
-}) {
-    const segments = [
-        { label: 'Título', done: hasTitle, doneText: 'Título listo', missingText: 'Falta el título de la publicación', broken: false, brokenText: '' },
-        { label: 'Desc', done: hasDesc, doneText: 'Descripción lista', missingText: 'Falta la descripción', broken: false, brokenText: '' },
-        { label: 'Video', done: hasVideo, doneText: 'Video subido', missingText: 'Sin video (opcional)', broken: Boolean(hasVideo && videoBroken), brokenText: 'El link del video ya no funciona — click para reemplazarlo' },
-        { label: 'Fotos', done: photoCount > 0, doneText: `${photoCount} foto${photoCount > 1 ? 's' : ''}`, missingText: 'Sin fotos', broken: Boolean(photoCount > 0 && photoBroken), brokenText: 'Algún link de foto ya no carga — click para reemplazarlo' },
-    ];
-    const doneCount = segments.filter(s => s.done && !s.broken).length;
-    const pendientes = segments.filter(s => s.broken || (!s.done && s.label !== 'Video'));
-    const resumen = segments.map(s => `${s.label}: ${s.broken ? s.brokenText : s.done ? s.doneText : s.missingText}`).join(' · ');
-    return (
-        <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onOpen(); }}
-            title={`Editar publicación de la tienda — ${resumen}`}
-            aria-label={`Editar publicación de la tienda. ${resumen}`}
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100/90 dark:bg-slate-800/90 hover:bg-gray-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
-        >
-            <Edit2 className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
-            <span className="flex items-center gap-1" aria-hidden="true">
-                {segments.map(seg => (
-                    <span
-                        key={seg.label}
-                        className={`h-1.5 w-3.5 rounded-full ${
-                            seg.broken
-                                ? 'bg-red-500'
-                                : seg.done
-                                    ? 'bg-emerald-500 dark:bg-emerald-400'
-                                    : seg.label === 'Video'
-                                        ? 'bg-slate-300 dark:bg-slate-600'
-                                        : 'bg-amber-400 dark:bg-amber-500'
-                        }`}
-                    />
-                ))}
-            </span>
-            <span className={`text-[10px] font-bold tabular-nums ${pendientes.some(s => s.broken) ? 'text-red-500' : doneCount === segments.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'}`}>
-                {doneCount}/{segments.length}
-            </span>
-        </button>
-    );
-}
-
 /* ── Editor rápido de cantidades (badge de STOCK) ───────────────────────────────
    Una fila por registro real de stock (ubicación + costo). El input guarda su
    propio texto y recién confirma al salir del campo o con Enter: así se puede
@@ -3247,13 +3218,12 @@ function QtyEditorPanel({ items, anchor, onUpdateQuantity, onDelete, onAddUnits,
    Antes cada lote mostraba cinco botones (Vender, Editar, Separar, Dar de baja,
    Eliminar). Queda "Vender" a la vista y el resto en un menú. El menú se dibuja
    en un portal con posición fija para que no lo recorte el scroll de la tabla. */
-function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages }: {
+function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
     item: Item;
     onSell: (i: Item) => void;
     onEdit: (i: Item) => void;
     onWithdraw: (item: Item, reason: WithdrawalReason) => void;
     onDelete: (id: string) => void;
-    onManageImages?: (i: Item) => void;
 }) {
     const [menu, setMenu] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
     const [menuDark, setMenuDark] = useState(false);
@@ -3314,7 +3284,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
                 <MoreHorizontal className="w-4 h-4" />
             </button>
             {menu && createPortal(
-                <div className={menuDark ? 'inventory-dark' : undefined}>
+                <div data-keep-open className={menuDark ? 'inventory-dark' : undefined}>
                     <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); setMenu(null); }} />
                     <div
                         role="menu"
@@ -3323,13 +3293,8 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
                         onClick={(e) => e.stopPropagation()}
                     >
                         <button role="menuitem" type="button" onClick={run(() => onEdit(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                            <Edit2 className="w-4 h-4 text-blue-600" /> Editar
+                            <Edit2 className="w-4 h-4 text-blue-600" /> Editar producto y tienda
                         </button>
-                        {onManageImages && (
-                            <button role="menuitem" type="button" onClick={run(() => onManageImages(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                                <ImageIcon className="w-4 h-4 text-violet-600" /> Publicación en tienda
-                            </button>
-                        )}
                         <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Dar de baja como…</p>
                         <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'regalo'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
                             <Gift className="w-4 h-4 text-pink-600" /> Regalo
@@ -3460,7 +3425,6 @@ function InventoryTable({
     onMoveUnits,
     onWithdraw, 
     onTogglePublicInStore, 
-    onManageImages,
     onMerge,
     onUpdateQuantity,
     onAddUnits,
@@ -3478,7 +3442,6 @@ function InventoryTable({
     onMoveUnits?: (lots: Item[], qty: number, to: string) => void,
     onWithdraw: (item: Item, reason: WithdrawalReason) => void,
     onTogglePublicInStore: (id: string, value: boolean) => void,
-    onManageImages: (item: Item) => void,
     onMerge?: (items: Item[]) => void,
     onUpdateQuantity?: (id: string, quantity: number) => void,
     onAddUnits?: (anchor: Item) => void,
@@ -3508,6 +3471,20 @@ function InventoryTable({
         ...(i.storeVideoUrl ? [{ url: i.storeVideoUrl, kind: 'video' as const }] : []),
     ]);
     const brokenMedia = useBrokenMedia(mediaChecks);
+
+    // Tocar fuera de la lista cierra el producto desplegado
+    const anyOpen = expandedGroups.size > 0 || qtyEditorKey !== null;
+    useEffect(() => {
+        if (!anyOpen) return;
+        const onDown = (e: PointerEvent) => {
+            const t = e.target as Element | null;
+            if (!t?.closest || t.closest('[data-inv-list], [data-keep-open], [role="dialog"], .fixed')) return;
+            setExpandedGroups(new Set());
+            setQtyEditorKey(null);
+        };
+        document.addEventListener('pointerdown', onDown);
+        return () => document.removeEventListener('pointerdown', onDown);
+    }, [anyOpen]);
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => {
@@ -3824,7 +3801,7 @@ function InventoryTable({
             </div>
 
             {/* ===== MOBILE VIEW ===== */}
-            <div className="sm:hidden p-3 space-y-3">
+            <div className="sm:hidden p-3 space-y-3" data-inv-list>
                 {viewMode === 'products' ? (
                     productGroups.length === 0 ? (
                         <div className="text-center py-8 text-gray-400 text-sm">No hay productos comerciales en stock.</div>
@@ -3832,10 +3809,6 @@ function InventoryTable({
                         productGroups.map((grp) => {
                             const repItem = grp.children.find(c => c.publicInStore) || grp.children.find(c => c.storeTitle || c.description || c.storeVideoUrl || (c.storeImages && c.storeImages.length > 0)) || grp.children[0];
                             const isPublic = grp.children.some(c => c.publicInStore);
-                            const hasStoreTitle = Boolean(repItem?.storeTitle?.trim());
-                            const hasDesc = Boolean(repItem?.description?.trim());
-                            const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
-                            const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
                             const videoBroken = Boolean(repItem?.storeVideoUrl?.trim()) && brokenMedia.has(repItem!.storeVideoUrl!.trim());
                             const photoBroken = [repItem?.imageUrl, ...(repItem?.storeImages || [])].some(u => !!u && brokenMedia.has(u));
 
@@ -3939,15 +3912,9 @@ function InventoryTable({
                                             </button>
                                             </div>
                                         <div className="flex items-center gap-1 flex-nowrap overflow-x-auto">
-                                            <StoreProgress
-                                                hasTitle={hasStoreTitle}
-                                                hasDesc={hasDesc}
-                                                hasVideo={hasVideo}
-                                                photoCount={photoCount}
-                                                onOpen={() => onManageImages(repItem)}
-                                                videoBroken={videoBroken}
-                                                photoBroken={photoBroken}
-                                            />
+                                            {(photoBroken || videoBroken) && (
+                                                <span className="text-[10px] font-semibold text-red-500" title="Revisá la publicación desde Editar">⚠ {photoBroken ? 'Foto' : 'Video'} con error</span>
+                                            )}
                                         </div>
                                     </div>
                                 {expandedGroups.has(grp.key) && grp.children.length > 1 && (
@@ -4147,7 +4114,7 @@ function InventoryTable({
                                                     <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                                     {item.salePrice && <span className="text-emerald-600 font-bold">Venta: {money(item.salePrice)}</span>}
                                                 </div>
-                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onManageImages={onManageImages} /></div>
+                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -4159,7 +4126,7 @@ function InventoryTable({
             </div>
 
             {/* ===== DESKTOP VIEW ===== */}
-            <div className="hidden sm:block overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto" data-inv-list>
                 {viewMode === 'products' ? (
                     productGroups.length === 0 ? (
                         <div className="p-8 text-center text-gray-400">No hay productos comerciales en stock.</div>
@@ -4181,10 +4148,6 @@ function InventoryTable({
                                 {productGroups.map((grp) => {
                                     const repItem = grp.children.find(c => c.publicInStore) || grp.children.find(c => c.storeTitle || c.description || c.storeVideoUrl || (c.storeImages && c.storeImages.length > 0)) || grp.children[0];
                                     const isPublic = grp.children.some(c => c.publicInStore);
-                                    const hasStoreTitle = Boolean(repItem?.storeTitle?.trim());
-                                    const hasDesc = Boolean(repItem?.description?.trim());
-                                    const hasVideo = Boolean(repItem?.storeVideoUrl?.trim());
-                                    const photoCount = (repItem?.storeImages?.length || 0) + (repItem?.imageUrl ? 1 : 0);
                                     const videoBroken = Boolean(repItem?.storeVideoUrl?.trim()) && brokenMedia.has(repItem!.storeVideoUrl!.trim());
                                     const photoBroken = [repItem?.imageUrl, ...(repItem?.storeImages || [])].some(u => !!u && brokenMedia.has(u));
 
@@ -4273,15 +4236,9 @@ function InventoryTable({
                                                             </div>
                                                         {/* Completitud de la publicación (segmentos clicables) */}
                                                         <div className="flex items-center justify-center py-0.5">
-                                                            <StoreProgress
-                                                                hasTitle={hasStoreTitle}
-                                                                hasDesc={hasDesc}
-                                                                hasVideo={hasVideo}
-                                                                photoCount={photoCount}
-                                                                onOpen={() => onManageImages(repItem)}
-                                                                videoBroken={videoBroken}
-                                                                photoBroken={photoBroken}
-                                                            />
+                                                            {(photoBroken || videoBroken) && (
+                                                <span className="text-[10px] font-semibold text-red-500" title="Revisá la publicación desde Editar">⚠ {photoBroken ? 'Foto' : 'Video'} con error</span>
+                                            )}
                                                         </div>
                                                     </div>
                                                 </td>
@@ -4627,7 +4584,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onManageImages={onManageImages} />
+                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -4713,24 +4670,40 @@ function normalizeStoreDescription(raw: string): string {
 
 const VIDEO_LINK_RE = /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com\/.*video|fb\.watch|\.(mp4|mov|webm|m4v)(\?|#|$))/i;
 
-/* Publicación en la tienda: fotos, video, descripción y variantes en un solo panel.
+export type StoreDraft = Pick<Item, 'storeImages' | 'storeVideoUrl' | 'description' | 'storeTitle' | 'storeGroup' | 'storeVariantName'>;
+
+const storeDraftFrom = (i: Partial<Item>): StoreDraft => ({
+    storeImages: i.storeImages || [],
+    storeVideoUrl: i.storeVideoUrl || '',
+    description: i.description || '',
+    storeTitle: i.storeTitle || '',
+    storeGroup: i.storeGroup || '',
+    storeVariantName: i.storeVariantName || '',
+});
+
+const cleanStoreDraft = (d: StoreDraft): StoreDraft => ({
+    storeImages: d.storeImages || [],
+    storeVideoUrl: d.storeVideoUrl || '',
+    description: normalizeStoreDescription(d.description || ''),
+    storeTitle: (d.storeTitle || '').trim(),
+    storeGroup: (d.storeGroup || '').trim().toLowerCase().replace(/\s+/g, '-'),
+    storeVariantName: (d.storeVariantName || '').trim(),
+});
+
+/* Tienda dentro de "Editar": fotos, video, descripción y variantes, todo a la vista.
    El título es el nombre del producto del dashboard. */
-function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }: {
+function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGeneratePlaca }: {
     item: Item;
-    onClose: () => void;
-    onSave: (id: string, patch: Partial<Item>) => Promise<void>;
+    draft: StoreDraft;
+    setDraft: (fn: (d: StoreDraft) => StoreDraft) => void;
+    onBusyChange: (busy: boolean) => void;
     onClearAll: () => void;
     onGeneratePlaca: () => void;
 }) {
-    const [images, setImages] = useState<string[]>(item.storeImages || []);
-    const [videoUrl, setVideoUrl] = useState<string>(item.storeVideoUrl || '');
-    const [description, setDescription] = useState<string>(item.description || '');
-    const [storeTitle, setStoreTitle] = useState<string>(item.storeTitle || '');
-    const [storeGroup, setStoreGroup] = useState<string>(item.storeGroup || '');
-    const [storeVariantName, setStoreVariantName] = useState<string>(item.storeVariantName || '');
-    const [showVariants, setShowVariants] = useState(Boolean(item.storeGroup || item.storeVariantName));
+    const images = draft.storeImages || [];
+    const videoUrl = draft.storeVideoUrl || '';
+    const update = (fn: (d: StoreDraft) => Partial<StoreDraft>) => setDraft(prev => ({ ...prev, ...fn(prev) }));
     const [uploading, setUploading] = useState(0);
-    const [saving, setSaving] = useState(false);
     const [linkInput, setLinkInput] = useState('');
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [dragOver, setDragOver] = useState(false);
@@ -4738,7 +4711,9 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
     const [fbCopied, setFbCopied] = useState(false);
     const [showVideo, setShowVideo] = useState(false);
 
-    const addImages = (urls: string[]) => setImages(prev => [...prev, ...urls.filter(u => u && !prev.includes(u))]);
+    useEffect(() => { onBusyChange(uploading > 0); }, [uploading, onBusyChange]);
+
+    const addImages = (urls: string[]) => update(d => ({ storeImages: [...(d.storeImages || []), ...urls.filter(u => u && !(d.storeImages || []).includes(u))] }));
 
     const uploadVideo = async (file: File) => {
         const { supabase } = await import('../lib/supabase');
@@ -4764,7 +4739,7 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         try {
             await Promise.all([
                 ...photos.map(f => imageService.upload(f).then(u => addImages([u]))),
-                ...videos.slice(0, 1).map(f => uploadVideo(f).then(setVideoUrl)),
+                ...videos.slice(0, 1).map(f => uploadVideo(f).then(u => update(() => ({ storeVideoUrl: u })))),
             ]);
             if (videos.length > 1) setError('Se guarda un solo video por producto: se usó el primero.');
         } catch (err) {
@@ -4779,12 +4754,12 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         if (!link) return;
         setLinkInput('');
         setShowLinkInput(false);
-        if (VIDEO_LINK_RE.test(link)) { setVideoUrl(link); return; }
+        if (VIDEO_LINK_RE.test(link)) { update(() => ({ storeVideoUrl: link })); return; }
         addImages([link]);
         setUploading(n => n + 1);
         try {
             const uploaded = await imageService.upload(link);
-            setImages(prev => prev.map(u => u === link ? uploaded : u));
+            update(d => ({ storeImages: (d.storeImages || []).map(u => u === link ? uploaded : u) }));
         } catch {
             // si no se puede copiar, queda el link externo
         } finally {
@@ -4792,212 +4767,156 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
         }
     };
 
-    const makeMain = (i: number) => setImages(prev => [prev[i], ...prev.filter((_, j) => j !== i)]);
-
-    const handleSave = async () => {
-        setSaving(true);
-        try {
-            const cleanDescription = normalizeStoreDescription(description);
-            setDescription(cleanDescription);
-            await onSave(item.id, {
-                storeImages: images,
-                storeVideoUrl: videoUrl || '',
-                description: cleanDescription,
-                storeTitle: storeTitle.trim(),
-                storeGroup: storeGroup.trim().toLowerCase().replace(/\s+/g, '-') || '',
-                storeVariantName: storeVariantName.trim() || '',
-            });
-            onClose();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Error al guardar');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const fieldCls = 'w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors';
-    const title = storeTitle.trim() || item.productName;
-    const busy = uploading > 0;
+    const makeMain = (i: number) => update(d => { const imgs = d.storeImages || []; return { storeImages: [imgs[i], ...imgs.filter((_v, j) => j !== i)] }; });
+    const fieldCls = 'w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors';
+    const title = (draft.storeTitle || '').trim() || item.productName;
+    const hasSaved = Boolean(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col ring-1 ring-black/5">
-                {/* Header */}
-                <div className="p-4 border-b border-gray-100 bg-white flex items-center justify-between gap-3 rounded-t-3xl sm:rounded-t-2xl">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><ImageIcon className="w-4 h-4" /></span>
-                        <div className="min-w-0">
-                            <h2 className="text-sm font-bold text-gray-800">Publicación en la tienda</h2>
-                            <p className="text-xs text-gray-500 truncate">{item.productName}</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} aria-label="Cerrar" className="h-9 w-9 rounded-full border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-100 flex items-center justify-center transition-all shrink-0">
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
+        <section className="space-y-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><ImageIcon className="w-3.5 h-3.5" /></span>
+                <p className="text-sm font-bold text-gray-800">Tienda</p>
+            </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                    {/* ── FOTOS Y VIDEO ── */}
-                    <section className="space-y-2.5">
-                        <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Fotos y video</p>
-                        <div
-                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                            onDragLeave={() => setDragOver(false)}
-                            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                            className={`grid grid-cols-3 sm:grid-cols-4 gap-2 rounded-2xl transition-all ${dragOver ? 'ring-2 ring-violet-400 ring-offset-2' : ''}`}
-                        >
-                            {images.map((url, i) => (
-                                <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                                    <button type="button" onClick={() => i > 0 && makeMain(i)} title={i === 0 ? 'Foto principal' : 'Tocá para que sea la principal'} className="block w-full h-full">
-                                        <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
-                                        aria-label="Quitar foto"
-                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                    {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded">Principal</span>}
-                                </div>
-                            ))}
-                            {videoUrl && (
-                                <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-900 text-white flex flex-col items-center justify-center gap-1">
-                                    <button type="button" onClick={() => setShowVideo(v => !v)} className="absolute inset-0 flex flex-col items-center justify-center gap-1" title="Ver el video">
-                                        <Play className="w-6 h-6 fill-current" />
-                                        <span className="text-[10px] font-semibold opacity-80">{showVideo ? 'Ocultar' : 'Ver video'}</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setVideoUrl(''); setShowVideo(false); }}
-                                        aria-label="Quitar video"
-                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            )}
-                            {Array.from({ length: uploading }, (_v, i) => (
-                                <div key={`up${i}`} className="aspect-square rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center">
-                                    <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
-                                </div>
-                            ))}
-                            <label className={`aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 cursor-pointer transition-all ${busy ? 'opacity-60' : ''}`}>
-                                <Plus className="w-6 h-6" />
-                                <span className="text-[11px] font-semibold text-center leading-tight px-1">Agregar</span>
-                                <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = ''; }} />
-                            </label>
-                        </div>
-                        {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
-                        {showLinkInput ? (
-                            <div className="flex gap-2">
-                                <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLinkAdd()} placeholder="Link de foto, YouTube o TikTok" className={fieldCls} autoFocus />
-                                <button type="button" onClick={handleLinkAdd} disabled={!linkInput.trim()} className="px-3 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">Agregar</button>
-                                <button type="button" onClick={() => { setShowLinkInput(false); setLinkInput(''); }} aria-label="Cancelar" className="px-2.5 rounded-xl border border-gray-200 text-gray-500"><X className="w-4 h-4" /></button>
-                            </div>
-                        ) : (
-                            <p className="text-[11px] text-gray-400 leading-snug">
-                                {images.length === 0 && 'Sin fotos propias: se usa la foto principal del producto. '}
-                                Tocá una foto para hacerla principal. También podés{' '}
-                                <button type="button" onClick={() => setShowLinkInput(true)} className="font-semibold text-violet-600 hover:underline">pegar un link</button>.
-                            </p>
-                        )}
-                    </section>
-
-                    {/* ── DESCRIPCIÓN ── */}
-                    <section className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Descripción</p>
-                            {description.trim() && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const post = [
-                                            title,
-                                            '',
-                                            description.trim(),
-                                            '',
-                                            `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
-                                            `💬 Solo respondo por WhatsApp (${STORE_CONFIG.whatsappUser}) o por la web: gestioná tu pedido ahí.`,
-                                        ].join('\n');
-                                        navigator.clipboard.writeText(post).then(() => {
-                                            setFbCopied(true);
-                                            setTimeout(() => setFbCopied(false), 2000);
-                                        });
-                                    }}
-                                    className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
-                                >
-                                    {fbCopied ? '✓ Copiado' : '📋 Copiar para Facebook'}
-                                </button>
-                            )}
-                        </div>
-                        <textarea
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="Pegá acá la descripción. Se muestra en la tienda y la lee el bot de WhatsApp."
-                            rows={5}
-                            className={`${fieldCls} resize-y`}
-                        />
-                        {storeTitle.trim() && (
-                            <p className="text-[11px] text-gray-500 leading-snug">
-                                En la tienda se ve como «{storeTitle.trim()}».{' '}
-                                <button type="button" onClick={() => setStoreTitle('')} className="font-semibold text-violet-600 hover:underline">Usar el nombre del producto</button>
-                            </p>
-                        )}
-                    </section>
-
-                    {/* ── VARIANTES ── */}
-                    <section className="space-y-2">
-                        <button type="button" onClick={() => setShowVariants(v => !v)} className="w-full flex items-center justify-between gap-2 text-left">
-                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wide">
-                                Variantes {storeGroup.trim() && <span className="normal-case font-medium text-gray-400">· {storeVariantName.trim() || storeGroup.trim()}</span>}
-                            </span>
-                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showVariants ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showVariants && (
-                            <div className="grid grid-cols-2 gap-2.5">
-                                <div>
-                                    <input type="text" value={storeGroup} onChange={e => setStoreGroup(e.target.value)} placeholder="ej: cable-tipo-c" className={fieldCls} />
-                                    <p className="text-[11px] text-gray-400 mt-1 leading-snug">Grupo: el mismo en todos los productos que son variantes.</p>
-                                </div>
-                                <div>
-                                    <input type="text" value={storeVariantName} onChange={e => setStoreVariantName(e.target.value)} placeholder="ej: 2 metros" className={fieldCls} />
-                                    <p className="text-[11px] text-gray-400 mt-1 leading-snug">Nombre de esta opción en la tienda.</p>
-                                </div>
-                            </div>
-                        )}
-                    </section>
-
-                    {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-
-                    <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
-                        <button type="button" onClick={onGeneratePlaca} className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all">
-                            🪧 Placa para Marketplace
-                        </button>
-                        {(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup) ? (
-                            <button type="button" onClick={onClearAll} className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-100 text-xs font-semibold text-red-500 hover:bg-red-50 transition-all">
-                                <Trash2 className="w-3.5 h-3.5" /> Borrar datos de tienda
+            {/* ── FOTOS Y VIDEO ── */}
+            <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-700">Fotos y video</p>
+                <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+                    className={`grid grid-cols-4 gap-2 rounded-2xl transition-all ${dragOver ? 'ring-2 ring-violet-400 ring-offset-2' : ''}`}
+                >
+                    {images.map((url, i) => (
+                        <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                            <button type="button" onClick={() => i > 0 && makeMain(i)} title={i === 0 ? 'Foto principal' : 'Tocá para que sea la principal'} className="block w-full h-full">
+                                <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
                             </button>
-                        ) : null}
-                    </div>
+                            <button
+                                type="button"
+                                onClick={() => update(d => ({ storeImages: (d.storeImages || []).filter((_v, j) => j !== i) }))}
+                                aria-label="Quitar foto"
+                                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                            {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded">Principal</span>}
+                        </div>
+                    ))}
+                    {videoUrl && (
+                        <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-900 text-white">
+                            <button type="button" onClick={() => setShowVideo(v => !v)} className="absolute inset-0 flex flex-col items-center justify-center gap-1" title="Ver el video">
+                                <Play className="w-6 h-6 fill-current" />
+                                <span className="text-[10px] font-semibold opacity-80">{showVideo ? 'Ocultar' : 'Video'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { update(() => ({ storeVideoUrl: '' })); setShowVideo(false); }}
+                                aria-label="Quitar video"
+                                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    )}
+                    {Array.from({ length: uploading }, (_v, i) => (
+                        <div key={`up${i}`} className="aspect-square rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center">
+                            <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                        </div>
+                    ))}
+                    <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 cursor-pointer transition-all">
+                        <Plus className="w-6 h-6" />
+                        <span className="text-[11px] font-semibold">Agregar</span>
+                        <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = ''; }} />
+                    </label>
                 </div>
+                {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
+                {showLinkInput ? (
+                    <div className="flex gap-2">
+                        <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAdd(); } }} placeholder="Link de foto, YouTube o TikTok" className={fieldCls} autoFocus />
+                        <button type="button" onClick={handleLinkAdd} disabled={!linkInput.trim()} className="px-3 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">Agregar</button>
+                        <button type="button" onClick={() => { setShowLinkInput(false); setLinkInput(''); }} aria-label="Cancelar" className="px-2.5 rounded-xl border border-gray-200 text-gray-500"><X className="w-4 h-4" /></button>
+                    </div>
+                ) : (
+                    <p className="text-[11px] text-gray-400 leading-snug">
+                        {images.length === 0 && 'Sin fotos propias: se usa la foto principal. '}
+                        Tocá una foto para hacerla principal. También podés{' '}
+                        <button type="button" onClick={() => setShowLinkInput(true)} className="font-semibold text-violet-600 hover:underline">pegar un link</button>.
+                    </p>
+                )}
+            </div>
 
-                {/* Footer */}
-                <div className="p-4 border-t border-gray-100 flex gap-2">
-                    <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || busy}
-                        className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                    >
-                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando…</> : busy ? 'Subiendo…' : 'Guardar'}
-                    </button>
+            {/* ── DESCRIPCIÓN ── */}
+            <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-700">Descripción</p>
+                    {(draft.description || '').trim() && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const post = [
+                                    title,
+                                    '',
+                                    (draft.description || '').trim(),
+                                    '',
+                                    `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
+                                    `💬 Solo respondo por WhatsApp (${STORE_CONFIG.whatsappUser}) o por la web: gestioná tu pedido ahí.`,
+                                ].join('\n');
+                                navigator.clipboard.writeText(post).then(() => {
+                                    setFbCopied(true);
+                                    setTimeout(() => setFbCopied(false), 2000);
+                                });
+                            }}
+                            className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                        >
+                            {fbCopied ? '✓ Copiado' : '📋 Copiar para Facebook'}
+                        </button>
+                    )}
+                </div>
+                <textarea
+                    value={draft.description || ''}
+                    onChange={e => { const v = e.target.value; update(() => ({ description: v })); }}
+                    placeholder="Pegá acá la descripción. Se muestra en la tienda y la lee el bot de WhatsApp."
+                    rows={4}
+                    className={`${fieldCls} resize-y`}
+                />
+                {(draft.storeTitle || '').trim() && (
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                        En la tienda se ve como «{(draft.storeTitle || '').trim()}».{' '}
+                        <button type="button" onClick={() => update(() => ({ storeTitle: '' }))} className="font-semibold text-violet-600 hover:underline">Usar el nombre del producto</button>
+                    </p>
+                )}
+            </div>
+
+            {/* ── VARIANTES ── */}
+            <div className="space-y-1.5">
+                <p className="text-sm font-medium text-gray-700">Variantes <span className="text-xs font-normal text-gray-400">(opcional)</span></p>
+                <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                        <input type="text" value={draft.storeGroup || ''} onChange={e => { const v = e.target.value; update(() => ({ storeGroup: v })); }} placeholder="Grupo, ej: cable-tipo-c" className={fieldCls} />
+                        <p className="text-[11px] text-gray-400 mt-1 leading-snug">El mismo en todos los productos que son variantes.</p>
+                    </div>
+                    <div>
+                        <input type="text" value={draft.storeVariantName || ''} onChange={e => { const v = e.target.value; update(() => ({ storeVariantName: v })); }} placeholder="Opción, ej: 2 metros" className={fieldCls} />
+                        <p className="text-[11px] text-gray-400 mt-1 leading-snug">Cómo se llama esta opción en la tienda.</p>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+            <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={onGeneratePlaca} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all">
+                    🪧 Placa para Marketplace
+                </button>
+                {hasSaved && (
+                    <button type="button" onClick={onClearAll} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-100 text-xs font-semibold text-red-500 hover:bg-red-50 transition-all">
+                        <Trash2 className="w-3.5 h-3.5" /> Borrar datos de tienda
+                    </button>
+                )}
+            </div>
+        </section>
     );
 }
 
@@ -5194,7 +5113,9 @@ function ProductForm({
     onOpenLocationsModal,
     onQuickAddLocation,
     batchCodes = [],
-    isSaving = false
+    isSaving = false,
+    extra,
+    busy = false
 }: {
     formData: Partial<Item>,
     setFormData: React.Dispatch<React.SetStateAction<Partial<Item>>>,
@@ -5207,7 +5128,9 @@ function ProductForm({
     onOpenLocationsModal?: () => void,
     onQuickAddLocation?: (name: string) => Promise<LocationItem | null>,
     batchCodes?: string[],
-    isSaving?: boolean
+    isSaving?: boolean,
+    extra?: React.ReactNode,
+    busy?: boolean
 }) {
 
     const [purchasePriceInput, setPurchasePriceInput] = useState('');
@@ -5554,6 +5477,8 @@ function ProductForm({
                 onUploaded={(url) => setFormData({ ...formData, imageUrl: url })}
             />
 
+            {extra}
+
             <div className="pt-3 sm:pt-4 flex flex-col-reverse sm:flex-row gap-3">
                 <button
                     type="button"
@@ -5564,11 +5489,11 @@ function ProductForm({
                 </button>
                 <button
                     type="submit"
-                    disabled={isSaving}
+                    disabled={isSaving || busy}
                     className={`flex-1 px-4 py-3 rounded-xl text-white font-medium shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 disabled:opacity-60 disabled:pointer-events-none ${formData.status === 'sold' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-black hover:bg-gray-800 shadow-gray-200'}`}
                 >
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {isSaving ? 'Guardando...' : getSubmitLabel()}
+                    {isSaving ? 'Guardando...' : busy ? 'Subiendo…' : getSubmitLabel()}
                 </button>
             </div>
         </form>
