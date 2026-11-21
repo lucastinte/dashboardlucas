@@ -3256,6 +3256,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
     onManageImages?: (i: Item) => void;
 }) {
     const [menu, setMenu] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+    const [menuDark, setMenuDark] = useState(false);
     const btnRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
@@ -3283,6 +3284,8 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
         const r = btnRef.current?.getBoundingClientRect();
         if (!r) return;
         const right = Math.max(8, window.innerWidth - r.right);
+        // El menú se dibuja fuera del inventario: hereda a mano su modo oscuro
+        setMenuDark(Boolean(btnRef.current?.closest('.inventory-dark')));
         // Si no entra abajo, se abre hacia arriba
         setMenu(window.innerHeight - r.bottom < 260 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
     };
@@ -3311,7 +3314,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
                 <MoreHorizontal className="w-4 h-4" />
             </button>
             {menu && createPortal(
-                <>
+                <div className={menuDark ? 'inventory-dark' : undefined}>
                     <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); setMenu(null); }} />
                     <div
                         role="menu"
@@ -3324,7 +3327,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
                         </button>
                         {onManageImages && (
                             <button role="menuitem" type="button" onClick={run(() => onManageImages(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                                <ImageIcon className="w-4 h-4 text-violet-600" /> Fotos y tienda
+                                <ImageIcon className="w-4 h-4 text-violet-600" /> Publicación en tienda
                             </button>
                         )}
                         <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Dar de baja como…</p>
@@ -3341,7 +3344,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onManageImages
                             <Trash2 className="w-4 h-4" /> Eliminar
                         </button>
                     </div>
-                </>,
+                </div>,
                 document.body
             )}
         </div>
@@ -4708,6 +4711,10 @@ function normalizeStoreDescription(raw: string): string {
     return lines.filter(Boolean).join('\n').trim();
 }
 
+const VIDEO_LINK_RE = /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com\/.*video|fb\.watch|\.(mp4|mov|webm|m4v)(\?|#|$))/i;
+
+/* Publicación en la tienda: fotos, video, descripción y variantes en un solo panel.
+   El título es el nombre del producto del dashboard. */
 function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }: {
     item: Item;
     onClose: () => void;
@@ -4721,198 +4728,82 @@ function StoreImagesModal({ item, onClose, onSave, onClearAll, onGeneratePlaca }
     const [storeTitle, setStoreTitle] = useState<string>(item.storeTitle || '');
     const [storeGroup, setStoreGroup] = useState<string>(item.storeGroup || '');
     const [storeVariantName, setStoreVariantName] = useState<string>(item.storeVariantName || '');
-    const [uploading, setUploading] = useState(false);
-    const [uploadingVideo, setUploadingVideo] = useState(false);
+    const [showVariants, setShowVariants] = useState(Boolean(item.storeGroup || item.storeVariantName));
+    const [uploading, setUploading] = useState(0);
     const [saving, setSaving] = useState(false);
-    const [urlInput, setUrlInput] = useState('');
-    const [showUrlInput, setShowUrlInput] = useState(false);
-    const [videoUrlInput, setVideoUrlInput] = useState('');
-    const [showVideoUrlInput, setShowVideoUrlInput] = useState(false);
+    const [linkInput, setLinkInput] = useState('');
+    const [showLinkInput, setShowLinkInput] = useState(false);
     const [dragOver, setDragOver] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [fbCopied, setFbCopied] = useState(false);
-    const [titleCopied, setTitleCopied] = useState(false);
-
-    // ── AI Generation States ──
-    const [showAiPanel, setShowAiPanel] = useState(false);
-    const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('ai_api_key') || '');
-    const [aiInput, setAiInput] = useState('');
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [aiError, setAiError] = useState<string | null>(null);
-
-    const handleGenerateWithAI = async () => {
-        if (!aiApiKey.trim()) { setAiError('Ingresá tu API Key primero.'); return; }
-        if (!aiInput.trim()) { setAiError('Pegá los datos del producto para que la IA los procese.'); return; }
-        setIsGenerating(true);
-        setAiError(null);
-        localStorage.setItem('ai_api_key', aiApiKey.trim());
-        try {
-            const systemPrompt = `Eres un experto en copywriting para ecommerce. Tu trabajo es recibir texto desordenado o especificaciones técnicas de un producto y transformarlo en un título atractivo y una descripción optimizada para ventas.
-
-TÍTULO
-- Corto y llamativo, con uno o dos emojis.
-
-DESCRIPCIÓN — formato estricto, sin excepciones:
-- Entre 4 y 6 líneas. Una viñeta por línea, sin líneas en blanco entre ellas.
-- CADA línea sigue exactamente este molde: EMOJI **Etiqueta:** contenido
-- La etiqueta es de 1 a 3 palabras, sin emojis, y los dos puntos van DENTRO de la negrita.
-- El contenido va en texto normal: sin negrita, sin asteriscos y sin punto final.
-- La negrita (**) se usa SOLO en la etiqueta. Nunca en el contenido ni en una línea entera.
-- Un emoji distinto por línea, siempre al principio.
-- Las dos últimas líneas son siempre estas, textuales:
-📦 **Condición:** producto totalmente nuevo en caja
-${CIERRE_CONTACTO}
-- Ignora texto spam, marcas de agua o fragmentos repetitivos.
-- NO incluyas precios, ubicación ni datos de envío.
-
-Ejemplo de descripción bien formada:
-🔋 **Batería:** 20000mAh para varias cargas completas
-⚡ **Carga rápida:** 18W por USB-C
-🔌 **Puertos:** 2 USB para cargar dos equipos a la vez
-📦 **Condición:** producto totalmente nuevo en caja
-${CIERRE_CONTACTO}
-
-Formato OBLIGATORIO:
-[TITULO]
-Aquí va el título
-[/TITULO]
-[DESCRIPCION]
-Aquí va la descripción
-[/DESCRIPCION]`;
-
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${aiApiKey.trim()}`,
-                },
-                body: JSON.stringify({
-                    model: 'openai/gpt-oss-120b',
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `Ordena esto y genera título y descripción para:\n\n${aiInput.trim()}` },
-                    ],
-                    temperature: 0.4,
-                }),
-            });
-            if (!res.ok) {
-                const errBody = await res.text();
-                if (res.status === 401 || res.status === 403) {
-                    throw new Error('API Key inválida. Verificá que sea correcta.');
-                }
-                throw new Error(`Error ${res.status}: ${errBody.slice(0, 200)}`);
-            }
-            const data = await res.json();
-            const text = data.choices?.[0]?.message?.content || '';
-            const titleMatch = text.match(/\[TITULO\]\s*([\s\S]*?)\s*\[\/TITULO\]/i);
-            const descMatch = text.match(/\[DESCRIPCION\]\s*([\s\S]*?)\s*\[\/DESCRIPCION\]/i);
-            if (titleMatch?.[1]) setStoreTitle(titleMatch[1].trim());
-            if (descMatch?.[1]) setDescription(normalizeStoreDescription(descMatch[1]));
-            if (!titleMatch && !descMatch) {
-                setAiError('La IA no devolvió el formato esperado. Intentá de nuevo.');
-            } else {
-                setShowAiPanel(false);
-                setAiInput('');
-            }
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Error al conectar con la IA';
-            setAiError(msg);
-        } finally {
-            setIsGenerating(false);
-        }
-    };
+    const [showVideo, setShowVideo] = useState(false);
 
     const addImages = (urls: string[]) => setImages(prev => [...prev, ...urls.filter(u => u && !prev.includes(u))]);
 
-    const handleFiles = async (files: FileList | null) => {
-        if (!files || !files.length) return;
-        setUploading(true);
+    const uploadVideo = async (file: File) => {
+        const { supabase } = await import('../lib/supabase');
+        const ext = file.name.split('.').pop() || 'mp4';
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
+        const filePath = `vid_${hash}.${ext}`;
+        const { data: existing } = await supabase.storage.from('product-images').list('', { search: filePath });
+        if (!existing?.some(f => f.name === filePath)) {
+            const { error: upErr } = await supabase.storage.from('product-images').upload(filePath, file, { contentType: file.type, upsert: false });
+            if (upErr && !upErr.message?.includes('already exists')) throw upErr;
+        }
+        return supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
+    };
+
+    // Un solo botón para todo: las fotos van a la galería y el video al lugar del video
+    const handleFiles = async (list: FileList | File[] | null) => {
+        const files = Array.from(list || []);
+        if (!files.length) return;
+        const videos = files.filter(f => f.type.startsWith('video/'));
+        const photos = files.filter(f => !f.type.startsWith('video/'));
         setError(null);
+        setUploading(n => n + files.length);
         try {
-            const urls = await Promise.all(Array.from(files).map(f => imageService.upload(f)));
-            addImages(urls);
+            await Promise.all([
+                ...photos.map(f => imageService.upload(f).then(u => addImages([u]))),
+                ...videos.slice(0, 1).map(f => uploadVideo(f).then(setVideoUrl)),
+            ]);
+            if (videos.length > 1) setError('Se guarda un solo video por producto: se usó el primero.');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Error al subir imagen');
+            setError(err instanceof Error ? err.message : 'No se pudo subir el archivo');
         } finally {
-            setUploading(false);
+            setUploading(n => n - files.length);
         }
     };
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setDragOver(false);
-        // Separate images and videos
-        const files = e.dataTransfer.files;
-        const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-        const videoFiles = Array.from(files).filter(f => f.type.startsWith('video/'));
-        if (imageFiles.length) {
-            const dt = new DataTransfer();
-            imageFiles.forEach(f => dt.items.add(f));
-            handleFiles(dt.files);
-        }
-        if (videoFiles.length) handleVideoFile(videoFiles[0]);
-    };
-
-    const handleUrlAdd = async () => {
-        const trimmed = urlInput.trim();
-        if (!trimmed) return;
-        setUploading(true);
-        setError(null);
-        addImages([trimmed]);
+    const handleLinkAdd = async () => {
+        const link = linkInput.trim();
+        if (!link) return;
+        setLinkInput('');
+        setShowLinkInput(false);
+        if (VIDEO_LINK_RE.test(link)) { setVideoUrl(link); return; }
+        addImages([link]);
+        setUploading(n => n + 1);
         try {
-            const uploaded = await imageService.upload(trimmed);
-            setImages(prev => prev.map(u => u === trimmed ? uploaded : u));
+            const uploaded = await imageService.upload(link);
+            setImages(prev => prev.map(u => u === link ? uploaded : u));
         } catch {
-            // keep external URL as-is
+            // si no se puede copiar, queda el link externo
         } finally {
-            setUploading(false);
-            setUrlInput('');
-            setShowUrlInput(false);
+            setUploading(n => n - 1);
         }
     };
 
-    const handleVideoFile = async (file: File) => {
-        setUploadingVideo(true);
-        setError(null);
-        try {
-            const { supabase } = await import('../lib/supabase');
-            const ext = file.name.split('.').pop() || 'mp4';
-            const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
-            const filePath = `vid_${hash}.${ext}`;
-            const { data: existing } = await supabase.storage.from('product-images').list('', { search: `vid_${hash}.${ext}` });
-            if (!existing?.some(f => f.name === `vid_${hash}.${ext}`)) {
-                const { error: upErr } = await supabase.storage.from('product-images').upload(filePath, file, { contentType: file.type, upsert: false });
-                if (upErr && !upErr.message?.includes('already exists')) throw upErr;
-            }
-            const { data } = supabase.storage.from('product-images').getPublicUrl(filePath);
-            setVideoUrl(data.publicUrl);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Error al subir video');
-        } finally {
-            setUploadingVideo(false);
-        }
-    };
-
-    const handleVideoUrlSave = () => {
-        const trimmed = videoUrlInput.trim();
-        if (!trimmed) return;
-        setVideoUrl(trimmed);
-        setVideoUrlInput('');
-        setShowVideoUrlInput(false);
-    };
+    const makeMain = (i: number) => setImages(prev => [prev[i], ...prev.filter((_, j) => j !== i)]);
 
     const handleSave = async () => {
         setSaving(true);
         try {
-            // Se normaliza siempre: lo que generó la IA, lo pegado a mano y las
-            // descripciones viejas quedan todas con el mismo formato.
             const cleanDescription = normalizeStoreDescription(description);
             setDescription(cleanDescription);
             await onSave(item.id, {
                 storeImages: images,
                 storeVideoUrl: videoUrl || '',
                 description: cleanDescription,
-                storeTitle: storeTitle.trim() || '',
+                storeTitle: storeTitle.trim(),
                 storeGroup: storeGroup.trim().toLowerCase().replace(/\s+/g, '-') || '',
                 storeVariantName: storeVariantName.trim() || '',
             });
@@ -4924,98 +4815,106 @@ Aquí va la descripción
         }
     };
 
+    const fieldCls = 'w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors';
+    const title = storeTitle.trim() || item.productName;
+    const busy = uploading > 0;
+
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col ring-1 ring-black/5">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col ring-1 ring-black/5">
                 {/* Header */}
-                <div className="p-4 border-b border-gray-100 bg-white flex items-center justify-between gap-3 sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl">
+                <div className="p-4 border-b border-gray-100 bg-white flex items-center justify-between gap-3 rounded-t-3xl sm:rounded-t-2xl">
                     <div className="flex items-center gap-2.5 min-w-0">
                         <span className="w-9 h-9 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><ImageIcon className="w-4 h-4" /></span>
                         <div className="min-w-0">
-                            <h2 className="text-sm font-bold text-gray-800">Fotos y video de tienda</h2>
-                            <p className="text-xs text-gray-500 truncate max-w-[220px]">{item.productName}</p>
+                            <h2 className="text-sm font-bold text-gray-800">Publicación en la tienda</h2>
+                            <p className="text-xs text-gray-500 truncate">{item.productName}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="h-8 w-8 rounded-full bg-gray-50 border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-all shrink-0">
+                    <button onClick={onClose} aria-label="Cerrar" className="h-9 w-9 rounded-full border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-100 flex items-center justify-center transition-all shrink-0">
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-gray-50">
-                    {/* ── TÍTULO DE PUBLICACIÓN ── */}
-                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0"><FileText className="w-3.5 h-3.5" /></span>
-                                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Título de publicación</p>
-                            </div>
-                            {(storeTitle.trim() || item.productName) && (
-                                <button
-                                    onClick={() => {
-                                        const t = storeTitle.trim() || item.productName;
-                                        navigator.clipboard.writeText(t).then(() => {
-                                            setTitleCopied(true);
-                                            setTimeout(() => setTitleCopied(false), 2000);
-                                        });
-                                    }}
-                                    className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${titleCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
-                                >
-                                    {titleCopied ? '✓ Copiado' : '📋 Copiar'}
-                                </button>
+                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                    {/* ── FOTOS Y VIDEO ── */}
+                    <section className="space-y-2.5">
+                        <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Fotos y video</p>
+                        <div
+                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+                            className={`grid grid-cols-3 sm:grid-cols-4 gap-2 rounded-2xl transition-all ${dragOver ? 'ring-2 ring-violet-400 ring-offset-2' : ''}`}
+                        >
+                            {images.map((url, i) => (
+                                <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                                    <button type="button" onClick={() => i > 0 && makeMain(i)} title={i === 0 ? 'Foto principal' : 'Tocá para que sea la principal'} className="block w-full h-full">
+                                        <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
+                                        aria-label="Quitar foto"
+                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                    {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded">Principal</span>}
+                                </div>
+                            ))}
+                            {videoUrl && (
+                                <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-900 text-white flex flex-col items-center justify-center gap-1">
+                                    <button type="button" onClick={() => setShowVideo(v => !v)} className="absolute inset-0 flex flex-col items-center justify-center gap-1" title="Ver el video">
+                                        <Play className="w-6 h-6 fill-current" />
+                                        <span className="text-[10px] font-semibold opacity-80">{showVideo ? 'Ocultar' : 'Ver video'}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setVideoUrl(''); setShowVideo(false); }}
+                                        aria-label="Quitar video"
+                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             )}
+                            {Array.from({ length: uploading }, (_v, i) => (
+                                <div key={`up${i}`} className="aspect-square rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center">
+                                    <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                                </div>
+                            ))}
+                            <label className={`aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 cursor-pointer transition-all ${busy ? 'opacity-60' : ''}`}>
+                                <Plus className="w-6 h-6" />
+                                <span className="text-[11px] font-semibold text-center leading-tight px-1">Agregar</span>
+                                <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = ''; }} />
+                            </label>
                         </div>
-                        <input
-                            type="text"
-                            value={storeTitle}
-                            onChange={e => setStoreTitle(e.target.value)}
-                            placeholder={item.productName}
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
-                        />
-                        <p className="text-[11px] text-gray-400 leading-snug">El título que generás con Gemini para Facebook. Se muestra en la tienda en lugar del nombre interno.</p>
-                    </div>
-
-                    {/* ── GRUPO (variantes) ── */}
-                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
-                        <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0"><Layers className="w-3.5 h-3.5" /></span>
-                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Agrupar variantes</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2.5">
-                            <div>
-                                <input
-                                    type="text"
-                                    value={storeGroup}
-                                    onChange={e => setStoreGroup(e.target.value)}
-                                    placeholder="ej: cable-tipo-c"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
-                                />
-                                <p className="text-[11px] text-gray-400 mt-1 leading-snug">Código de grupo: el mismo en todos los productos similares.</p>
+                        {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
+                        {showLinkInput ? (
+                            <div className="flex gap-2">
+                                <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLinkAdd()} placeholder="Link de foto, YouTube o TikTok" className={fieldCls} autoFocus />
+                                <button type="button" onClick={handleLinkAdd} disabled={!linkInput.trim()} className="px-3 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">Agregar</button>
+                                <button type="button" onClick={() => { setShowLinkInput(false); setLinkInput(''); }} aria-label="Cancelar" className="px-2.5 rounded-xl border border-gray-200 text-gray-500"><X className="w-4 h-4" /></button>
                             </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    value={storeVariantName}
-                                    onChange={e => setStoreVariantName(e.target.value)}
-                                    placeholder="ej: 2 metros"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors"
-                                />
-                                <p className="text-[11px] text-gray-400 mt-1 leading-snug">Nombre de esta variante: cómo se muestra en la lista de opciones.</p>
-                            </div>
-                        </div>
-                    </div>
+                        ) : (
+                            <p className="text-[11px] text-gray-400 leading-snug">
+                                {images.length === 0 && 'Sin fotos propias: se usa la foto principal del producto. '}
+                                Tocá una foto para hacerla principal. También podés{' '}
+                                <button type="button" onClick={() => setShowLinkInput(true)} className="font-semibold text-violet-600 hover:underline">pegar un link</button>.
+                            </p>
+                        )}
+                    </section>
 
                     {/* ── DESCRIPCIÓN ── */}
-                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-2.5 shadow-xs">
+                    <section className="space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><MessageCircle className="w-3.5 h-3.5" /></span>
-                                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Descripción</p>
-                            </div>
+                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Descripción</p>
                             {description.trim() && (
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         const post = [
-                                            storeTitle.trim() || item.productName,
+                                            title,
                                             '',
                                             description.trim(),
                                             '',
@@ -5029,203 +4928,59 @@ Aquí va la descripción
                                     }}
                                     className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all ${fbCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                                 >
-                                    {fbCopied ? '✓ Copiado' : '📋 Copiar'}
+                                    {fbCopied ? '✓ Copiado' : '📋 Copiar para Facebook'}
                                 </button>
                             )}
                         </div>
                         <textarea
                             value={description}
                             onChange={e => setDescription(e.target.value)}
-                            placeholder="Pegá acá la descripción (ej. generada con Gemini). Se muestra en la tienda, la lee el bot de WhatsApp y la copiás lista para Facebook."
-                            rows={4}
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors resize-y"
+                            placeholder="Pegá acá la descripción. Se muestra en la tienda y la lee el bot de WhatsApp."
+                            rows={5}
+                            className={`${fieldCls} resize-y`}
                         />
-                    </div>
+                        {storeTitle.trim() && (
+                            <p className="text-[11px] text-gray-500 leading-snug">
+                                En la tienda se ve como «{storeTitle.trim()}».{' '}
+                                <button type="button" onClick={() => setStoreTitle('')} className="font-semibold text-violet-600 hover:underline">Usar el nombre del producto</button>
+                            </p>
+                        )}
+                    </section>
 
-                    {/* ── GENERAR CON IA ── */}
-                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-indigo-50/60 overflow-hidden">
-                        <button
-                            onClick={() => setShowAiPanel(!showAiPanel)}
-                            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-violet-700 hover:bg-violet-100/50 transition-all"
-                        >
-                            <span className="flex items-center gap-2">
-                                <span className="text-base">✨</span>
-                                Generar título y descripción con IA
+                    {/* ── VARIANTES ── */}
+                    <section className="space-y-2">
+                        <button type="button" onClick={() => setShowVariants(v => !v)} className="w-full flex items-center justify-between gap-2 text-left">
+                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wide">
+                                Variantes {storeGroup.trim() && <span className="normal-case font-medium text-gray-400">· {storeVariantName.trim() || storeGroup.trim()}</span>}
                             </span>
-                            <ChevronDown className={`w-4 h-4 transition-transform ${showAiPanel ? 'rotate-180' : ''}`} />
+                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showVariants ? 'rotate-180' : ''}`} />
                         </button>
-                        {showAiPanel && (
-                            <div className="px-4 pb-4 space-y-3 border-t border-violet-100">
-                                {/* API Key */}
-                                <div className="pt-3">
-                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">API Key de Groq</label>
-                                    <div className="flex gap-2 mt-1">
-                                        <input
-                                            type="password"
-                                            value={aiApiKey}
-                                            onChange={e => setAiApiKey(e.target.value)}
-                                            placeholder="sk-..."
-                                            className="flex-1 px-3 py-2 rounded-lg border border-violet-200 text-xs outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 bg-white"
-                                        />
-                                        {aiApiKey && (
-                                            <span className="self-center text-[10px] text-emerald-600 font-semibold">✓ Guardada</span>
-                                        )}
-                                    </div>
-                                    <p className="text-[10px] text-violet-400 mt-0.5">Tu API Key de Groq. Se guarda en tu navegador.</p>
-                                </div>
-                                {/* Input de datos */}
+                        {showVariants && (
+                            <div className="grid grid-cols-2 gap-2.5">
                                 <div>
-                                    <label className="text-[11px] font-semibold text-violet-600 uppercase tracking-wide">Datos del producto (texto desordenado, specs, notas...)</label>
-                                    <textarea
-                                        value={aiInput}
-                                        onChange={e => setAiInput(e.target.value)}
-                                        placeholder={'Pegá acá toda la info cruda del producto...\n\nEj: Cargador Xiaomi Redmi 20000mAh, modelo PB200LZM, USB-C, carga rapida 18W, 2 puertos, blanco, nuevo en caja'}
-                                        rows={5}
-                                        className="w-full mt-1 px-3 py-2.5 rounded-lg border border-violet-200 text-sm outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-100 resize-y bg-white"
-                                    />
+                                    <input type="text" value={storeGroup} onChange={e => setStoreGroup(e.target.value)} placeholder="ej: cable-tipo-c" className={fieldCls} />
+                                    <p className="text-[11px] text-gray-400 mt-1 leading-snug">Grupo: el mismo en todos los productos que son variantes.</p>
                                 </div>
-                                {aiError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{aiError}</p>}
-                                <button
-                                    onClick={handleGenerateWithAI}
-                                    disabled={isGenerating || !aiInput.trim()}
-                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-bold hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                                >
-                                    {isGenerating ? (
-                                        <><Loader2 className="w-4 h-4 animate-spin" />Generando con IA...</>
-                                    ) : (
-                                        <>✨ Generar título y descripción</>
-                                    )}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ── FOTOS ── */}
-                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-3 shadow-xs">
-                        <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><ImageIcon className="w-3.5 h-3.5" /></span>
-                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Fotos</p>
-                        </div>
-
-                        {images.length > 0 ? (
-                            <div className="grid grid-cols-3 gap-2">
-                                {images.map((url, i) => (
-                                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
-                                        <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200?text=Error'; }} />
-                                        <button
-                                            onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
-                                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                        {i === 0 && <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/50 text-white px-1 py-0.5 rounded">Principal</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-xs text-gray-400">Sin fotos adicionales — se muestra la foto principal del producto.</p>
-                        )}
-
-                        {/* Drop zone */}
-                        <div
-                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                            onDragLeave={() => setDragOver(false)}
-                            onDrop={handleDrop}
-                            className={`flex flex-col items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 border-dashed transition-all ${dragOver ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}
-                        >
-                            {uploading ? (
-                                <><Loader2 className="w-5 h-5 text-violet-500 animate-spin" /><span className="text-sm text-violet-600">Subiendo...</span></>
-                            ) : (
-                                <><Upload className="w-5 h-5 text-gray-400" /><span className="text-sm text-gray-500">Arrastrar fotos aquí o</span></>
-                            )}
-                            <label className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-400 cursor-pointer transition-all">
-                                Seleccionar fotos
-                                <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
-                            </label>
-                        </div>
-
-                        {showUrlInput ? (
-                            <div className="flex gap-2">
-                                <input type="url" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUrlAdd()} placeholder="https://..." className="flex-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors" autoFocus />
-                                <button onClick={handleUrlAdd} disabled={uploading || !urlInput.trim()} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">Agregar</button>
-                                <button onClick={() => { setShowUrlInput(false); setUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
-                            </div>
-                        ) : (
-                            <button onClick={() => setShowUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
-                                <ImageIcon className="w-4 h-4" />Pegar link de foto
-                            </button>
-                        )}
-                    </div>
-
-                    {/* ── VIDEO ── */}
-                    <div className="rounded-2xl bg-white border border-gray-200/70 p-4 space-y-3 shadow-xs">
-                        <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><Play className="w-3.5 h-3.5 fill-current" /></span>
-                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Video</p>
-                        </div>
-
-                        {videoUrl ? (
-                            <div className="space-y-2">
-                                <VideoPreview url={videoUrl} />
-                                <div className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50">
-                                    <span className="text-lg">🎬</span>
-                                    <p className="text-xs text-gray-600 flex-1 truncate">{videoUrl}</p>
-                                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all" title="Abrir video en otra pestaña">
-                                        <ArrowUpRight className="w-3.5 h-3.5" />
-                                    </a>
-                                    <button onClick={() => setVideoUrl('')} className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Quitar video">
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
+                                <div>
+                                    <input type="text" value={storeVariantName} onChange={e => setStoreVariantName(e.target.value)} placeholder="ej: 2 metros" className={fieldCls} />
+                                    <p className="text-[11px] text-gray-400 mt-1 leading-snug">Nombre de esta opción en la tienda.</p>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {/* Upload video file */}
-                                <label className={`flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 border-dashed transition-all cursor-pointer ${uploadingVideo ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50 hover:border-gray-400'}`}>
-                                    {uploadingVideo ? (
-                                        <><Loader2 className="w-5 h-5 text-amber-500 animate-spin" /><span className="text-sm text-amber-600">Subiendo video...</span></>
-                                    ) : (
-                                        <><span className="text-xl">🎬</span><span className="text-sm text-gray-500">Subir video (MP4, MOV…)</span></>
-                                    )}
-                                    <input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoFile(f); e.target.value = ''; }} disabled={uploadingVideo} />
-                                </label>
-
-                                {/* Video URL */}
-                                {showVideoUrlInput ? (
-                                    <div className="flex gap-2">
-                                        <input type="url" value={videoUrlInput} onChange={e => setVideoUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVideoUrlSave()} placeholder="https://youtube.com/watch?v=... o link directo" className="flex-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50/60 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 focus:bg-white transition-colors" autoFocus />
-                                        <button onClick={handleVideoUrlSave} disabled={!videoUrlInput.trim()} className="px-3 py-2 rounded-xl bg-amber-500 text-white text-sm font-medium disabled:opacity-50">OK</button>
-                                        <button onClick={() => { setShowVideoUrlInput(false); setVideoUrlInput(''); }} className="px-2 py-2 rounded-xl border border-gray-200 text-sm text-gray-500"><X className="w-4 h-4" /></button>
-                                    </div>
-                                ) : (
-                                    <button onClick={() => setShowVideoUrlInput(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 hover:border-gray-400 bg-gray-50 transition-all">
-                                        <span>🔗</span>Pegar link de YouTube / TikTok
-                                    </button>
-                                )}
-                            </div>
                         )}
-                    </div>
+                    </section>
 
-                    {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+                    {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-                    {/* Generar placa para Marketplace */}
-                    <button
-                        onClick={onGeneratePlaca}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-all"
-                    >
-                        🪧 Generar placa para Marketplace
-                    </button>
-
-                    {/* Eliminar datos de tienda */}
-                    {(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup) ? (
-                        <button
-                            onClick={onClearAll}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-100 text-xs font-medium text-red-500 hover:bg-red-50 transition-all"
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Eliminar datos de tienda (libera espacio)
+                    <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
+                        <button type="button" onClick={onGeneratePlaca} className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all">
+                            🪧 Placa para Marketplace
                         </button>
-                    ) : null}
+                        {(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup) ? (
+                            <button type="button" onClick={onClearAll} className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-100 text-xs font-semibold text-red-500 hover:bg-red-50 transition-all">
+                                <Trash2 className="w-3.5 h-3.5" /> Borrar datos de tienda
+                            </button>
+                        ) : null}
+                    </div>
                 </div>
 
                 {/* Footer */}
@@ -5235,10 +4990,10 @@ Aquí va la descripción
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={saving}
-                        className="flex-1 px-4 py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                        disabled={saving || busy}
+                        className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                     >
-                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando...</> : `Guardar${images.length > 0 ? ` (${images.length} foto${images.length !== 1 ? 's' : ''})` : ''}${videoUrl ? ' + video' : ''}`}
+                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando…</> : busy ? 'Subiendo…' : 'Guardar'}
                     </button>
                 </div>
             </div>
@@ -5665,7 +5420,7 @@ function ProductForm({
                         onChange={e => setFormData({ ...formData, date: e.target.value })}
                     />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                     <div className="flex items-center justify-between mb-1">
                         <label className="block text-sm font-medium text-gray-700">Ubicación</label>
                         {onOpenLocationsModal && (
@@ -5679,7 +5434,7 @@ function ProductForm({
                             </button>
                         )}
                     </div>
-                    <div className="max-h-32 overflow-y-auto flex flex-wrap gap-1.5 p-2 rounded-xl border border-gray-200 bg-gray-50">
+                    <div className="flex flex-wrap gap-1.5 p-2 rounded-xl border border-gray-200 bg-gray-50">
                         <button
                             type="button"
                             onClick={() => setFormData({ ...formData, location: '' })}
