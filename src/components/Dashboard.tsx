@@ -4746,8 +4746,34 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
         }
     };
 
-    const handleLinkAdd = async () => {
-        const link = linkInput.trim();
+    // Pegar una foto copiada (ej. mantener apretada una foto en Safari → Copiar)
+    const pasteFromClipboard = async () => {
+        setError(null);
+        try {
+            if (!navigator.clipboard?.read) throw new Error('sin soporte');
+            const files: File[] = [];
+            let text = '';
+            for (const entry of await navigator.clipboard.read()) {
+                const imgType = entry.types.find(t => t.startsWith('image/'));
+                if (imgType) {
+                    const blob = await entry.getType(imgType);
+                    files.push(new File([blob], `pegada.${imgType.split('/')[1] || 'png'}`, { type: imgType }));
+                } else if (entry.types.includes('text/plain')) {
+                    text = (await (await entry.getType('text/plain')).text()).trim();
+                }
+            }
+            if (files.length) return handleFiles(files);
+            if (/^https?:\/\//i.test(text)) return handleLinkAdd(text);
+            setError('No hay una foto copiada. Mantené apretada la foto (en Safari) y elegí "Copiar", después volvé a tocar "Pegar foto".');
+        } catch {
+            // Sin permiso o navegador viejo: se puede pegar a mano en el recuadro
+            setShowLinkInput(true);
+            setError('Tu navegador no dejó leer lo copiado. Mantené apretado el recuadro de abajo y elegí "Pegar".');
+        }
+    };
+
+    const handleLinkAdd = async (direct?: string) => {
+        const link = (direct ?? linkInput).trim();
         if (!link) return;
         setLinkInput('');
         setShowLinkInput(false);
@@ -4778,7 +4804,13 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
             </div>
 
             {/* ── FOTOS Y VIDEO ── */}
-            <div className="space-y-2">
+            <div
+                className="space-y-2"
+                onPaste={e => {
+                    const files = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+                    if (files.length) { e.preventDefault(); setShowLinkInput(false); handleFiles(files); }
+                }}
+            >
                 <p className="text-sm font-medium text-gray-700">Fotos y video</p>
                 <div
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -4823,17 +4855,21 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                             <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
                         </div>
                     ))}
-                    <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 cursor-pointer transition-all">
+                    <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 cursor-pointer transition-all">
                         <Plus className="w-6 h-6" />
                         <span className="text-[11px] font-semibold">Agregar</span>
                         <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = ''; }} />
                     </label>
+                    <button type="button" onClick={pasteFromClipboard} title="Pegar una foto copiada" className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-violet-600 transition-all">
+                        <ClipboardPaste className="w-5 h-5" />
+                        <span className="text-[11px] font-semibold text-center leading-tight">Pegar foto</span>
+                    </button>
                 </div>
                 {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
                 {showLinkInput ? (
                     <div className="flex gap-2">
-                        <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAdd(); } }} placeholder="Link de foto, YouTube o TikTok" className={fieldCls} autoFocus />
-                        <button type="button" onClick={handleLinkAdd} disabled={!linkInput.trim()} className="px-3 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">Agregar</button>
+                        <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAdd(); } }} placeholder="Pegá una foto o un link (foto, YouTube, TikTok)" className={fieldCls} autoFocus />
+                        <button type="button" onClick={() => handleLinkAdd()} disabled={!linkInput.trim()} className="px-3 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">Agregar</button>
                         <button type="button" onClick={() => { setShowLinkInput(false); setLinkInput(''); }} aria-label="Cancelar" className="px-2.5 rounded-xl border border-gray-200 text-gray-500"><X className="w-4 h-4" /></button>
                     </div>
                 ) : (
