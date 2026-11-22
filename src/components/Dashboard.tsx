@@ -1592,7 +1592,7 @@ export default function Dashboard() {
                                 />
                             ) : editingItem && storeEdit?.id === editingItem.id && formData.status === 'in_stock' ? (
                                 <StoreFields
-                                    item={editingItem}
+                                    item={{ ...editingItem, productName: formData.productName || editingItem.productName, salePrice: formData.salePrice !== undefined ? Number(formData.salePrice) || 0 : editingItem.salePrice }}
                                     draft={storeEdit.draft}
                                     setDraft={setStoreDraft}
                                     onBusyChange={setStoreBusy}
@@ -4750,6 +4750,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
     const makeMain = (i: number) => update(d => { const imgs = d.storeImages || []; return { storeImages: [imgs[i], ...imgs.filter((_v, j) => j !== i)] }; });
     const fieldCls = 'w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white transition-colors';
     const title = (draft.storeTitle || '').trim() || item.productName;
+    const price = Number(item.salePrice) || 0;
     const hasSaved = Boolean(item.storeImages?.length || item.storeVideoUrl || item.description || item.storeTitle || item.storeGroup);
 
     return (
@@ -4870,6 +4871,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                     type="button"
                     onClick={() => copy('fb', [
                         title,
+                        ...(price > 0 ? [`💲 Precio: ${money(price)}`] : []),
                         '',
                         ...((draft.description || '').trim() ? [(draft.description || '').trim(), ''] : []),
                         `📍 Fotos, medidas, ubicación y envíos: ${productUrl(item.id)}`,
@@ -5106,6 +5108,7 @@ function ProductForm({
 }) {
 
     const [purchasePriceInput, setPurchasePriceInput] = useState('');
+    const [titleCopied, setTitleCopied] = useState(false);
     const [salePriceInput, setSalePriceInput] = useState('');
     const [quantityInput, setQuantityInput] = useState('1');
     const [newLocOpen, setNewLocOpen] = useState(false);
@@ -5213,7 +5216,19 @@ function ProductForm({
 
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Producto</label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Nombre del Producto</label>
+                    {(formData.productName || '').trim() && (
+                        <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText((formData.productName || '').trim()).then(() => { setTitleCopied(true); setTimeout(() => setTitleCopied(false), 2000); })}
+                            className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-lg transition-colors ${titleCopied ? 'text-emerald-600' : 'text-blue-600 hover:text-blue-800'}`}
+                        >
+                            {titleCopied ? <Check className="w-3.5 h-3.5" /> : <ClipboardPaste className="w-3.5 h-3.5" />}
+                            {titleCopied ? 'Copiado' : 'Copiar título'}
+                        </button>
+                    )}
+                </div>
                 <ComboboxInput
                     required
                     value={formData.productName || ''}
