@@ -10,6 +10,7 @@ import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, Arr
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
+import { AI_PROMPT, CIERRE_CONTACTO, parseAiFill, type AiFill } from '../lib/aiFill';
 import { normalizeText, hasStoreContent, pickStoreFields, findStoreDonor, inheritStoreFields } from '../lib/storeFields';
 import { LocationsModal } from './LocationsModal';
 import { money, moneyCompact, percent } from '../lib/format';
@@ -1581,6 +1582,23 @@ export default function Dashboard() {
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             isSaving={isSaving}
                             busy={storeBusy}
+                            top={formData.status === 'in_stock' && formData.itemType !== 'personal' && (storeEdit?.id === 'new' ? !editingItem : storeEdit?.id === editingItem?.id) ? (
+                                <AiFillPanel onApply={(data) => {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        ...(data.titulo ? { productName: data.titulo } : {}),
+                                        ...(data.precioVenta ? { salePrice: data.precioVenta } : {}),
+                                        ...(data.estado ? { condition: data.estado } : {}),
+                                    }));
+                                    setStoreDraft(d => ({
+                                        ...d,
+                                        ...(data.descripcion ? { description: normalizeStoreDescription(data.descripcion) } : {}),
+                                        ...(data.variante ? { storeVariantName: data.variante } : {}),
+                                        // El título pasa a ser el nombre del producto
+                                        ...(data.titulo ? { storeTitle: '' } : {}),
+                                    }));
+                                }} />
+                            ) : undefined}
                             extra={!editingItem && storeEdit?.id === 'new' && formData.status === 'in_stock' && formData.itemType !== 'personal' ? (
                                 <StoreFields
                                     item={{ ...formData, id: '' } as Item}
@@ -4584,7 +4602,6 @@ function InventoryTable({
 const BULLET_EMOJI = /^(?:[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D])+/u;
 
 /** Línea de cierre, idéntica en toda la tienda. La comparte el prompt de la IA. */
-const CIERRE_CONTACTO = '💬 **Contacto:** escribime un mensaje directo y coordinamos la entrega';
 
 /**
  * Saca los asteriscos de markdown dejando el texto. Un `*` entre alfanuméricos
@@ -4894,6 +4911,82 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
     );
 }
 
+/* Completar con IA: se copian las instrucciones, se pegan en Gemini/ChatGPT con
+   las fotos, y la respuesta (JSON) se pega acá para llenar el formulario. */
+function AiFillPanel({ onApply }: { onApply: (data: AiFill) => void }) {
+    const [open, setOpen] = useState(false);
+    const [raw, setRaw] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [done, setDone] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    const apply = (text: string) => {
+        setError(null);
+        setDone(null);
+        try {
+            const data = parseAiFill(text);
+            onApply(data);
+            const filled = [data.titulo && 'título', data.descripcion && 'descripción', data.precioVenta && 'precio', data.estado && 'estado', data.variante && 'variante'].filter(Boolean);
+            setDone(`Listo: se cargó ${filled.join(', ')}. Revisalo antes de guardar.`);
+            setRaw('');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'No se pudo leer la respuesta');
+        }
+    };
+
+    return (
+        <div className="rounded-xl border border-violet-200 bg-violet-50/60 dark:border-violet-800/70 dark:bg-violet-950/40 overflow-hidden">
+            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-violet-700 dark:text-violet-300">
+                <span className="flex items-center gap-2">✨ Completar con IA <span className="font-normal text-xs text-violet-500 dark:text-violet-400">Gemini, ChatGPT…</span></span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {done && !open && <p className="px-4 pb-3 -mt-1 text-xs text-emerald-600 font-medium">{done}</p>}
+            {open && (
+                <div className="px-4 pb-4 space-y-3 border-t border-violet-100 dark:border-violet-800/60 pt-3">
+                    <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 shrink-0 rounded-full bg-violet-600 text-white text-[11px] font-bold flex items-center justify-center mt-0.5">1</span>
+                        <div className="flex-1 space-y-2">
+                            <p className="text-xs text-gray-600 dark:text-slate-300 leading-snug">Copiá las instrucciones y pegalas en la IA junto con las fotos del producto (y el precio si querés que lo cargue).</p>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText(AI_PROMPT).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${copied ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                                >
+                                    {copied ? <Check className="w-3.5 h-3.5" /> : <ClipboardPaste className="w-3.5 h-3.5" />}
+                                    {copied ? 'Copiadas' : 'Copiar instrucciones'}
+                                </button>
+                                <a href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-violet-200 bg-white text-xs font-semibold text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:bg-transparent dark:text-violet-300 dark:hover:bg-violet-900/40">
+                                    Abrir Gemini <ArrowUpRight className="w-3.5 h-3.5" />
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 shrink-0 rounded-full bg-violet-600 text-white text-[11px] font-bold flex items-center justify-center mt-0.5">2</span>
+                        <div className="flex-1 space-y-2">
+                            <p className="text-xs text-gray-600 dark:text-slate-300 leading-snug">Pegá acá la respuesta de la IA:</p>
+                            <textarea
+                                value={raw}
+                                onChange={e => setRaw(e.target.value)}
+                                onPaste={e => { const t = e.clipboardData.getData('text'); if (t.includes('{')) { e.preventDefault(); setRaw(t); apply(t); } }}
+                                rows={3}
+                                placeholder='{ "titulo": "…", "descripcion": "…" }'
+                                className="w-full px-3 py-2 rounded-lg border border-violet-200 bg-white dark:border-violet-800 dark:bg-slate-900 dark:text-slate-100 text-xs font-mono outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
+                            />
+                            {raw.trim() && (
+                                <button type="button" onClick={() => apply(raw)} className="px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700">Cargar en el formulario</button>
+                            )}
+                            {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                            {done && <p className="text-xs text-emerald-600 font-medium">{done}</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUploaded: (url: string) => void }) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -5089,6 +5182,7 @@ function ProductForm({
     batchCodes = [],
     isSaving = false,
     extra,
+    top,
     busy = false
 }: {
     formData: Partial<Item>,
@@ -5104,6 +5198,7 @@ function ProductForm({
     batchCodes?: string[],
     isSaving?: boolean,
     extra?: React.ReactNode,
+    top?: React.ReactNode,
     busy?: boolean
 }) {
 
@@ -5199,6 +5294,8 @@ function ProductForm({
                     Venta Directa
                 </button>
             </div>
+
+            {top}
 
             {/* Personal/Resale Toggle */}
             <button
