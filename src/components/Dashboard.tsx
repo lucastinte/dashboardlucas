@@ -6,7 +6,7 @@ import { imageService } from '../services/imageService';
 import { locationService } from '../services/locationService';
 import { TOPE, CATEGORIA_ACTUAL, CATEGORIA_SIGUIENTE, TOPE_SIGUIENTE, categoriaParaMonto } from '../config/monotributo';
 import { STORE_CONFIG, productUrl } from '../config/storeConfig';
-import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, MoreHorizontal, Link2 } from 'lucide-react';
+import { Plus, Minus, Trash2, TrendingUp, DollarSign, Package, ArrowUpRight, ArrowDownRight, Edit2, Box, History as HistoryIcon, Save, Moon, Sun, Layers, Check, ClipboardPaste, X, AlertTriangle, Merge, ChevronDown, ChevronRight, MapPin, User, FileText, Receipt, CheckCircle, XCircle, Upload, Image as ImageIcon, Loader2, Search, Gift, Ban, Truck, Banknote, LogOut, MessageCircle, RotateCcw, Play, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import PlacaModal from './PlacaModal';
@@ -3218,6 +3218,9 @@ function QtyEditorPanel({ items, anchor, onUpdateQuantity, onDelete, onAddUnits,
    Antes cada lote mostraba cinco botones (Vender, Editar, Separar, Dar de baja,
    Eliminar). Queda "Vender" a la vista y el resto en un menú. El menú se dibuja
    en un portal con posición fija para que no lo recorte el scroll de la tabla. */
+const WITHDRAW_LABEL: Record<string, string> = { regalo: 'regalo', uso_personal: 'uso personal', perdida: 'pérdida' };
+
+/* Acciones del lote, todas a la vista al lado de "Vender". */
 function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
     item: Item;
     onSell: (i: Item) => void;
@@ -3225,93 +3228,33 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
     onWithdraw: (item: Item, reason: WithdrawalReason) => void;
     onDelete: (id: string) => void;
 }) {
-    const [menu, setMenu] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
-    const [menuDark, setMenuDark] = useState(false);
-    const btnRef = useRef<HTMLButtonElement>(null);
-
-    useEffect(() => {
-        if (!menu) return;
-        const close = () => setMenu(null);
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-        // El menú tiene posición fija respecto de la pantalla: mientras está
-        // abierto se bloquea el desplazamiento de la página para que no quede
-        // despegado de su botón. (Cerrarlo al detectar scroll fallaba: la inercia
-        // del dedo lo abría y cerraba al instante.)
-        const prevOverflow = document.documentElement.style.overflow;
-        document.documentElement.style.overflow = 'hidden';
-        window.addEventListener('resize', close);
-        window.addEventListener('keydown', onKey);
-        return () => {
-            document.documentElement.style.overflow = prevOverflow;
-            window.removeEventListener('resize', close);
-            window.removeEventListener('keydown', onKey);
-        };
-    }, [menu]);
-
-    const toggle = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (menu) { setMenu(null); return; }
-        const r = btnRef.current?.getBoundingClientRect();
-        if (!r) return;
-        const right = Math.max(8, window.innerWidth - r.right);
-        // El menú se dibuja fuera del inventario: hereda a mano su modo oscuro
-        setMenuDark(Boolean(btnRef.current?.closest('.inventory-dark')));
-        // Si no entra abajo, se abre hacia arriba
-        setMenu(window.innerHeight - r.bottom < 260 ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+    const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
+    const withdraw = (reason: WithdrawalReason) => {
+        const qty = item.quantity > 1 ? `las ${item.quantity} unidades de ` : '';
+        if (confirm(`¿Dar de baja ${qty}"${item.productName}" como ${WITHDRAW_LABEL[reason] || reason}?`)) onWithdraw(item, reason);
     };
-    const run = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); setMenu(null); fn(); };
-    const itemCls = 'w-full text-left px-3.5 py-2.5 text-sm flex items-center gap-2.5 transition-colors';
+    const btn = 'inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border text-xs font-semibold active:scale-95 transition-all';
 
     return (
-        <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <button
-                type="button"
-                onClick={run(() => onSell(item))}
-                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3 h-8 rounded-lg text-xs font-bold shadow-sm transition-all"
-            >
+        <div className="inline-flex flex-wrap lg:flex-nowrap items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <button type="button" onClick={stop(() => onSell(item))} className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3 h-8 rounded-lg text-xs font-bold shadow-sm transition-all">
                 <DollarSign className="w-3.5 h-3.5" /> Vender
             </button>
-            <button
-                ref={btnRef}
-                type="button"
-                onClick={toggle}
-                aria-haspopup="menu"
-                aria-expanded={!!menu}
-                aria-label="Más acciones"
-                title="Más acciones: editar, dar de baja, eliminar"
-                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 active:scale-95 transition-all"
-            >
-                <MoreHorizontal className="w-4 h-4" />
+            <button type="button" onClick={stop(() => onEdit(item))} title="Editar producto y tienda" className={`${btn} border-blue-200 text-blue-700 bg-white hover:bg-blue-50`}>
+                <Edit2 className="w-3.5 h-3.5" /> Editar
             </button>
-            {menu && createPortal(
-                <div data-keep-open className={menuDark ? 'inventory-dark' : undefined}>
-                    <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); setMenu(null); }} />
-                    <div
-                        role="menu"
-                        className="fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 overflow-hidden"
-                        style={menu}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <button role="menuitem" type="button" onClick={run(() => onEdit(item))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                            <Edit2 className="w-4 h-4 text-blue-600" /> Editar producto y tienda
-                        </button>
-                        <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Dar de baja como…</p>
-                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'regalo'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                            <Gift className="w-4 h-4 text-pink-600" /> Regalo
-                        </button>
-                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'uso_personal'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                            <User className="w-4 h-4 text-violet-600" /> Uso personal
-                        </button>
-                        <button role="menuitem" type="button" onClick={run(() => onWithdraw(item, 'perdida'))} className={`${itemCls} text-gray-700 hover:bg-gray-50`}>
-                            <Ban className="w-4 h-4 text-red-600" /> Pérdida
-                        </button>
-                        <button role="menuitem" type="button" onClick={run(() => onDelete(item.id))} className={`${itemCls} text-rose-600 hover:bg-rose-50 border-t border-gray-100 mt-1`}>
-                            <Trash2 className="w-4 h-4" /> Eliminar
-                        </button>
-                    </div>
-                </div>,
-                document.body
-            )}
+            <button type="button" onClick={stop(() => withdraw('regalo'))} title="Dar de baja como regalo" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-pink-50`}>
+                <Gift className="w-3.5 h-3.5 text-pink-600" /> Regalo
+            </button>
+            <button type="button" onClick={stop(() => withdraw('uso_personal'))} title="Dar de baja como uso personal" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-violet-50`}>
+                <User className="w-3.5 h-3.5 text-violet-600" /> Uso personal
+            </button>
+            <button type="button" onClick={stop(() => withdraw('perdida'))} title="Dar de baja como pérdida" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-red-50`}>
+                <Ban className="w-3.5 h-3.5 text-red-600" /> Pérdida
+            </button>
+            <button type="button" onClick={stop(() => onDelete(item.id))} title="Eliminar registro" aria-label="Eliminar" className={`${btn} px-2 border-rose-200 text-rose-600 bg-white hover:bg-rose-50`}>
+                <Trash2 className="w-3.5 h-3.5" />
+            </button>
         </div>
     );
 }
