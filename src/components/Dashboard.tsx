@@ -724,6 +724,10 @@ export default function Dashboard() {
                     batchRef: formData.batchRef || undefined,
                     // Datos de tienda precargados (Volver a publicar / Agregar unidades)
                     ...pickStoreFields(formData),
+                    // Lo cargado en la sección Tienda del formulario
+                    ...(storeEdit?.id === 'new' && formData.status === 'in_stock' && newItemType !== 'personal'
+                        && JSON.stringify(cleanStoreDraft(storeEdit.draft)) !== JSON.stringify(cleanStoreDraft(storeEdit.orig))
+                        ? cleanStoreDraft(storeEdit.draft) : {}),
                     publicInStore: formData.publicInStore || false,
                 };
                 // Reposición de un producto que ya existió: heredar lo que falte
@@ -1026,6 +1030,13 @@ export default function Dashboard() {
         }
     };
 
+    // Producto nuevo: la sección Tienda arranca con lo que traiga precargado
+    const startNewStoreDraft = (from: Partial<Item>) => {
+        const d = storeDraftFrom(from);
+        setStoreEdit({ id: 'new', draft: d, orig: d });
+        setStoreBusy(false);
+    };
+
     const startEdit = (item: Item) => {
         const resolvedBatchRef = getItemBatchRef(item);
         setEditingItem({ ...item, batchRef: resolvedBatchRef });
@@ -1090,6 +1101,7 @@ export default function Dashboard() {
         // Open the form pre-filled so the user can adjust before saving
         setEditingItem(null);
         setFormData(newItemData as any);
+        startNewStoreDraft(newItemData);
         setIsModalOpen(true);
     };
 
@@ -1128,12 +1140,14 @@ export default function Dashboard() {
             publicInStore: anchor.publicInStore,
             batchRef: getItemBatchRef(anchor),
         });
+        startNewStoreDraft(anchor);
         setIsModalOpen(true);
     };
 
     const openNewModal = (initialStatus: ItemStatus = 'in_stock', presets?: Partial<Item>) => {
         resetForm();
         setFormData(prev => ({ ...prev, status: initialStatus, ...presets }));
+        startNewStoreDraft(presets || {});
         setIsModalOpen(true);
     };
 
@@ -1450,6 +1464,7 @@ export default function Dashboard() {
                                 onMerge={handleMergeItems}
                                 onUpdateQuantity={handleUpdateQuantity}
                                 onAddUnits={handleAddUnits}
+                                onPlaca={setPlacaItem}
                                 onSell={(item) => {
                                 const resolvedBatchRef = getItemBatchRef(item);
                                 setEditingItem({ ...item, batchRef: resolvedBatchRef });
@@ -1566,7 +1581,16 @@ export default function Dashboard() {
                             batchCodes={batchHistory.map(b => b.batchCode)}
                             isSaving={isSaving}
                             busy={storeBusy}
-                            extra={editingItem && storeEdit?.id === editingItem.id && formData.status === 'in_stock' ? (
+                            extra={!editingItem && storeEdit?.id === 'new' && formData.status === 'in_stock' && formData.itemType !== 'personal' ? (
+                                <StoreFields
+                                    item={{ ...formData, id: '' } as Item}
+                                    draft={storeEdit.draft}
+                                    setDraft={setStoreDraft}
+                                    onBusyChange={setStoreBusy}
+                                    onClearAll={() => {}}
+                                    onGeneratePlaca={() => {}}
+                                />
+                            ) : editingItem && storeEdit?.id === editingItem.id && formData.status === 'in_stock' ? (
                                 <StoreFields
                                     item={editingItem}
                                     draft={storeEdit.draft}
@@ -3221,8 +3245,9 @@ function QtyEditorPanel({ items, anchor, onUpdateQuantity, onDelete, onAddUnits,
 const WITHDRAW_LABEL: Record<string, string> = { regalo: 'regalo', uso_personal: 'uso personal', perdida: 'pérdida' };
 
 /* Acciones del lote, todas a la vista al lado de "Vender". */
-function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
+function LotActions({ item, onSell, onEdit, onWithdraw, onDelete, onPlaca }: {
     item: Item;
+    onPlaca?: (i: Item) => void;
     onSell: (i: Item) => void;
     onEdit: (i: Item) => void;
     onWithdraw: (item: Item, reason: WithdrawalReason) => void;
@@ -3233,7 +3258,7 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
         const qty = item.quantity > 1 ? `las ${item.quantity} unidades de ` : '';
         if (confirm(`¿Dar de baja ${qty}"${item.productName}" como ${WITHDRAW_LABEL[reason] || reason}?`)) onWithdraw(item, reason);
     };
-    const btn = 'inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border text-xs font-semibold active:scale-95 transition-all';
+    const btn = 'inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap active:scale-95 transition-all';
 
     return (
         <div className="inline-flex flex-wrap lg:flex-nowrap items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -3243,11 +3268,16 @@ function LotActions({ item, onSell, onEdit, onWithdraw, onDelete }: {
             <button type="button" onClick={stop(() => onEdit(item))} title="Editar producto y tienda" className={`${btn} border-blue-200 text-blue-700 bg-white hover:bg-blue-50`}>
                 <Edit2 className="w-3.5 h-3.5" /> Editar
             </button>
+            {onPlaca && (
+                <button type="button" onClick={stop(() => onPlaca(item))} title="Generar placa para Marketplace" className={`${btn} border-amber-200 text-amber-700 bg-white hover:bg-amber-50`}>
+                    🪧 Placa
+                </button>
+            )}
             <button type="button" onClick={stop(() => withdraw('regalo'))} title="Dar de baja como regalo" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-pink-50`}>
                 <Gift className="w-3.5 h-3.5 text-pink-600" /> Regalo
             </button>
             <button type="button" onClick={stop(() => withdraw('uso_personal'))} title="Dar de baja como uso personal" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-violet-50`}>
-                <User className="w-3.5 h-3.5 text-violet-600" /> Uso personal
+                <User className="w-3.5 h-3.5 text-violet-600" /> Personal
             </button>
             <button type="button" onClick={stop(() => withdraw('perdida'))} title="Dar de baja como pérdida" className={`${btn} border-gray-200 text-gray-600 bg-white hover:bg-red-50`}>
                 <Ban className="w-3.5 h-3.5 text-red-600" /> Pérdida
@@ -3371,6 +3401,7 @@ function InventoryTable({
     onMerge,
     onUpdateQuantity,
     onAddUnits,
+    onPlaca,
     batchHistory,
     locations = [],
     onOpenLocationsModal,
@@ -3388,6 +3419,7 @@ function InventoryTable({
     onMerge?: (items: Item[]) => void,
     onUpdateQuantity?: (id: string, quantity: number) => void,
     onAddUnits?: (anchor: Item) => void,
+    onPlaca?: (item: Item) => void,
     batchHistory: BatchRecord[],
     locations?: LocationItem[],
     onOpenLocationsModal?: () => void,
@@ -3815,7 +3847,7 @@ function InventoryTable({
                                                             : <>Venta <span className="text-sm font-bold text-gray-900 tabular-nums">{precios.length > 1 ? 'desde ' : ''}{money(Math.min(...precios))}</span></>}
                                                     </span>
                                                     {grp.children.length === 1
-                                                        ? <LotActions item={grp.children[0]} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                        ? <LotActions item={grp.children[0]} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} />
                                                         : <span className="shrink-0 text-blue-600 font-semibold">{grp.children.length} lotes · ver</span>}
                                                 </div>
                                             );
@@ -3901,7 +3933,7 @@ function InventoryTable({
                                                 <p className="text-xs text-gray-500 mt-1.5">
                                                     {[getBatchLabel(resolveBatchRef(item)), conditionLabelMap[item.condition || 'nuevo'], `costo ${money(item.purchasePrice)}`].join(' · ')}
                                                 </p>
-                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
+                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -3998,7 +4030,7 @@ function InventoryTable({
                                                 <span>{item.location || 'Sin ubicación'}</span>
                                                 <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                             </div>
-                                            <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
+                                            <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} /></div>
                                         </div>
                                     ))}
                                 </div>
@@ -4057,7 +4089,7 @@ function InventoryTable({
                                                     <span>{conditionLabelMap[item.condition || 'nuevo']}</span>
                                                     {item.salePrice && <span className="text-emerald-600 font-bold">Venta: {money(item.salePrice)}</span>}
                                                 </div>
-                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} /></div>
+                                                <div className="mt-2.5 flex justify-end"><LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -4268,7 +4300,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3" colSpan={2}>
                                                     <div className="flex items-center gap-1">
-                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -4344,7 +4376,7 @@ function InventoryTable({
                                                     )}
                                                     {prod.items.map(item => (
                                                         <div key={item.id} className="flex gap-0.5">
-                                                            <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                            <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} />
                                                         </div>
                                                     ))}
                                                 </div>
@@ -4411,7 +4443,7 @@ function InventoryTable({
                                             <td className="px-4 py-2 text-right">
                                                 <div className="flex justify-end items-center gap-1">
                                                     <span className="text-xs font-mono mr-2">{money(item.purchasePrice)}/u</span>
-                                                    <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                    <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} />
                                                 </div>
                                             </td>
                                         </tr>
@@ -4527,7 +4559,7 @@ function InventoryTable({
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} />
+                                                        <LotActions item={item} onSell={onSell} onEdit={onEdit} onWithdraw={onWithdraw} onDelete={onDelete} onPlaca={onPlaca} />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -4830,7 +4862,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
 
             {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-            <div className="flex flex-wrap gap-2">
+            {item.id && <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => copy('link', productUrl(item.id))} className={`${actionCls} ${copied === 'link' ? 'border-emerald-300 text-emerald-600' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}>
                     {copied === 'link' ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />} {copied === 'link' ? 'Link copiado' : 'Copiar link'}
                 </button>
@@ -4855,7 +4887,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                         <Trash2 className="w-3.5 h-3.5" /> Borrar datos de tienda
                     </button>
                 )}
-            </div>
+            </div>}
         </section>
     );
 }
