@@ -4660,7 +4660,25 @@ function normalizeStoreDescription(raw: string): string {
     return lines.filter(Boolean).join('\n').trim();
 }
 
-const VIDEO_LINK_RE = /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com\/.*video|fb\.watch|\.(mp4|mov|webm|m4v)(\?|#|$))/i;
+// Links que se muestran embebidos (no son archivos): se guardan tal cual
+const EMBED_VIDEO_RE = /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com\/.*video|fb\.watch)/i;
+// Archivos de video sueltos (ej. CDN de Temu): se copian al almacenamiento propio
+const isVideoFileLink = (u: string) => {
+    try { const x = new URL(u); return DIRECT_VIDEO_RE.test(x.pathname) || /(^|\.)video|kwcdn/i.test(x.hostname); } catch { return false; }
+};
+
+async function copyVideoFromLink(link: string): Promise<string> {
+    const { supabase } = await import('../lib/supabase');
+    const { data } = await supabase.auth.getSession();
+    const r = await fetch('/api/copiar-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
+        body: JSON.stringify({ url: link }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || `Error ${r.status}`);
+    return j.url as string;
+}
 
 export type StoreDraft = Pick<Item, 'storeImages' | 'storeVideoUrl' | 'description' | 'storeTitle' | 'storeGroup' | 'storeVariantName'>;
 
@@ -4702,6 +4720,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<'link' | 'fb' | null>(null);
     const [showVideo, setShowVideo] = useState(false);
+    const videoBroken = useBrokenMedia(videoUrl ? [{ url: videoUrl, kind: 'video' }] : []).has(videoUrl);
     const copy = (kind: 'link' | 'fb', text: string) => navigator.clipboard.writeText(text).then(() => {
         setCopied(kind);
         setTimeout(() => setCopied(null), 2000);
@@ -4777,7 +4796,20 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
         if (!link) return;
         setLinkInput('');
         setShowLinkInput(false);
-        if (VIDEO_LINK_RE.test(link)) { update(() => ({ storeVideoUrl: link })); return; }
+        if (EMBED_VIDEO_RE.test(link)) { update(() => ({ storeVideoUrl: link })); return; }
+        if (isVideoFileLink(link)) {
+            setError(null);
+            setUploading(n => n + 1);
+            try {
+                const saved = await copyVideoFromLink(link);
+                update(() => ({ storeVideoUrl: saved }));
+            } catch (err) {
+                setError(`${err instanceof Error ? err.message : 'No se pudo copiar el video'}. Si es de Temu, grabá la pantalla mientras se reproduce y subilo con "+ Agregar".`);
+            } finally {
+                setUploading(n => n - 1);
+            }
+            return;
+        }
         addImages([link]);
         setUploading(n => n + 1);
         try {
@@ -4835,10 +4867,10 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                         </div>
                     ))}
                     {videoUrl && (
-                        <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-900 text-white">
+                        <div className={`relative aspect-square rounded-xl overflow-hidden border text-white ${videoBroken ? 'border-red-400 bg-red-900' : 'border-gray-200 bg-gray-900'}`}>
                             <button type="button" onClick={() => setShowVideo(v => !v)} className="absolute inset-0 flex flex-col items-center justify-center gap-1" title="Ver el video">
                                 <Play className="w-6 h-6 fill-current" />
-                                <span className="text-[10px] font-semibold opacity-80">{showVideo ? 'Ocultar' : 'Video'}</span>
+                                <span className="text-[10px] font-semibold opacity-80">{videoBroken ? 'No carga' : showVideo ? 'Ocultar' : 'Video'}</span>
                             </button>
                             <button
                                 type="button"
@@ -4866,6 +4898,9 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                     </button>
                 </div>
                 {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
+                {videoBroken && (
+                    <p className="text-[11px] text-red-500 leading-snug">⚠ Este video no carga (el link venció o el sitio lo bloquea). Quitalo con la ✕ y volvé a pegar el link, o grabá la pantalla y subilo con "+ Agregar".</p>
+                )}
                 {showLinkInput ? (
                     <div className="flex gap-2">
                         <input type="url" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAdd(); } }} placeholder="Pegá una foto o un link (foto, YouTube, TikTok)" className={fieldCls} autoFocus />
