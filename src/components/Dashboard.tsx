@@ -1370,9 +1370,9 @@ export default function Dashboard() {
                                     {cobrosPendientes.map(item => (
                                         <div key={item.id} className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                                             <div className="flex items-center gap-3 min-w-0">
-                                                {item.imageUrl && (
+                                                {thumbOf(item) && (
                                                     <div className="w-8 h-8 rounded-md overflow-hidden border border-amber-200 dark:border-amber-800/50 flex-shrink-0">
-                                                        <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                        <img src={thumbOf(item)} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                 )}
                                                 <div className="min-w-0">
@@ -2669,9 +2669,9 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                     return (
                         <div key={item.id} className={`rounded-2xl border p-3.5 shadow-sm ${isPersonal ? 'border-violet-200 bg-violet-50/30 dark:border-violet-800/50 dark:bg-violet-950/25' : 'border-gray-200 bg-white'}`}>
                             <div className="flex items-start gap-3">
-                                {item.imageUrl && (
+                                {thumbOf(item) && (
                                     <div className="w-11 h-11 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                        <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                        <img src={thumbOf(item)} alt="" className="w-full h-full object-cover" />
                                     </div>
                                 )}
                                 <div className="min-w-0 flex-1">
@@ -2815,9 +2815,9 @@ function SalesTable({ items, onEdit, onDelete, resolveBatchRef, onToggleFacturad
                             return (
                                 <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors group ${item.itemType === 'personal' ? 'bg-violet-50/30 dark:bg-violet-950/25' : ''}`}>
                                     <td className="px-2 py-2">
-                                        {item.imageUrl ? (
+                                        {thumbOf(item) ? (
                                             <div className="w-8 h-8 rounded-md overflow-hidden border border-gray-100">
-                                                <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                <img src={thumbOf(item)} alt="" className="w-full h-full object-cover" />
                                             </div>
                                         ) : (
                                             <div className={`w-8 h-8 rounded-md border border-dashed flex items-center justify-center ${item.itemType === 'personal' ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-200'}`}>
@@ -3081,6 +3081,9 @@ function VideoPreview({ url }: { url: string }) {
         </a>
     );
 }
+
+/** Miniatura: la foto principal, o si no hay, la primera foto de la tienda */
+const thumbOf = (i: Pick<Item, 'imageUrl' | 'storeImages'>) => i.imageUrl || i.storeImages?.[0] || '';
 
 type MediaCheck = { url: string; kind: 'image' | 'video' };
 
@@ -3550,13 +3553,13 @@ function InventoryTable({
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
-                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, avgCost: 0, totalValue: 0, locations: [], batches: [], children: [] };
+                grp = { key: normName, name: item.productName, imageUrl: thumbOf(item), totalQty: 0, avgCost: 0, totalValue: 0, locations: [], batches: [], children: [] };
                 map.set(normName, grp);
             }
             grp.children.push(item);
             grp.totalQty += item.quantity;
             grp.totalValue += (item.purchasePrice || 0) * item.quantity;
-            if (!grp.imageUrl && item.imageUrl) grp.imageUrl = item.imageUrl;
+            if (!grp.imageUrl && thumbOf(item)) grp.imageUrl = thumbOf(item);
             const loc = item.location || 'Sin ubicación';
             const existingLoc = grp.locations.find(l => normalizeText(l.loc) === normalizeText(loc));
             if (existingLoc) existingLoc.qty += item.quantity;
@@ -3678,12 +3681,12 @@ function InventoryTable({
             const normName = normalizeText(item.productName);
             let grp = map.get(normName);
             if (!grp) {
-                grp = { key: normName, name: item.productName, imageUrl: item.imageUrl, totalQty: 0, locations: [], children: [] };
+                grp = { key: normName, name: item.productName, imageUrl: thumbOf(item), totalQty: 0, locations: [], children: [] };
                 map.set(normName, grp);
             }
             grp.children.push(item);
             grp.totalQty += item.quantity;
-            if (!grp.imageUrl && item.imageUrl) grp.imageUrl = item.imageUrl;
+            if (!grp.imageUrl && thumbOf(item)) grp.imageUrl = thumbOf(item);
             const loc = item.location || 'Sin ubicación';
             const existingLoc = grp.locations.find(l => normalizeText(l.loc) === normalizeText(loc));
             if (existingLoc) existingLoc.qty += item.quantity;
