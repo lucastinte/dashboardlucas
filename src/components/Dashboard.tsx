@@ -4935,7 +4935,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                 </div>
             </div>
 
-            {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+            {error && <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/50 dark:text-red-300 rounded-lg px-3 py-2">{error}</p>}
 
             {item.id && <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => copy('link', productUrl(item.id))} className={`${actionCls} ${copied === 'link' ? 'border-emerald-300 text-emerald-600' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}>

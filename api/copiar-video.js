@@ -18,6 +18,22 @@ const isPrivateHost = (host) =>
     /^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|\[?f[cd][0-9a-f]{2}:)/i.test(host) ||
     host.endsWith('.internal') || host.endsWith('.local');
 
+// Qué es el archivo según sus primeros bytes (el tipo que manda el sitio a veces miente)
+export function sniff(buf) {
+    const ascii = (a, b) => buf.subarray(a, b).toString('latin1');
+    if (buf.length >= 12 && ascii(4, 8) === 'ftyp') {
+        const brand = ascii(8, 12);
+        return { kind: 'video', type: brand.startsWith('qt') ? 'video/quicktime' : 'video/mp4', ext: brand.startsWith('qt') ? 'mov' : 'mp4' };
+    }
+    if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { kind: 'video', type: 'video/webm', ext: 'webm' };
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { kind: 'image', type: 'image/jpeg', ext: 'jpg' };
+    if (buf[0] === 0x89 && ascii(1, 4) === 'PNG') return { kind: 'image', type: 'image/png', ext: 'png' };
+    if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return { kind: 'image', type: 'image/webp', ext: 'webp' };
+    if (ascii(0, 3) === 'GIF') return { kind: 'image', type: 'image/gif', ext: 'gif' };
+    if (ascii(4, 12) === 'ftypavif') return { kind: 'image', type: 'image/avif', ext: 'avif' };
+    return null;
+}
+
 const refererFor = (host) => (/temu|kwcdn/i.test(host) ? 'https://www.temu.com/' : `https://${host}/`);
 
 export default async function handler(req, res) {
@@ -59,14 +75,17 @@ export default async function handler(req, res) {
         });
         if (!r.ok) throw new Error(`el sitio respondió ${r.status}`);
         type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-        if (type && !type.startsWith(kind + '/') && type !== 'application/octet-stream' && type !== 'binary/octet-stream') {
-            throw new Error(kind === 'video' ? 'el link no es un archivo de video' : 'el link no es una imagen');
-        }
         const len = Number(r.headers.get('content-length') || 0);
         if (len > MAX_BYTES) throw new Error('El video pesa más de 50 MB');
         buf = Buffer.from(await r.arrayBuffer());
         if (buf.length > MAX_BYTES) throw new Error('El video pesa más de 50 MB');
-        if (buf.length < 512) throw new Error('el archivo vino vacío');
+        if (buf.length < 512) throw new Error(`el archivo vino vacío (${buf.length} bytes, tipo ${type || 'sin tipo'})`);
+        const real = sniff(buf);
+        if (!real || real.kind !== kind) {
+            const head = buf.subarray(0, 60).toString('latin1').replace(/[^\x20-\x7e]+/g, ' ').trim().slice(0, 40);
+            throw new Error(`no es ${kind === 'video' ? 'un video' : 'una imagen'}: llegó ${type || 'sin tipo'}, ${Math.round(buf.length / 1024)} KB, empieza con «${head}»`);
+        }
+        type = real.type;
     } catch (err) {
         res.status(422).json({ error: `el servidor no pudo bajarlo (${err.message})` });
         return;
