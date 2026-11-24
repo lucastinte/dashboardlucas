@@ -4668,7 +4668,11 @@ function normalizeStoreDescription(raw: string): string {
 const EMBED_VIDEO_RE = /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com\/.*video|fb\.watch)/i;
 // Archivos de video sueltos (ej. CDN de Temu): se copian al almacenamiento propio
 const isVideoFileLink = (u: string) => {
-    try { const x = new URL(u); return DIRECT_VIDEO_RE.test(x.pathname) || /(^|\.)video|kwcdn/i.test(x.hostname); } catch { return false; }
+    try {
+        const x = new URL(u);
+        if (/\.(jpe?g|png|webp|gif|avif|heic)$/i.test(x.pathname)) return false;
+        return DIRECT_VIDEO_RE.test(x.pathname) || /(^|[.-])(video|vod)/i.test(x.hostname) || /\/(goods-)?video\//i.test(x.pathname);
+    } catch { return false; }
 };
 
 
@@ -4778,25 +4782,23 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
         setLinkInput('');
         setShowLinkInput(false);
         if (EMBED_VIDEO_RE.test(link)) { update(() => ({ storeVideoUrl: link })); return; }
-        if (isVideoFileLink(link)) {
-            setError(null);
-            setUploading(n => n + 1);
-            try {
-                const saved = await imageService.copyFromLink(link, 'video');
-                update(() => ({ storeVideoUrl: saved }));
-            } catch (err) {
-                setError(`${err instanceof Error ? err.message : 'No se pudo copiar el video'}. Si es de Temu, grabá la pantalla mientras se reproduce y subilo con "+ Agregar".`);
-            } finally {
-                setUploading(n => n - 1);
-            }
-            return;
-        }
+        // Se adivina por el link si es foto o video; si el archivo resulta ser
+        // del otro tipo, se reintenta con ese.
+        const first: 'image' | 'video' = isVideoFileLink(link) ? 'video' : 'image';
+        const second: 'image' | 'video' = first === 'video' ? 'image' : 'video';
+        const save = (kind: 'image' | 'video', url: string) => kind === 'video' ? update(() => ({ storeVideoUrl: url })) : addImages([url]);
         setError(null);
         setUploading(n => n + 1);
         try {
-            addImages([await imageService.copyFromLink(link, 'image')]);
+            try {
+                save(first, await imageService.copyFromLink(link, first));
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : '';
+                if (!/no es (un video|una imagen|un archivo)/i.test(msg)) throw err;
+                save(second, await imageService.copyFromLink(link, second));
+            }
         } catch (err) {
-            setError(`No se pudo copiar la foto: ${err instanceof Error ? err.message : 'error'}. Probá con "Pegar foto" (mantené apretada la foto → Copiar).`);
+            setError(`No se pudo copiar: ${err instanceof Error ? err.message : 'error'}. Si es de Temu, para fotos usá "Pegar foto" y para videos grabá la pantalla y subilo con "+ Agregar".`);
         } finally {
             setUploading(n => n - 1);
         }
