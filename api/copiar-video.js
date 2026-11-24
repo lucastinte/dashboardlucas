@@ -23,6 +23,8 @@ export function sniff(buf) {
     const ascii = (a, b) => buf.subarray(a, b).toString('latin1');
     if (buf.length >= 12 && ascii(4, 8) === 'ftyp') {
         const brand = ascii(8, 12);
+        if (brand === 'avif' || brand === 'avis') return { kind: 'image', type: 'image/avif', ext: 'avif' };
+        if (/^(heic|heix|hevc|heim|heis|mif1|msf1)$/.test(brand)) return { kind: 'image', type: 'image/heic', ext: 'heic' };
         return { kind: 'video', type: brand.startsWith('qt') ? 'video/quicktime' : 'video/mp4', ext: brand.startsWith('qt') ? 'mov' : 'mp4' };
     }
     if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { kind: 'video', type: 'video/webm', ext: 'webm' };
@@ -30,7 +32,6 @@ export function sniff(buf) {
     if (buf[0] === 0x89 && ascii(1, 4) === 'PNG') return { kind: 'image', type: 'image/png', ext: 'png' };
     if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return { kind: 'image', type: 'image/webp', ext: 'webp' };
     if (ascii(0, 3) === 'GIF') return { kind: 'image', type: 'image/gif', ext: 'gif' };
-    if (ascii(4, 12) === 'ftypavif') return { kind: 'image', type: 'image/avif', ext: 'avif' };
     return null;
 }
 
@@ -53,6 +54,8 @@ export default async function handler(req, res) {
     let target;
     try {
         target = new URL(String(body?.url || ''));
+        // Fotos de Temu: sin recorte ni formato AVIF se baja la original
+        if (/(^|\.)kwcdn\.com$/i.test(target.hostname) && /\.(jpe?g|png|webp)$/i.test(target.pathname)) target.search = '';
     } catch {
         res.status(400).json({ error: 'Link inválido' });
         return;

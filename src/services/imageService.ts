@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { cleanMediaLink, sniffBytes } from '../lib/sniff';
 
 const BUCKET = 'product-images';
 const MAX_SIZE = 800; // px max width/height
@@ -53,7 +54,7 @@ async function compressImage(source: Blob): Promise<Blob | null> {
     }
 }
 
-const EXT_BY_TYPE: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif' };
+const EXT_BY_TYPE: Record<string, string> = { 'image/avif': 'avif', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif' };
 
 /** SHA-256 hex hash of a blob */
 async function hashBlob(blob: Blob): Promise<string> {
@@ -142,14 +143,18 @@ export const imageService = {
      * propio. Primero lo baja el navegador (sin Referer, como cuando lo abrís a
      * mano); si el sitio no lo permite, lo intenta el servidor.
      */
-    async copyFromLink(link: string, kind: 'image' | 'video'): Promise<string> {
+    async copyFromLink(rawLink: string, kind: 'image' | 'video'): Promise<string> {
+        const link = cleanMediaLink(rawLink);
         let browserErr = '';
         try {
             const r = await fetch(link, { mode: 'cors', referrerPolicy: 'no-referrer', credentials: 'omit' });
             if (!r.ok) throw new Error(`respondió ${r.status}`);
-            const blob = await r.blob();
-            if (blob.size < 512) throw new Error('vino vacío');
-            if (blob.type && !blob.type.startsWith(`${kind}/`) && !blob.type.includes('octet-stream')) throw new Error('no es un archivo de ' + (kind === 'video' ? 'video' : 'imagen'));
+            const raw = await r.blob();
+            if (raw.size < 512) throw new Error('vino vacío');
+            // Se mira el contenido real: el tipo que manda el sitio puede mentir
+            const real = sniffBytes(new Uint8Array(await raw.slice(0, 32).arrayBuffer()));
+            if (!real || real.kind !== kind) throw new Error('no es un archivo de ' + (kind === 'video' ? 'video' : 'imagen'));
+            const blob = raw.type === real.type ? raw : new Blob([raw], { type: real.type });
             return kind === 'video'
                 ? await this.uploadVideo(blob, new URL(link).pathname)
                 : await this.upload(new File([blob], 'foto', { type: blob.type || 'image/jpeg' }));
