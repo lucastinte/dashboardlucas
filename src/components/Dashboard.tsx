@@ -3139,7 +3139,8 @@ function useBrokenMedia(checks: MediaCheck[]): Set<string> {
                 v.oncanplay = () => settle(true);
                 v.onerror = () => settle(false);
                 v.src = url;
-                setTimeout(() => settle(false), 12000);
+                // Safari en iPhone a veces no precarga: tardar no es estar roto
+                setTimeout(skip, 12000);
             } else {
                 const img = new Image();
                 img.onload = () => settle(true);
@@ -4878,7 +4879,13 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
                 </div>
                 {videoUrl && showVideo && <VideoPreview url={videoUrl} />}
                 {videoBroken && (
-                    <p className="text-[11px] text-red-500 leading-snug">⚠ Este video no carga (el link venció o el sitio lo bloquea). Quitalo con la ✕ y volvé a pegar el link, o grabá la pantalla y subilo con "+ Agregar".</p>
+                    <div className="text-[11px] text-red-500 leading-snug space-y-0.5">
+                        <p>⚠ Este video no carga. Quitalo con la ✕ y volvé a pegar el link, o grabá la pantalla y subilo con "+ Agregar".</p>
+                        <p className="text-gray-400 break-all">
+                            Guardado en: {(() => { try { const h = new URL(videoUrl).hostname; return h.includes('supabase') ? 'tu almacenamiento' : h; } catch { return 'link inválido'; } })()} ·{' '}
+                            <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="underline">abrir</a>
+                        </p>
+                    </div>
                 )}
                 {showLinkInput ? (
                     <div className="flex gap-2">
