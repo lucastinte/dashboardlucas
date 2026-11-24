@@ -4670,18 +4670,6 @@ const isVideoFileLink = (u: string) => {
     try { const x = new URL(u); return DIRECT_VIDEO_RE.test(x.pathname) || /(^|\.)video|kwcdn/i.test(x.hostname); } catch { return false; }
 };
 
-async function copyVideoFromLink(link: string): Promise<string> {
-    const { supabase } = await import('../lib/supabase');
-    const { data } = await supabase.auth.getSession();
-    const r = await fetch('/api/copiar-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
-        body: JSON.stringify({ url: link }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.url) throw new Error(j.error || `Error ${r.status}`);
-    return j.url as string;
-}
 
 export type StoreDraft = Pick<Item, 'storeImages' | 'storeVideoUrl' | 'description' | 'storeTitle' | 'storeGroup' | 'storeVariantName'>;
 
@@ -4734,18 +4722,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
 
     const addImages = (urls: string[]) => update(d => ({ storeImages: [...(d.storeImages || []), ...urls.filter(u => u && !(d.storeImages || []).includes(u))] }));
 
-    const uploadVideo = async (file: File) => {
-        const { supabase } = await import('../lib/supabase');
-        const ext = file.name.split('.').pop() || 'mp4';
-        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
-        const filePath = `vid_${hash}.${ext}`;
-        const { data: existing } = await supabase.storage.from('product-images').list('', { search: filePath });
-        if (!existing?.some(f => f.name === filePath)) {
-            const { error: upErr } = await supabase.storage.from('product-images').upload(filePath, file, { contentType: file.type, upsert: false });
-            if (upErr && !upErr.message?.includes('already exists')) throw upErr;
-        }
-        return supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
-    };
+    const uploadVideo = (file: File) => imageService.uploadVideo(file, file.name);
 
     // Un solo botón para todo: las fotos van a la galería y el video al lugar del video
     const handleFiles = async (list: FileList | File[] | null) => {
@@ -4804,7 +4781,7 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
             setError(null);
             setUploading(n => n + 1);
             try {
-                const saved = await copyVideoFromLink(link);
+                const saved = await imageService.copyFromLink(link, 'video');
                 update(() => ({ storeVideoUrl: saved }));
             } catch (err) {
                 setError(`${err instanceof Error ? err.message : 'No se pudo copiar el video'}. Si es de Temu, grabá la pantalla mientras se reproduce y subilo con "+ Agregar".`);
@@ -4813,13 +4790,12 @@ function StoreFields({ item, draft, setDraft, onBusyChange, onClearAll, onGenera
             }
             return;
         }
-        addImages([link]);
+        setError(null);
         setUploading(n => n + 1);
         try {
-            const uploaded = await imageService.upload(link);
-            update(d => ({ storeImages: (d.storeImages || []).map(u => u === link ? uploaded : u) }));
-        } catch {
-            // si no se puede copiar, queda el link externo
+            addImages([await imageService.copyFromLink(link, 'image')]);
+        } catch (err) {
+            setError(`No se pudo copiar la foto: ${err instanceof Error ? err.message : 'error'}. Probá con "Pegar foto" (mantené apretada la foto → Copiar).`);
         } finally {
             setUploading(n => n - 1);
         }
@@ -5088,13 +5064,10 @@ function ImageUploadField({ currentUrl, onUploaded }: { currentUrl: string, onUp
         if (!trimmed) return;
         setUploading(true);
         setError(null);
-        // Save the URL immediately so it persists even if Supabase upload fails
-        onUploaded(trimmed);
         try {
-            const publicUrl = await imageService.upload(trimmed);
-            onUploaded(publicUrl);
-        } catch {
-            // External URL already saved above — keep it as-is
+            onUploaded(await imageService.copyFromLink(trimmed, 'image'));
+        } catch (err) {
+            setError(`No se pudo copiar la foto: ${err instanceof Error ? err.message : 'error'}`);
         } finally {
             setUploading(false);
             setUrlInput('');

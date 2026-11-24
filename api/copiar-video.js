@@ -11,7 +11,7 @@ export const config = { maxDuration: 60 };
 
 const BUCKET = 'product-images';
 const MAX_BYTES = 50 * 1024 * 1024;
-const EXT_BY_TYPE = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v', 'video/ogg': 'ogv' };
+const EXT_BY_TYPE = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v', 'video/ogg': 'ogv' };
 
 // Nada de direcciones internas: el servidor no tiene que poder pedir cosas de su propia red
 const isPrivateHost = (host) =>
@@ -33,6 +33,7 @@ export default async function handler(req, res) {
 
     let body = req.body;
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+    const kind = body?.kind === 'image' ? 'image' : 'video';
     let target;
     try {
         target = new URL(String(body?.url || ''));
@@ -56,26 +57,27 @@ export default async function handler(req, res) {
                 Accept: 'video/*,*/*;q=0.8',
             },
         });
-        if (!r.ok) throw new Error(`El sitio respondió ${r.status}`);
+        if (!r.ok) throw new Error(`el sitio respondió ${r.status}`);
         type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-        if (type && !type.startsWith('video/') && type !== 'application/octet-stream' && type !== 'binary/octet-stream') {
-            throw new Error('El link no es un archivo de video');
+        if (type && !type.startsWith(kind + '/') && type !== 'application/octet-stream' && type !== 'binary/octet-stream') {
+            throw new Error(kind === 'video' ? 'el link no es un archivo de video' : 'el link no es una imagen');
         }
         const len = Number(r.headers.get('content-length') || 0);
         if (len > MAX_BYTES) throw new Error('El video pesa más de 50 MB');
         buf = Buffer.from(await r.arrayBuffer());
         if (buf.length > MAX_BYTES) throw new Error('El video pesa más de 50 MB');
-        if (buf.length < 1024) throw new Error('El video vino vacío');
+        if (buf.length < 512) throw new Error('el archivo vino vacío');
     } catch (err) {
-        res.status(422).json({ error: `No se pudo bajar el video: ${err.message}` });
+        res.status(422).json({ error: `el servidor no pudo bajarlo (${err.message})` });
         return;
     }
 
     // 2) Subirlo con la sesión del usuario (mismas reglas que una subida normal)
-    const urlExt = (target.pathname.match(/\.(mp4|mov|webm|m4v|ogv)$/i) || [])[1];
-    const ext = EXT_BY_TYPE[type] || (urlExt || 'mp4').toLowerCase();
-    const contentType = type.startsWith('video/') ? type : `video/${ext === 'mov' ? 'quicktime' : ext}`;
-    const path = `vid_${createHash('sha256').update(buf).digest('hex')}.${ext}`;
+    const urlExt = (target.pathname.match(/\.(mp4|mov|webm|m4v|ogv|jpe?g|png|webp|gif|avif)$/i) || [])[1];
+    const ext = EXT_BY_TYPE[type] || (urlExt || (kind === 'video' ? 'mp4' : 'jpg')).toLowerCase().replace('jpeg', 'jpg');
+    const contentType = type.startsWith(kind + '/') ? type : kind === 'video' ? `video/${ext === 'mov' ? 'quicktime' : ext}` : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    const hash = createHash('sha256').update(buf).digest('hex');
+    const path = kind === 'video' ? `vid_${hash}.${ext}` : `${hash}.${ext}`;
     const up = await fetch(`${supabaseUrl}/storage/v1/object/${BUCKET}/${path}`, {
         method: 'POST',
         headers: { apikey: anonKey, Authorization: auth, 'Content-Type': contentType, 'x-upsert': 'false' },
@@ -85,7 +87,7 @@ export default async function handler(req, res) {
         const txt = await up.text().catch(() => '');
         // Ya estaba subido (mismo contenido): sirve igual
         if (!/already exists|Duplicate|409/i.test(`${up.status} ${txt}`)) {
-            res.status(502).json({ error: `No se pudo guardar el video (${up.status})` });
+            res.status(502).json({ error: `no se pudo guardar en el almacenamiento (${up.status}: ${txt.slice(0, 120)})` });
             return;
         }
     }

@@ -124,6 +124,56 @@ export const imageService = {
         return getPublicUrl(filePath);
     },
 
+    /** Sube un video tal cual (sin comprimir), deduplicado por contenido. */
+    async uploadVideo(blob: Blob, nameHint = ''): Promise<string> {
+        const type = blob.type && blob.type.startsWith('video/') ? blob.type : 'video/mp4';
+        const ext = (nameHint.match(/\.(mp4|mov|webm|m4v|ogv)(?:[?#]|$)/i)?.[1] || ({ 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v' } as Record<string, string>)[type] || 'mp4').toLowerCase();
+        const filePath = `vid_${await hashBlob(blob)}.${ext}`;
+        const { data: existing } = await supabase.storage.from(BUCKET).list('', { search: filePath });
+        if (!existing?.some(f => f.name === filePath)) {
+            const { error } = await supabase.storage.from(BUCKET).upload(filePath, blob, { contentType: type, upsert: false });
+            if (error && !error.message?.includes('already exists') && !error.message?.includes('Duplicate')) throw error;
+        }
+        return getPublicUrl(filePath);
+    },
+
+    /**
+     * Copia una foto o un video desde un link externo (ej. Temu) al almacenamiento
+     * propio. Primero lo baja el navegador (sin Referer, como cuando lo abrís a
+     * mano); si el sitio no lo permite, lo intenta el servidor.
+     */
+    async copyFromLink(link: string, kind: 'image' | 'video'): Promise<string> {
+        let browserErr = '';
+        try {
+            const r = await fetch(link, { mode: 'cors', referrerPolicy: 'no-referrer', credentials: 'omit' });
+            if (!r.ok) throw new Error(`respondió ${r.status}`);
+            const blob = await r.blob();
+            if (blob.size < 512) throw new Error('vino vacío');
+            if (blob.type && !blob.type.startsWith(`${kind}/`) && !blob.type.includes('octet-stream')) throw new Error('no es un archivo de ' + (kind === 'video' ? 'video' : 'imagen'));
+            return kind === 'video'
+                ? await this.uploadVideo(blob, new URL(link).pathname)
+                : await this.upload(new File([blob], 'foto', { type: blob.type || 'image/jpeg' }));
+        } catch (err) {
+            browserErr = err instanceof Error ? err.message : String(err);
+        }
+        const { data } = await supabase.auth.getSession();
+        let serverErr = '';
+        try {
+            const r = await fetch('/api/copiar-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
+                body: JSON.stringify({ url: link, kind }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok && j.url) return j.url as string;
+            serverErr = j.error || `el servidor respondió ${r.status}`;
+        } catch (err) {
+            serverErr = err instanceof Error ? err.message : String(err);
+        }
+        console.warn('copyFromLink', { link, browserErr, serverErr });
+        throw new Error(serverErr || browserErr || 'No se pudo copiar el archivo');
+    },
+
     /**
      * Delete a file from the bucket given its public URL.
      * External URLs (not from this bucket) are ignored.
